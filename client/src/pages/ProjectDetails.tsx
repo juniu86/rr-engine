@@ -84,6 +84,28 @@ export default function ProjectDetails() {
     },
   });
 
+  const generateProposal = trpc.document.generateProposal.useMutation({
+    onSuccess: (data) => {
+      toast.success("Proposta Comercial gerada com sucesso!");
+      if (data.url) window.open(data.url, '_blank');
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao gerar proposta: " + error.message);
+    },
+  });
+
+  const generateMemoria = trpc.document.generateMemoria.useMutation({
+    onSuccess: (data) => {
+      toast.success("Memória de Cálculo gerada com sucesso!");
+      if (data.url) window.open(data.url, '_blank');
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao gerar memória: " + error.message);
+    },
+  });
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -372,7 +394,32 @@ export default function ProjectDetails() {
                   <div className="text-center py-8 text-muted-foreground">
                     <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhum documento gerado.</p>
-                    <p className="text-sm">Complete o processamento para gerar os documentos.</p>
+                    <p className="text-sm mb-4">Clique nos botões abaixo para gerar os documentos.</p>
+                    <div className="flex gap-4 justify-center">
+                      <Button 
+                        onClick={() => generateProposal.mutate({ projectId })}
+                        disabled={generateProposal.isPending}
+                      >
+                        {generateProposal.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileText className="mr-2 h-4 w-4" />
+                        )}
+                        Gerar Proposta Comercial
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => generateMemoria.mutate({ projectId })}
+                        disabled={generateMemoria.isPending}
+                      >
+                        {generateMemoria.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Calculator className="mr-2 h-4 w-4" />
+                        )}
+                        Gerar Memória de Cálculo
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>

@@ -1,0 +1,55 @@
+{
+  "query": "SELECT id, projectId, description, quantity, unit, unitCostTotal, finalPrice FROM budget_items WHERE projectId = 30004 LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute SELECT id, projectId, description, quantity, unit, unitCostTotal, finalPrice FROM budget_items WHERE projectId = 30004 LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "projectId": "30004",
+      "description": "Lavagem de fachada com hidrojato de alta pressão",
+      "quantity": "500.0000",
+      "unit": "m2",
+      "unitCostTotal": "6.20",
+      "finalPrice": "NULL"
+    },
+    {
+      "id": "2",
+      "projectId": "30004",
+      "description": "Raspagem e remoção de pintura ou revestimento solto",
+      "quantity": "500.0000",
+      "unit": "m2",
+      "unitCostTotal": "10.70",
+      "finalPrice": "NULL"
+    },
+    {
+      "id": "3",
+      "projectId": "30004",
+      "description": "Aplicação de massa niveladora (Massa Corrida Acrílica)",
+      "quantity": "500.0000",
+      "unit": "m2",
+      "unitCostTotal": "21.20",
+      "finalPrice": "NULL"
+    },
+    {
+      "id": "4",
+      "projectId": "30004",
+      "description": "Aplicação de Selador Acrílico Pigmentado",
+      "quantity": "500.0000",
+      "unit": "m2",
+      "unitCostTotal": "11.70",
+      "finalPrice": "NULL"
+    },
+    {
+      "id": "5",
+      "projectId": "30004",
+      "description": "Pintura de acabamento com Tinta Acrílica Premium (2 demãos)",
+      "quantity": "500.0000",
+      "unit": "m2",
+      "unitCostTotal": "29.20",
+      "finalPrice": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tprojectId\tdescription\tquantity\tunit\tunitCostTotal\tfinalPrice\n1\t30004\tLavagem de fachada com hidrojato de alta pressão\t500.0000\tm2\t6.20\tNULL\n2\t30004\tRaspagem e remoção de pintura ou revestimento solto\t500.0000\tm2\t10.70\tNULL\n3\t30004\tAplicação de massa niveladora (Massa Corrida Acrílica)\t500.0000\tm2\t21.20\tNULL\n4\t30004\tAplicação de Selador Acrílico Pigmentado\t500.0000\tm2\t11.70\tNULL\n5\t30004\tPintura de acabamento com Tinta Acrílica Premium (2 demãos)\t500.0000\tm2\t29.20\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 102
+}

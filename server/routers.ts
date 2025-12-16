@@ -233,6 +233,102 @@ export const appRouter = router({
             
             results[agentType] = output;
             
+            // Salvar itens de orçamento após execução do orçamentista
+            if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
+              const rawItems = (output as any).budgetItems;
+              const budgetItemsToSave = rawItems.map((item: any) => {
+                const quantity = Number(item.quantity) || 0;
+                const unitCostTotal = Number(item.unitCostTotal) || 0;
+                const totalCost = quantity * unitCostTotal;
+                // Aplicar BDI padrão de 55% para obras
+                const bdiPercent = 0.55;
+                const bdiAmount = totalCost * bdiPercent;
+                const finalPrice = totalCost + bdiAmount;
+                
+                return {
+                  projectId: input.projectId,
+                  category: item.category || 'Geral',
+                  code: item.code || '',
+                  description: item.description,
+                  unit: item.unit,
+                  quantity: String(quantity),
+                  unitCostMaterial: String(item.unitCostMaterial || 0),
+                  unitCostLabor: String(item.unitCostLabor || 0),
+                  unitCostLogistics: String(item.unitCostLogistics || 0),
+                  unitCostTotal: String(unitCostTotal),
+                  totalCost: String(totalCost),
+                  bdiAmount: String(bdiAmount),
+                  finalPrice: String(finalPrice),
+                  source: item.source || 'Estimativa',
+                  sourceCode: item.sourceCode || null,
+                  sourceDate: item.sourceDate || null,
+                };
+              });
+              await db.createBudgetItems(budgetItemsToSave);
+            }
+            
+            // Salvar custos logísticos após execução do agente de logística
+            if (agentType === 'logistica' && output && (output as any).costs) {
+              try {
+                const rawCosts = (output as any).costs;
+                const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
+                const costsToSave = rawCosts.map((cost: any) => {
+                  // Mapear categoria para valor válido do enum
+                  let category: typeof validCategories[number] = 'outros';
+                  const rawCategory = (cost.category || '').toLowerCase();
+                  if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
+                  else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
+                  else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
+                  else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
+                  else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
+                  else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
+                  
+                  return {
+                    projectId: input.projectId,
+                    category,
+                    description: String(cost.description || 'Custo logístico').substring(0, 1000),
+                    quantity: String(Number(cost.quantity) || 1),
+                    unit: String(cost.unit || 'un').substring(0, 20),
+                    unitCost: String(Number(cost.unitCost) || 0),
+                    totalCost: String(Number(cost.totalCost) || 0),
+                  };
+                });
+                console.log('[Logistica] Saving costs:', JSON.stringify(costsToSave, null, 2));
+                await db.createLogisticsCosts(costsToSave);
+              } catch (logisticsError) {
+                console.error('[Logistica] Error saving costs:', logisticsError);
+                // Não interromper o fluxo, apenas logar o erro
+              }
+            }
+            
+            // Salvar cronograma após execução do agente de gestão
+            if (agentType === 'gestao_projetos' && output && (output as any).schedule) {
+              const rawSchedule = (output as any).schedule;
+              const scheduleToSave = rawSchedule.map((item: any) => ({
+                projectId: input.projectId,
+                description: item.activity || item.description || 'Atividade',
+                startWeek: item.startWeek,
+                duration: item.endWeek - item.startWeek + 1,
+                dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
+              }));
+              await db.createScheduleItems(scheduleToSave);
+            }
+            
+            // Salvar fluxo de caixa após execução do agente financeiro
+            if (agentType === 'financeiro' && output && (output as any).cashFlow) {
+              const rawCashFlow = (output as any).cashFlow;
+              const cashFlowToSave = rawCashFlow.map((item: any) => ({
+                projectId: input.projectId,
+                weekNumber: item.week,
+                plannedExpense: String(item.outflow || 0),
+                plannedIncome: String(item.inflow || 0),
+                actualExpense: null,
+                actualIncome: null,
+                cumulativeBalance: String(item.cumulativeBalance || 0),
+              }));
+              await db.createCashFlowItems(cashFlowToSave);
+            }
+            
             await db.updateAgentExecution(execution.id, {
               status: "completed",
               output: output as any,

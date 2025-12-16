@@ -66,7 +66,7 @@ export async function generateMemoriaCalculo(
 
 // Generate HTML content for proposal
 function generateProposalHTML(project: Project, budgetItems: BudgetItem[], juridicaOutput: any): string {
-  const totalPrice = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
+  const totalPrice = budgetItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0)), 0);
   
   return `
 <!DOCTYPE html>
@@ -201,7 +201,7 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
           <td>${item.unit || "-"}</td>
           <td>${Number(item.quantity || 0).toFixed(2)}</td>
           <td class="price">R$ ${Number(item.unitCostTotal || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-          <td class="price">R$ ${Number(item.finalPrice || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+          <td class="price">R$ ${(Number(item.quantity || 0) * Number(item.unitCostTotal || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
         </tr>
         `).join("")}
         <tr class="total-row">

@@ -47,5 +47,9 @@
 - [x] Validação de conformidade com NBRs
 
 ## Bugs
-- [ ] Botão "Novo Orçamento" na Home redireciona para login desnecessariamente
+- [x] Botão "Novo Orçamento" na Home redireciona para login desnecessáriamente (resolvido - era problema de sessão)
 - [x] Erro "Cannot read properties of undefined (reading '0')" ao executar agente Engenheiro Técnico
+- [x] Itens de orçamento não estão sendo salvos no banco após execução dos agentes (aba Orçamento vazia)
+- [x] Fluxo de Caixa mostrando valores zerados (dados não sendo populados)
+- [x] Aba Documentos sem botões para gerar Proposta Comercial e Memória de Cálculo
+- [x] Valores zerados na Proposta Comercial (cálculo corrigido)

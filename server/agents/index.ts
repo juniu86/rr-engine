@@ -33,46 +33,82 @@ abstract class BaseAgent<TInput, TOutput> {
   abstract getOutputSchema(): object;
   
   async execute(input: TInput): Promise<TOutput> {
-    const response = await invokeLLM({
-      messages: [
-        { role: "system", content: this.getSystemPrompt() },
-        { role: "user", content: this.getUserPrompt(input) },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: `${this.type}_output`,
-          strict: true,
-          schema: this.getOutputSchema() as Record<string, unknown>,
+    console.log(`[Agent ${this.name}] Starting execution...`);
+    
+    let response;
+    try {
+      response = await invokeLLM({
+        messages: [
+          { role: "system", content: this.getSystemPrompt() },
+          { role: "user", content: this.getUserPrompt(input) },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: `${this.type}_output`,
+            strict: true,
+            schema: this.getOutputSchema() as Record<string, unknown>,
+          },
         },
-      },
-    });
+      });
+    } catch (llmError) {
+      console.error(`[Agent ${this.name}] LLM call failed:`, llmError);
+      throw llmError;
+    }
     
     // Handle response safely
     if (!response || !response.choices || !Array.isArray(response.choices) || response.choices.length === 0) {
+      console.error(`[Agent ${this.name}] Invalid response structure:`, JSON.stringify(response).substring(0, 500));
       throw new Error(`Agent ${this.name} returned invalid response structure`);
     }
     
     const choice = response.choices[0];
+    
     if (!choice || !choice.message) {
+      console.error(`[Agent ${this.name}] Empty choice:`, JSON.stringify(choice));
       throw new Error(`Agent ${this.name} returned empty choice`);
     }
     
+    // Get content - handle both string and object with reasoning_content
     let content = choice.message.content;
+    const messageAny = choice.message as any;
+    
+    // If content is empty but reasoning_content exists, the model might have put JSON in reasoning
+    // But typically content should have the JSON output
+    console.log(`[Agent ${this.name}] Message keys:`, Object.keys(choice.message));
     
     // Handle array content (multimodal response)
     if (Array.isArray(content)) {
+      console.log(`[Agent ${this.name}] Content is array, extracting text part...`);
       const textPart = content.find((part) => part.type === 'text') as { type: 'text'; text: string } | undefined;
       content = textPart?.text || '';
     }
     
+    // If content is still empty, check if there's reasoning_content with JSON
+    if ((!content || content === '') && messageAny.reasoning_content) {
+      console.log(`[Agent ${this.name}] Content empty, checking reasoning_content...`);
+      // Try to extract JSON from reasoning_content
+      const reasoningContent = messageAny.reasoning_content;
+      const jsonMatch = reasoningContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        content = jsonMatch[0];
+      }
+    }
+    
     if (!content || typeof content !== 'string') {
+      console.error(`[Agent ${this.name}] Invalid content:`, content);
+      console.error(`[Agent ${this.name}] Full message:`, JSON.stringify(choice.message).substring(0, 1000));
       throw new Error(`Agent ${this.name} returned empty or invalid content`);
     }
     
+    console.log(`[Agent ${this.name}] Content preview:`, content.substring(0, 200));
+    
     try {
-      return JSON.parse(content) as TOutput;
+      const parsed = JSON.parse(content) as TOutput;
+      console.log(`[Agent ${this.name}] Successfully parsed output`);
+      return parsed;
     } catch (parseError) {
+      console.error(`[Agent ${this.name}] JSON parse error:`, parseError);
       throw new Error(`Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`);
     }
   }
@@ -124,13 +160,13 @@ Retorne um JSON com:
             type: "object",
             properties: {
               description: { type: "string" },
-              quantity: { type: ["number", "null"] },
-              unit: { type: ["string", "null"] },
-              specifications: { type: ["string", "null"] },
-              nbrReference: { type: ["string", "null"] },
+              quantity: { type: "number" },
+              unit: { type: "string" },
+              specifications: { type: "string" },
+              nbrReference: { type: "string" },
               isPendingVistoria: { type: "boolean" },
             },
-            required: ["description", "isPendingVistoria"],
+            required: ["description", "quantity", "unit", "specifications", "nbrReference", "isPendingVistoria"],
             additionalProperties: false,
           },
         },
