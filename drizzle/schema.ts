@@ -1,17 +1,8 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean } from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
+// ==================== USERS ====================
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -25,4 +16,174 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// ==================== PROJECTS ====================
+export const projects = mysqlTable("projects", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  contractType: mysqlEnum("contractType", ["manutencao", "obra"]).notNull(),
+  location: varchar("location", { length: 500 }),
+  restrictions: text("restrictions"),
+  memorialDescritivo: text("memorialDescritivo"),
+  memorialFileUrl: varchar("memorialFileUrl", { length: 1000 }),
+  status: mysqlEnum("status", ["draft", "processing", "review", "approved", "rejected"]).default("draft").notNull(),
+  currentAgentId: int("currentAgentId").default(1),
+  totalCostDirect: decimal("totalCostDirect", { precision: 15, scale: 2 }),
+  totalCostIndirect: decimal("totalCostIndirect", { precision: 15, scale: 2 }),
+  totalTaxes: decimal("totalTaxes", { precision: 15, scale: 2 }),
+  totalBdi: decimal("totalBdi", { precision: 15, scale: 2 }),
+  totalPrice: decimal("totalPrice", { precision: 15, scale: 2 }),
+  estimatedDuration: int("estimatedDuration"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type InsertProject = typeof projects.$inferInsert;
+
+// ==================== AGENT EXECUTIONS ====================
+export const agentExecutions = mysqlTable("agent_executions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  agentType: mysqlEnum("agentType", [
+    "engenheiro_tecnico",
+    "logistica",
+    "orcamentista",
+    "tributario",
+    "comercial",
+    "gestao_projetos",
+    "financeiro",
+    "juridico",
+    "board"
+  ]).notNull(),
+  agentOrder: int("agentOrder").notNull(),
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed", "needs_review"]).default("pending").notNull(),
+  input: json("input"),
+  output: json("output"),
+  errors: json("errors"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AgentExecution = typeof agentExecutions.$inferSelect;
+export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
+
+// ==================== BUDGET ITEMS ====================
+export const budgetItems = mysqlTable("budget_items", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  parentId: int("parentId"),
+  category: varchar("category", { length: 100 }),
+  code: varchar("code", { length: 50 }),
+  description: text("description").notNull(),
+  unit: varchar("unit", { length: 20 }),
+  quantity: decimal("quantity", { precision: 15, scale: 4 }),
+  unitCostMaterial: decimal("unitCostMaterial", { precision: 15, scale: 2 }),
+  unitCostLabor: decimal("unitCostLabor", { precision: 15, scale: 2 }),
+  unitCostLogistics: decimal("unitCostLogistics", { precision: 15, scale: 2 }),
+  unitCostTotal: decimal("unitCostTotal", { precision: 15, scale: 2 }),
+  totalCost: decimal("totalCost", { precision: 15, scale: 2 }),
+  taxType: mysqlEnum("taxType", ["iss", "icms", "both", "none"]),
+  taxAmount: decimal("taxAmount", { precision: 15, scale: 2 }),
+  bdiAmount: decimal("bdiAmount", { precision: 15, scale: 2 }),
+  finalPrice: decimal("finalPrice", { precision: 15, scale: 2 }),
+  source: varchar("source", { length: 100 }),
+  sourceCode: varchar("sourceCode", { length: 50 }),
+  sourceDate: varchar("sourceDate", { length: 20 }),
+  isPendingReview: boolean("isPendingReview").default(false),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BudgetItem = typeof budgetItems.$inferSelect;
+export type InsertBudgetItem = typeof budgetItems.$inferInsert;
+
+// ==================== LOGISTICS COSTS ====================
+export const logisticsCosts = mysqlTable("logistics_costs", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  category: mysqlEnum("category", ["frete", "bota_fora", "deslocamento", "hospedagem", "alimentacao", "equipamentos", "outros"]).notNull(),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 15, scale: 4 }),
+  unit: varchar("unit", { length: 20 }),
+  unitCost: decimal("unitCost", { precision: 15, scale: 2 }),
+  totalCost: decimal("totalCost", { precision: 15, scale: 2 }),
+  source: varchar("source", { length: 100 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LogisticsCost = typeof logisticsCosts.$inferSelect;
+export type InsertLogisticsCost = typeof logisticsCosts.$inferInsert;
+
+// ==================== SCHEDULE ITEMS ====================
+export const scheduleItems = mysqlTable("schedule_items", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  budgetItemId: int("budgetItemId"),
+  phase: varchar("phase", { length: 100 }),
+  description: text("description").notNull(),
+  startWeek: int("startWeek"),
+  endWeek: int("endWeek"),
+  duration: int("duration"),
+  percentComplete: decimal("percentComplete", { precision: 5, scale: 2 }).default("0"),
+  dependencies: json("dependencies"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ScheduleItem = typeof scheduleItems.$inferSelect;
+export type InsertScheduleItem = typeof scheduleItems.$inferInsert;
+
+// ==================== CASH FLOW ====================
+export const cashFlowItems = mysqlTable("cash_flow_items", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  weekNumber: int("weekNumber").notNull(),
+  plannedExpense: decimal("plannedExpense", { precision: 15, scale: 2 }),
+  plannedIncome: decimal("plannedIncome", { precision: 15, scale: 2 }),
+  cumulativeExpense: decimal("cumulativeExpense", { precision: 15, scale: 2 }),
+  cumulativeIncome: decimal("cumulativeIncome", { precision: 15, scale: 2 }),
+  cashBalance: decimal("cashBalance", { precision: 15, scale: 2 }),
+  hasAlert: boolean("hasAlert").default(false),
+  alertMessage: text("alertMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CashFlowItem = typeof cashFlowItems.$inferSelect;
+export type InsertCashFlowItem = typeof cashFlowItems.$inferInsert;
+
+// ==================== GENERATED DOCUMENTS ====================
+export const generatedDocuments = mysqlTable("generated_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  documentType: mysqlEnum("documentType", ["proposta_comercial", "memoria_calculo"]).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: varchar("fileUrl", { length: 1000 }).notNull(),
+  fileKey: varchar("fileKey", { length: 500 }).notNull(),
+  version: int("version").default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type GeneratedDocument = typeof generatedDocuments.$inferSelect;
+export type InsertGeneratedDocument = typeof generatedDocuments.$inferInsert;
+
+// ==================== PRICE CACHE ====================
+export const priceCache = mysqlTable("price_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  source: mysqlEnum("source", ["sinapi", "pini", "mercado"]).notNull(),
+  code: varchar("code", { length: 100 }).notNull(),
+  description: text("description"),
+  unit: varchar("unit", { length: 20 }),
+  price: decimal("price", { precision: 15, scale: 2 }),
+  region: varchar("region", { length: 100 }),
+  referenceDate: varchar("referenceDate", { length: 20 }),
+  rawData: json("rawData"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"),
+});
+
+export type PriceCache = typeof priceCache.$inferSelect;
+export type InsertPriceCache = typeof priceCache.$inferInsert;

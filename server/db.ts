@@ -1,11 +1,20 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { 
+  InsertUser, users, 
+  projects, InsertProject, Project,
+  agentExecutions, InsertAgentExecution,
+  budgetItems, InsertBudgetItem,
+  logisticsCosts, InsertLogisticsCost,
+  scheduleItems, InsertScheduleItem,
+  cashFlowItems, InsertCashFlowItem,
+  generatedDocuments, InsertGeneratedDocument,
+  priceCache, InsertPriceCache
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,6 +27,7 @@ export async function getDb() {
   return _db;
 }
 
+// ==================== USER QUERIES ====================
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
@@ -30,9 +40,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
+    const values: InsertUser = { openId: user.openId };
     const updateSet: Record<string, unknown> = {};
 
     const textFields = ["name", "email", "loginMethod"] as const;
@@ -68,9 +76,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -79,14 +85,185 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ==================== PROJECT QUERIES ====================
+export async function createProject(data: InsertProject): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(projects).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getProjectById(id: number): Promise<Project | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getProjectsByUserId(userId: number): Promise<Project[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.createdAt));
+}
+
+export async function updateProject(id: number, data: Partial<InsertProject>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(projects).set(data).where(eq(projects.id, id));
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(projects).where(eq(projects.id, id));
+}
+
+// ==================== AGENT EXECUTION QUERIES ====================
+export async function createAgentExecution(data: InsertAgentExecution): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(agentExecutions).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getAgentExecutionsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(agentExecutions).where(eq(agentExecutions.projectId, projectId)).orderBy(agentExecutions.agentOrder);
+}
+
+export async function updateAgentExecution(id: number, data: Partial<InsertAgentExecution>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(agentExecutions).set(data).where(eq(agentExecutions.id, id));
+}
+
+// ==================== BUDGET ITEM QUERIES ====================
+export async function createBudgetItems(items: InsertBudgetItem[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  if (items.length > 0) {
+    await db.insert(budgetItems).values(items);
+  }
+}
+
+export async function getBudgetItemsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(budgetItems).where(eq(budgetItems.projectId, projectId));
+}
+
+export async function deleteBudgetItemsByProjectId(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(budgetItems).where(eq(budgetItems.projectId, projectId));
+}
+
+// ==================== LOGISTICS COST QUERIES ====================
+export async function createLogisticsCosts(costs: InsertLogisticsCost[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  if (costs.length > 0) {
+    await db.insert(logisticsCosts).values(costs);
+  }
+}
+
+export async function getLogisticsCostsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(logisticsCosts).where(eq(logisticsCosts.projectId, projectId));
+}
+
+// ==================== SCHEDULE ITEM QUERIES ====================
+export async function createScheduleItems(items: InsertScheduleItem[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  if (items.length > 0) {
+    await db.insert(scheduleItems).values(items);
+  }
+}
+
+export async function getScheduleItemsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(scheduleItems).where(eq(scheduleItems.projectId, projectId));
+}
+
+// ==================== CASH FLOW QUERIES ====================
+export async function createCashFlowItems(items: InsertCashFlowItem[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  if (items.length > 0) {
+    await db.insert(cashFlowItems).values(items);
+  }
+}
+
+export async function getCashFlowItemsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(cashFlowItems).where(eq(cashFlowItems.projectId, projectId)).orderBy(cashFlowItems.weekNumber);
+}
+
+// ==================== GENERATED DOCUMENTS QUERIES ====================
+export async function createGeneratedDocument(data: InsertGeneratedDocument): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(generatedDocuments).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getGeneratedDocumentsByProjectId(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(generatedDocuments).where(eq(generatedDocuments.projectId, projectId)).orderBy(desc(generatedDocuments.createdAt));
+}
+
+// ==================== PRICE CACHE QUERIES ====================
+export async function getCachedPrice(source: "sinapi" | "pini" | "mercado", code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select().from(priceCache)
+    .where(and(eq(priceCache.source, source), eq(priceCache.code, code)))
+    .limit(1);
+  
+  return result[0];
+}
+
+export async function setCachedPrice(data: InsertPriceCache): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.insert(priceCache).values(data).onDuplicateKeyUpdate({
+    set: {
+      price: data.price,
+      description: data.description,
+      rawData: data.rawData,
+      expiresAt: data.expiresAt,
+    }
+  });
+}
