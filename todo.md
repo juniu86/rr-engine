@@ -45,3 +45,7 @@
 ## Qualidade
 - [x] Testes unitários do sistema de agentes
 - [x] Validação de conformidade com NBRs
+
+## Bugs
+- [ ] Botão "Novo Orçamento" na Home redireciona para login desnecessariamente
+- [x] Erro "Cannot read properties of undefined (reading '0')" ao executar agente Engenheiro Técnico

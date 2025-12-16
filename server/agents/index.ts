@@ -48,10 +48,33 @@ abstract class BaseAgent<TInput, TOutput> {
       },
     });
     
-    const content = response.choices[0]?.message?.content;
-    if (!content || typeof content !== 'string') throw new Error(`Agent ${this.name} returned empty response`);
+    // Handle response safely
+    if (!response || !response.choices || !Array.isArray(response.choices) || response.choices.length === 0) {
+      throw new Error(`Agent ${this.name} returned invalid response structure`);
+    }
     
-    return JSON.parse(content) as TOutput;
+    const choice = response.choices[0];
+    if (!choice || !choice.message) {
+      throw new Error(`Agent ${this.name} returned empty choice`);
+    }
+    
+    let content = choice.message.content;
+    
+    // Handle array content (multimodal response)
+    if (Array.isArray(content)) {
+      const textPart = content.find((part) => part.type === 'text') as { type: 'text'; text: string } | undefined;
+      content = textPart?.text || '';
+    }
+    
+    if (!content || typeof content !== 'string') {
+      throw new Error(`Agent ${this.name} returned empty or invalid content`);
+    }
+    
+    try {
+      return JSON.parse(content) as TOutput;
+    } catch (parseError) {
+      throw new Error(`Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`);
+    }
   }
 }
 
