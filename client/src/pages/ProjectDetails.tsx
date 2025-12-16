@@ -28,10 +28,14 @@ import {
   ArrowLeft,
   Loader2,
   Download,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  Table
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Streamdown } from "streamdown";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useState } from "react";
 
 const agentIcons: Record<string, any> = {
   engenheiro_tecnico: FileText,
@@ -239,6 +243,25 @@ export default function ProjectDetails() {
                       {execution.status === "completed" && output && (
                         <div className="text-xs space-y-1">
                           {renderAgentSummary(execution.agentType, output)}
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button size="sm" variant="ghost" className="mt-2 w-full text-amber-500 hover:text-amber-400">
+                                <Eye className="mr-1 h-3 w-3" />
+                                Ver Detalhes
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                              <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                  <Icon className="h-5 w-5 text-amber-500" />
+                                  {execution.agentOrder}. {getAgentName(execution.agentType)}
+                                </DialogTitle>
+                              </DialogHeader>
+                              <div className="mt-4">
+                                {renderAgentDetails(execution.agentType, output)}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
                         </div>
                       )}
                       {execution.status === "failed" && (
@@ -395,7 +418,7 @@ export default function ProjectDetails() {
                     <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhum documento gerado.</p>
                     <p className="text-sm mb-4">Clique nos botões abaixo para gerar os documentos.</p>
-                    <div className="flex gap-4 justify-center">
+                    <div className="flex flex-wrap gap-4 justify-center">
                       <Button 
                         onClick={() => generateProposal.mutate({ projectId })}
                         disabled={generateProposal.isPending}
@@ -415,9 +438,9 @@ export default function ProjectDetails() {
                         {generateMemoria.isPending ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
-                          <Calculator className="mr-2 h-4 w-4" />
+                          <Table className="mr-2 h-4 w-4" />
                         )}
-                        Gerar Memória de Cálculo
+                        Gerar Planilha Aberta (Excel)
                       </Button>
                     </div>
                   </div>
@@ -538,9 +561,12 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
         </>
       );
     case "comercial":
+      // BDI pode vir como decimal (0.55) ou percentual (55)
+      const bdiValue = output.adjustedBdi || output.baseBdi || 0;
+      const bdiPercent = bdiValue > 1 ? bdiValue : bdiValue * 100;
       return (
         <>
-          <p>BDI: <strong>{((output.adjustedBdi || 0) * 100).toFixed(1)}%</strong></p>
+          <p>BDI: <strong>{bdiPercent.toFixed(1)}%</strong></p>
           <p>Preço: <strong>R$ {(output.finalPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
         </>
       );
@@ -576,5 +602,350 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
       );
     default:
       return null;
+  }
+}
+
+function renderAgentDetails(type: string, output: any): React.ReactNode {
+  switch (type) {
+    case "engenheiro_tecnico":
+      return (
+        <div className="space-y-4">
+          <div>
+            <h4 className="font-semibold mb-2">Itens Identificados ({output.items?.length || 0})</h4>
+            <div className="space-y-2">
+              {output.items?.map((item: any, i: number) => (
+                <div key={i} className="p-3 bg-muted rounded-lg">
+                  <p className="font-medium">{item.description}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Unidade: {item.unit} | Quantidade: {item.quantity} | Complexidade: {item.complexity}
+                  </p>
+                  {item.nbr && <p className="text-xs text-amber-500">NBR: {item.nbr}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+          {output.pendingItems?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2 text-amber-500">Pendentes de Vistoria ({output.pendingItems?.length})</h4>
+              <ul className="list-disc list-inside space-y-1">
+                {output.pendingItems?.map((item: string, i: number) => (
+                  <li key={i} className="text-sm">{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {output.technicalNotes && (
+            <div>
+              <h4 className="font-semibold mb-2">Notas Técnicas</h4>
+              <p className="text-sm text-muted-foreground">{output.technicalNotes}</p>
+            </div>
+          )}
+        </div>
+      );
+
+    case "logistica":
+      return (
+        <div className="space-y-4">
+          <div>
+            <h4 className="font-semibold mb-2">Custos Logísticos ({output.costs?.length || 0})</h4>
+            <div className="space-y-2">
+              {output.costs?.map((cost: any, i: number) => (
+                <div key={i} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                  <div>
+                    <p className="font-medium">{cost.description}</p>
+                    <p className="text-xs text-muted-foreground">{cost.category}</p>
+                  </div>
+                  <p className="font-semibold">R$ {(cost.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="p-4 bg-amber-500/10 rounded-lg">
+            <p className="text-lg font-bold">Total Logística: R$ {(output.totalLogisticsCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          </div>
+          {output.mobilizationDays && (
+            <p className="text-sm">Prazo de Mobilização: <strong>{output.mobilizationDays} dias</strong></p>
+          )}
+        </div>
+      );
+
+    case "orcamentista":
+      return (
+        <div className="space-y-4">
+          <div>
+            <h4 className="font-semibold mb-2">Itens Orçados ({output.items?.length || 0})</h4>
+            <div className="space-y-2">
+              {output.items?.map((item: any, i: number) => (
+                <div key={i} className="p-3 bg-muted rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{item.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Fonte: {item.source} | Código: {item.sourceCode}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">R$ {(item.totalCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      <p className="text-xs text-muted-foreground">{item.quantity} {item.unit} x R$ {item.unitPrice}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Custo Direto</p>
+              <p className="text-xl font-bold">R$ {(output.totalDirectCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Custo Indireto</p>
+              <p className="text-xl font-bold">R$ {(output.totalIndirectCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+          </div>
+        </div>
+      );
+
+    case "tributario":
+      return (
+        <div className="space-y-4">
+          <div>
+            <h4 className="font-semibold mb-2">Classificação Tributária</h4>
+            <div className="space-y-2">
+              {output.taxes?.map((tax: any, i: number) => (
+                <div key={i} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                  <div>
+                    <p className="font-medium">{tax.type}</p>
+                    <p className="text-xs text-muted-foreground">Alíquota: {(tax.rate * 100).toFixed(2)}%</p>
+                  </div>
+                  <p className="font-semibold">R$ {(tax.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="p-4 bg-amber-500/10 rounded-lg">
+            <p className="text-lg font-bold">Total Impostos: R$ {(output.totalTaxes || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          </div>
+          {output.alerts?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2 text-amber-500">Alertas Fiscais ({output.alerts?.length})</h4>
+              <ul className="list-disc list-inside space-y-1">
+                {output.alerts?.map((alert: string, i: number) => (
+                  <li key={i} className="text-sm">{alert}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      );
+
+    case "comercial":
+      const bdiValue = output.adjustedBdi || output.baseBdi || 0;
+      const bdiPercent = bdiValue > 1 ? bdiValue : bdiValue * 100;
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">BDI Base</p>
+              <p className="text-xl font-bold">{((output.baseBdi || 0) > 1 ? output.baseBdi : (output.baseBdi || 0) * 100).toFixed(1)}%</p>
+            </div>
+            <div className="p-4 bg-amber-500/10 rounded-lg">
+              <p className="text-sm text-muted-foreground">BDI Ajustado</p>
+              <p className="text-xl font-bold text-amber-500">{bdiPercent.toFixed(1)}%</p>
+            </div>
+          </div>
+          {output.bdiJustification && (
+            <div>
+              <h4 className="font-semibold mb-2">Justificativa do BDI</h4>
+              <p className="text-sm text-muted-foreground">{output.bdiJustification}</p>
+            </div>
+          )}
+          <div className="p-4 bg-green-500/10 rounded-lg">
+            <p className="text-sm text-muted-foreground">Preço Final de Venda</p>
+            <p className="text-2xl font-bold text-green-500">R$ {(output.finalPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          </div>
+        </div>
+      );
+
+    case "gestao_projetos":
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Duração Total</p>
+              <p className="text-xl font-bold">{output.totalDuration || 0} semanas</p>
+            </div>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Marcos</p>
+              <p className="text-xl font-bold">{output.milestones?.length || 0}</p>
+            </div>
+          </div>
+          {output.milestones?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Marcos do Projeto</h4>
+              <div className="space-y-2">
+                {output.milestones?.map((milestone: any, i: number) => (
+                  <div key={i} className="p-3 bg-muted rounded-lg">
+                    <p className="font-medium">{milestone.name}</p>
+                    <p className="text-xs text-muted-foreground">Semana {milestone.week}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {output.schedule?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Cronograma</h4>
+              <div className="space-y-2">
+                {output.schedule?.map((item: any, i: number) => (
+                  <div key={i} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                    <p className="font-medium">{item.activity}</p>
+                    <p className="text-sm">Semanas {item.startWeek} - {item.endWeek}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+
+    case "financeiro":
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Exposição Máxima</p>
+              <p className="text-xl font-bold">R$ {(output.maxExposure || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className={`p-4 rounded-lg ${output.needsAdvance ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
+              <p className="text-sm text-muted-foreground">Adiantamento</p>
+              <p className={`text-xl font-bold ${output.needsAdvance ? 'text-amber-500' : 'text-green-500'}`}>
+                {output.needsAdvance ? `R$ ${(output.suggestedAdvance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Não necessário'}
+              </p>
+            </div>
+          </div>
+          {output.cashFlow?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Fluxo de Caixa Semanal</h4>
+              <div className="space-y-2">
+                {output.cashFlow?.map((item: any, i: number) => (
+                  <div key={i} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                    <p className="font-medium">Semana {item.week}</p>
+                    <div className="flex gap-4 text-sm">
+                      <span className="text-red-500">- R$ {(item.expense || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-green-500">+ R$ {(item.income || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      <span className={item.balance < 0 ? 'text-red-500 font-bold' : 'font-semibold'}>
+                        = R$ {(item.balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {output.alerts?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2 text-amber-500">Alertas Financeiros</h4>
+              <ul className="list-disc list-inside space-y-1">
+                {output.alerts?.map((alert: string, i: number) => (
+                  <li key={i} className="text-sm">{alert}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      );
+
+    case "juridico":
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Validade da Proposta</p>
+              <p className="text-xl font-bold">{output.validityDays || 0} dias</p>
+            </div>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Cláusulas</p>
+              <p className="text-xl font-bold">{output.clauses?.length || 0}</p>
+            </div>
+          </div>
+          {output.clauses?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Cláusulas Contratuais</h4>
+              <div className="space-y-3">
+                {output.clauses?.map((clause: any, i: number) => (
+                  <div key={i} className="p-3 bg-muted rounded-lg">
+                    <p className="font-medium text-amber-500">{clause.title}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{clause.content}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {output.riskMitigations?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Mitigação de Riscos</h4>
+              <ul className="list-disc list-inside space-y-1">
+                {output.riskMitigations?.map((risk: string, i: number) => (
+                  <li key={i} className="text-sm">{risk}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      );
+
+    case "board":
+      return (
+        <div className="space-y-4">
+          <div className={`p-4 rounded-lg ${output.approved ? 'bg-green-500/10' : 'bg-amber-500/10'}`}>
+            <p className="text-sm text-muted-foreground">Status de Aprovação</p>
+            <p className={`text-2xl font-bold ${output.approved ? 'text-green-500' : 'text-amber-500'}`}>
+              {output.approved ? 'APROVADO' : 'EM REVISÃO'}
+            </p>
+          </div>
+          {output.issues?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2 text-amber-500">Observações do Board ({output.issues?.length})</h4>
+              <div className="space-y-2">
+                {output.issues?.map((issue: any, i: number) => (
+                  <div key={i} className="p-3 bg-muted rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <span className={`px-2 py-0.5 text-xs rounded ${
+                        issue.severity === 'high' ? 'bg-red-500/20 text-red-500' :
+                        issue.severity === 'medium' ? 'bg-amber-500/20 text-amber-500' :
+                        'bg-blue-500/20 text-blue-500'
+                      }`}>
+                        {issue.severity === 'high' ? 'Alta' : issue.severity === 'medium' ? 'Média' : 'Baixa'}
+                      </span>
+                      <div>
+                        <p className="font-medium">{issue.agent}</p>
+                        <p className="text-sm text-muted-foreground">{issue.issue}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {output.recommendations?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Recomendações</h4>
+              <ul className="list-disc list-inside space-y-1">
+                {output.recommendations?.map((rec: string, i: number) => (
+                  <li key={i} className="text-sm">{rec}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      );
+
+    default:
+      return (
+        <div className="p-4 bg-muted rounded-lg">
+          <pre className="text-xs overflow-auto">{JSON.stringify(output, null, 2)}</pre>
+        </div>
+      );
   }
 }

@@ -317,15 +317,21 @@ export const appRouter = router({
             // Salvar fluxo de caixa após execução do agente financeiro
             if (agentType === 'financeiro' && output && (output as any).cashFlow) {
               const rawCashFlow = (output as any).cashFlow;
-              const cashFlowToSave = rawCashFlow.map((item: any) => ({
-                projectId: input.projectId,
-                weekNumber: item.week,
-                plannedExpense: String(item.outflow || 0),
-                plannedIncome: String(item.inflow || 0),
-                actualExpense: null,
-                actualIncome: null,
-                cumulativeBalance: String(item.cumulativeBalance || 0),
-              }));
+              let cumulativeBalance = 0;
+              const cashFlowToSave = rawCashFlow.map((item: any) => {
+                const expense = item.expense || item.outflow || 0;
+                const income = item.income || item.inflow || 0;
+                cumulativeBalance += income - expense;
+                return {
+                  projectId: input.projectId,
+                  weekNumber: item.week,
+                  plannedExpense: String(expense),
+                  plannedIncome: String(income),
+                  actualExpense: null,
+                  actualIncome: null,
+                  cumulativeBalance: String(item.balance || item.cumulativeBalance || cumulativeBalance),
+                };
+              });
               await db.createCashFlowItems(cashFlowToSave);
             }
             

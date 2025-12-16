@@ -53,3 +53,9 @@
 - [x] Fluxo de Caixa mostrando valores zerados (dados não sendo populados)
 - [x] Aba Documentos sem botões para gerar Proposta Comercial e Memória de Cálculo
 - [x] Valores zerados na Proposta Comercial (cálculo corrigido)
+
+## Melhorias Solicitadas
+- [x] Botão para baixar planilha aberta junto com a proposta comercial
+- [x] Modal de detalhes do agente - clicar no card abre painel com conteúdo completo (observações, análises)
+- [x] Corrigir Fluxo de Caixa zerado - dados não estão sendo exibidos
+- [x] Corrigir exibição do BDI - mostrando 6000% quando deveria ser 55%
