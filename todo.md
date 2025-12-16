@@ -59,3 +59,7 @@
 - [x] Modal de detalhes do agente - clicar no card abre painel com conteúdo completo (observações, análises)
 - [x] Corrigir Fluxo de Caixa zerado - dados não estão sendo exibidos
 - [x] Corrigir exibição do BDI - mostrando 6000% quando deveria ser 55%
+
+## Bugs Reportados
+- [x] Fluxo de Caixa - saldo acumulado não está sendo calculado (mostrando R$ 0,00)
+- [x] Proposta Comercial - planilha de custos não está sendo exibida ao gerar documento

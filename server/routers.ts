@@ -319,8 +319,8 @@ export const appRouter = router({
               const rawCashFlow = (output as any).cashFlow;
               let cumulativeBalance = 0;
               const cashFlowToSave = rawCashFlow.map((item: any) => {
-                const expense = item.expense || item.outflow || 0;
-                const income = item.income || item.inflow || 0;
+                const expense = Number(item.expense || item.outflow || 0);
+                const income = Number(item.income || item.inflow || 0);
                 cumulativeBalance += income - expense;
                 return {
                   projectId: input.projectId,
@@ -329,7 +329,8 @@ export const appRouter = router({
                   plannedIncome: String(income),
                   actualExpense: null,
                   actualIncome: null,
-                  cumulativeBalance: String(item.balance || item.cumulativeBalance || cumulativeBalance),
+                  cashBalance: String(cumulativeBalance),
+                  hasAlert: cumulativeBalance < 0,
                 };
               });
               await db.createCashFlowItems(cashFlowToSave);

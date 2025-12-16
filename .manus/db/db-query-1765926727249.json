@@ -1,0 +1,46 @@
+{
+  "query": "SELECT description, quantity, unit, unitCostTotal FROM budget_items WHERE projectId = 30008;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute SELECT description, quantity, unit, unitCostTotal FROM budget_items WHERE projectId = 30008;",
+  "rows": [
+    {
+      "description": "Preparação de Superfície Interna para Pintura (Limpeza, tratamento de fissuras até 0,5mm)",
+      "quantity": "1.0000",
+      "unit": "Serviço",
+      "unitCostTotal": "278.92"
+    },
+    {
+      "description": "Aplicação de Massa Corrida PVA (Nivelamento e correção de imperfeições)",
+      "quantity": "1.0000",
+      "unit": "Serviço",
+      "unitCostTotal": "423.92"
+    },
+    {
+      "description": "Lixamento e Remoção de Pó (Pós-massa corrida)",
+      "quantity": "1.0000",
+      "unit": "Serviço",
+      "unitCostTotal": "198.92"
+    },
+    {
+      "description": "Aplicação de Selador Acrílico (1 demão)",
+      "quantity": "1.0000",
+      "unit": "Serviço",
+      "unitCostTotal": "258.92"
+    },
+    {
+      "description": "Aplicação de Tinta Acrílica Premium (Primeira Demão)",
+      "quantity": "1.0000",
+      "unit": "Serviço",
+      "unitCostTotal": "313.92"
+    },
+    {
+      "description": "Aplicação de Tinta Acrílica Premium (Segunda Demão)",
+      "quantity": "1.0000",
+      "unit": "Serviço",
+      "unitCostTotal": "313.92"
+    }
+  ],
+  "messages": [],
+  "stdout": "description\tquantity\tunit\tunitCostTotal\nPreparação de Superfície Interna para Pintura (Limpeza, tratamento de fissuras até 0,5mm)\t1.0000\tServiço\t278.92\nAplicação de Massa Corrida PVA (Nivelamento e correção de imperfeições)\t1.0000\tServiço\t423.92\nLixamento e Remoção de Pó (Pós-massa corrida)\t1.0000\tServiço\t198.92\nAplicação de Selador Acrílico (1 demão)\t1.0000\tServiço\t258.92\nAplicação de Tinta Acrílica Premium (Primeira Demão)\t1.0000\tServiço\t313.92\nAplicação de Tinta Acrílica Premium (Segunda Demão)\t1.0000\tServiço\t313.92\n",
+  "stderr": "",
+  "execution_time_ms": 106
+}
