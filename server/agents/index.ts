@@ -365,16 +365,37 @@ REGRAS DE CLASSIFICAÇÃO:
   }
   
   getUserPrompt(input: TributarioInput): string {
+    // Calcular custo total dos itens para referência
+    const totalCost = input.budgetItems.reduce((sum, item) => {
+      const qty = Number(item.quantity) || 0;
+      const unitCost = Number(item.unitCostTotal) || 0;
+      return sum + (qty * unitCost);
+    }, 0);
+    
     return `Classifique tributariamente os seguintes itens:
 
 ITENS DO ORÇAMENTO:
 ${JSON.stringify(input.budgetItems, null, 2)}
 
+CUSTO TOTAL DOS ITENS: R$ ${totalCost.toFixed(2)}
 TIPO DE CONTRATO: ${input.contractType}
+
+INSTRUÇÕES OBRIGATÓRIAS:
+1. Para cada item, calcule o taxAmount baseado no valor do item (quantity * unitCostTotal)
+2. Use as alíquotas de referência:
+   - ISS (serviços): 5% do valor
+   - ICMS (materiais): 18% do valor
+   - PIS/COFINS: 3,65% do valor
+3. totalTaxes DEVE ser a soma de todos os taxAmount dos itens
+4. Se o custo total é R$ ${totalCost.toFixed(2)}, os impostos devem ser aproximadamente:
+   - Mínimo esperado (5%): R$ ${(totalCost * 0.05).toFixed(2)}
+   - Máximo esperado (18%): R$ ${(totalCost * 0.18).toFixed(2)}
+
+IMPORTANTE: totalTaxes NÃO pode ser zero se houver itens no orçamento!
 
 Para cada item, defina:
 - Tipo de tributo (ISS/ICMS/ambos/nenhum)
-- Valor do imposto
+- Valor do imposto (taxAmount)
 - Retenções aplicáveis`;
   }
   
@@ -434,16 +455,28 @@ COMPONENTES DO BDI:
   }
   
   getUserPrompt(input: ComercialInput): string {
+    const custoTotal = input.totalDirectCost + input.totalIndirectCost + input.totalTaxes;
     return `Defina o preço de venda para o projeto:
 
 CUSTOS:
 - Diretos: R$ ${input.totalDirectCost.toFixed(2)}
-- Indiretos: R$ ${input.totalIndirectCost.toFixed(2)}
+- Indiretos (logística): R$ ${input.totalIndirectCost.toFixed(2)}
 - Impostos: R$ ${input.totalTaxes.toFixed(2)}
+- CUSTO TOTAL: R$ ${custoTotal.toFixed(2)}
 
 TIPO DE CONTRATO: ${input.contractType}
 COMPLEXIDADE LOGÍSTICA: ${input.logisticsComplexity}
 RISCO FISCAL: ${input.fiscalRisk}
+
+FÓRMULA OBRIGATÓRIA:
+- Preço Final = Custo Total * (1 + BDI)
+- Exemplo: Se BDI = 0.55 (55%), então Preço Final = ${custoTotal.toFixed(2)} * 1.55 = ${(custoTotal * 1.55).toFixed(2)}
+
+IMPORTANTE:
+- baseBdi: valor decimal do BDI base (ex: 0.55 para 55%)
+- adjustedBdi: valor decimal do BDI ajustado (ex: 0.60 para 60%)
+- totalBdiAmount: valor monetário do BDI = Custo Total * adjustedBdi
+- finalPrice: Preço Final = Custo Total * (1 + adjustedBdi)
 
 Calcule o BDI adequado e o preço final de venda.`;
   }

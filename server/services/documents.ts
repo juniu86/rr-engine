@@ -46,9 +46,39 @@ export async function generateProposalPDF(
   juridicaOutput: any,
   comercialOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
-  // Get total sale price from comercial output or calculate from budget
-  const totalSalePrice = comercialOutput?.finalPrice || 
-    budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
+  // Calcular custo base total (sem BDI)
+  const totalBaseCost = budgetItems.reduce((sum, item) => {
+    return sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0));
+  }, 0);
+  
+  // Calcular preço de venda já salvo nos items (com BDI de 55%)
+  const totalFromItems = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
+  
+  // Preço do agente comercial
+  const comercialPrice = comercialOutput?.finalPrice || 0;
+  
+  console.log('[Proposta] Debug de valores:');
+  console.log(`  - Custo base total: R$ ${totalBaseCost.toFixed(2)}`);
+  console.log(`  - Preço dos items (BDI 55%): R$ ${totalFromItems.toFixed(2)}`);
+  console.log(`  - Preço do agente comercial: R$ ${comercialPrice.toFixed(2)}`);
+  
+  // VALIDAÇÃO: Se o preço comercial for muito maior que o esperado (> 2x custo base), usar o preço dos items
+  // Isso evita duplicação caso o agente comercial tenha calculado errado
+  let totalSalePrice: number;
+  const maxExpectedPrice = totalBaseCost * 2.5; // Máximo razoável: BDI de 150%
+  
+  if (comercialPrice > 0 && comercialPrice <= maxExpectedPrice) {
+    totalSalePrice = comercialPrice;
+    console.log(`  - Usando preço comercial: R$ ${totalSalePrice.toFixed(2)}`);
+  } else if (comercialPrice > maxExpectedPrice) {
+    // Preço comercial parece duplicado, usar preço dos items
+    totalSalePrice = totalFromItems;
+    console.log(`  - ALERTA: Preço comercial muito alto, usando preço dos items: R$ ${totalSalePrice.toFixed(2)}`);
+  } else {
+    // Sem preço comercial, usar preço dos items
+    totalSalePrice = totalFromItems;
+    console.log(`  - Usando preço dos items: R$ ${totalSalePrice.toFixed(2)}`);
+  }
   
   // Calculate proportional prices (hides cost breakdown)
   const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice);

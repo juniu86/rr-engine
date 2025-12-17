@@ -71,3 +71,7 @@
 - [x] Proposta Comercial - gerar em HTML com botão de imprimir/salvar PDF
 - [x] Planilha de Custos - gerar em formato XLS (Excel 2003 XML)
 - [x] Download conjunto - permitir baixar proposta e planilha simultaneamente
+
+## Bugs Graves v1.4
+- [x] Impostos zerados - Agente Tributário corrigido com prompt mais explícito sobre cálculo de alíquotas
+- [x] Valor da proposta duplicado - adicionada validação para evitar duplicação de BDI (máximo 2.5x custo base)

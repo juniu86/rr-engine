@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, name FROM projects WHERE name LIKE '%Catavento%' ORDER BY id DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute SELECT id, name FROM projects WHERE name LIKE '%Catavento%' ORDER BY id DESC;",
+  "rows": [
+    {
+      "id": "90002",
+      "name": "Posto Catavento REV01"
+    },
+    {
+      "id": "60001",
+      "name": "Posto Catavento"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\n90002\tPosto Catavento REV01\n60001\tPosto Catavento\n",
+  "stderr": "",
+  "execution_time_ms": 47
+}

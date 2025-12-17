@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, name, status, estimatedDuration FROM projects WHERE name LIKE '%Catavento%' ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute SELECT id, name, status, estimatedDuration FROM projects WHERE name LIKE '%Catavento%' ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "90002",
+      "name": "Posto Catavento REV01",
+      "status": "approved",
+      "estimatedDuration": "NULL"
+    },
+    {
+      "id": "60001",
+      "name": "Posto Catavento",
+      "status": "review",
+      "estimatedDuration": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tstatus\testimatedDuration\n90002\tPosto Catavento REV01\tapproved\tNULL\n60001\tPosto Catavento\treview\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 48
+}
