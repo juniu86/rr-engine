@@ -417,34 +417,58 @@ export default function ProjectDetails() {
                   <div className="text-center py-8 text-muted-foreground">
                     <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhum documento gerado.</p>
-                    <p className="text-sm mb-4">Clique nos botões abaixo para gerar os documentos.</p>
-                    <div className="flex flex-wrap gap-4 justify-center">
-                      <Button 
-                        onClick={() => generateProposal.mutate({ projectId })}
-                        disabled={generateProposal.isPending}
-                      >
-                        {generateProposal.isPending ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <FileText className="mr-2 h-4 w-4" />
-                        )}
-                        Gerar Proposta Comercial
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        onClick={() => generateMemoria.mutate({ projectId })}
-                        disabled={generateMemoria.isPending}
-                      >
-                        {generateMemoria.isPending ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Table className="mr-2 h-4 w-4" />
-                        )}
-                        Gerar Planilha Aberta (Excel)
-                      </Button>
-                    </div>
+                    <p className="text-sm mb-4">Clique no botão abaixo para gerar os documentos.</p>
                   </div>
                 )}
+
+                {/* Botões de Geração de Documentos */}
+                <div className="mt-6 p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-semibold mb-4">Gerar Documentos</h4>
+                  <div className="flex flex-wrap gap-4">
+                    <Button 
+                      onClick={() => {
+                        generateProposal.mutate({ projectId });
+                        generateMemoria.mutate({ projectId });
+                      }}
+                      disabled={generateProposal.isPending || generateMemoria.isPending}
+                      className="bg-amber-500 hover:bg-amber-600"
+                    >
+                      {(generateProposal.isPending || generateMemoria.isPending) ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="mr-2 h-4 w-4" />
+                      )}
+                      Gerar Proposta + Planilha
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => generateProposal.mutate({ projectId })}
+                      disabled={generateProposal.isPending}
+                    >
+                      {generateProposal.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="mr-2 h-4 w-4" />
+                      )}
+                      Apenas Proposta
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => generateMemoria.mutate({ projectId })}
+                      disabled={generateMemoria.isPending}
+                    >
+                      {generateMemoria.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Table className="mr-2 h-4 w-4" />
+                      )}
+                      Apenas Planilha (Excel)
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    A proposta comercial mostra os valores de venda (sem custos abertos). A planilha contém o detalhamento completo de custos.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -592,12 +616,26 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
         </>
       );
     case "board":
+      const recommendation = output.projectViability?.recommendation || 'revisar';
+      const recommendationColors: Record<string, string> = {
+        aprovar: 'text-green-500',
+        aprovar_com_ressalvas: 'text-amber-500',
+        revisar: 'text-amber-500',
+        rejeitar: 'text-red-500'
+      };
+      const recommendationLabels: Record<string, string> = {
+        aprovar: 'Aprovado',
+        aprovar_com_ressalvas: 'Aprovado c/ Ressalvas',
+        revisar: 'Em Revisão',
+        rejeitar: 'Não Recomendado'
+      };
       return (
         <>
-          <p>Status: <strong className={output.approved ? "text-green-500" : "text-amber-500"}>
-            {output.approved ? "Aprovado" : "Em revisão"}
+          <p>Parecer: <strong className={recommendationColors[recommendation] || 'text-amber-500'}>
+            {recommendationLabels[recommendation] || 'Em Revisão'}
           </strong></p>
-          <p><strong>{output.issues?.length || 0}</strong> observações</p>
+          <p><strong>{output.decisions?.length || 0}</strong> decisões tomadas</p>
+          <p>Risco: <strong>{output.projectViability?.riskLevel || 'N/A'}</strong></p>
         </>
       );
     default:
@@ -896,46 +934,124 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
       );
 
     case "board":
+      const viability = output.projectViability || {};
+      const recColors: Record<string, string> = {
+        aprovar: 'bg-green-500/10 text-green-500',
+        aprovar_com_ressalvas: 'bg-amber-500/10 text-amber-500',
+        revisar: 'bg-amber-500/10 text-amber-500',
+        rejeitar: 'bg-red-500/10 text-red-500'
+      };
+      const recLabels: Record<string, string> = {
+        aprovar: 'PROJETO APROVADO',
+        aprovar_com_ressalvas: 'APROVADO COM RESSALVAS',
+        revisar: 'REQUER REVISÃO',
+        rejeitar: 'PROJETO NÃO RECOMENDADO'
+      };
+      const riskColors: Record<string, string> = {
+        baixo: 'text-green-500',
+        medio: 'text-amber-500',
+        alto: 'text-orange-500',
+        critico: 'text-red-500'
+      };
       return (
         <div className="space-y-4">
-          <div className={`p-4 rounded-lg ${output.approved ? 'bg-green-500/10' : 'bg-amber-500/10'}`}>
-            <p className="text-sm text-muted-foreground">Status de Aprovação</p>
-            <p className={`text-2xl font-bold ${output.approved ? 'text-green-500' : 'text-amber-500'}`}>
-              {output.approved ? 'APROVADO' : 'EM REVISÃO'}
+          {/* Parecer Executivo */}
+          <div className={`p-4 rounded-lg ${recColors[viability.recommendation] || 'bg-amber-500/10'}`}>
+            <p className="text-sm text-muted-foreground">Parecer do Board Executivo</p>
+            <p className={`text-2xl font-bold`}>
+              {recLabels[viability.recommendation] || 'EM ANÁLISE'}
             </p>
           </div>
-          {output.issues?.length > 0 && (
+
+          {/* Viabilidade do Projeto */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Margem de Lucro</p>
+              <p className="text-xl font-bold">{viability.profitMargin || 'N/A'}</p>
+            </div>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Nível de Risco</p>
+              <p className={`text-xl font-bold ${riskColors[viability.riskLevel] || ''}`}>
+                {viability.riskLevel?.toUpperCase() || 'N/A'}
+              </p>
+            </div>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">Viável</p>
+              <p className={`text-xl font-bold ${viability.isViable ? 'text-green-500' : 'text-red-500'}`}>
+                {viability.isViable ? 'SIM' : 'NÃO'}
+              </p>
+            </div>
+          </div>
+
+          {/* Resumo Executivo */}
+          {output.executiveSummary && (
+            <div className="p-4 bg-muted rounded-lg">
+              <h4 className="font-semibold mb-2">Resumo Executivo</h4>
+              <p className="text-sm text-muted-foreground">{output.executiveSummary}</p>
+            </div>
+          )}
+
+          {/* Decisões Tomadas */}
+          {output.decisions?.length > 0 && (
             <div>
-              <h4 className="font-semibold mb-2 text-amber-500">Observações do Board ({output.issues?.length})</h4>
-              <div className="space-y-2">
-                {output.issues?.map((issue: any, i: number) => (
-                  <div key={i} className="p-3 bg-muted rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <span className={`px-2 py-0.5 text-xs rounded ${
-                        issue.severity === 'high' ? 'bg-red-500/20 text-red-500' :
-                        issue.severity === 'medium' ? 'bg-amber-500/20 text-amber-500' :
-                        'bg-blue-500/20 text-blue-500'
-                      }`}>
-                        {issue.severity === 'high' ? 'Alta' : issue.severity === 'medium' ? 'Média' : 'Baixa'}
-                      </span>
-                      <div>
-                        <p className="font-medium">{issue.agent}</p>
-                        <p className="text-sm text-muted-foreground">{issue.issue}</p>
-                      </div>
+              <h4 className="font-semibold mb-2 text-amber-500">Decisões Executivas ({output.decisions?.length})</h4>
+              <div className="space-y-3">
+                {output.decisions?.map((decision: any, i: number) => (
+                  <div key={i} className="p-4 bg-muted rounded-lg border-l-4 border-amber-500">
+                    <p className="font-medium text-amber-500">{decision.issue}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Agentes: {decision.agentsInvolved}</p>
+                    <div className="mt-2 space-y-1">
+                      <p className="text-sm"><strong>Impacto:</strong> {decision.businessImpact}</p>
+                      <p className="text-sm"><strong>Decisão:</strong> {decision.decision}</p>
+                      <p className="text-sm"><strong>Justificativa:</strong> {decision.justification}</p>
+                      <p className="text-sm text-amber-500"><strong>Ação Requerida:</strong> {decision.actionRequired}</p>
+                      <p className="text-xs text-muted-foreground">Responsável: {decision.responsible}</p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          {output.recommendations?.length > 0 && (
-            <div>
-              <h4 className="font-semibold mb-2">Recomendações</h4>
-              <ul className="list-disc list-inside space-y-1">
-                {output.recommendations?.map((rec: string, i: number) => (
-                  <li key={i} className="text-sm">{rec}</li>
-                ))}
-              </ul>
+
+          {/* Aprovação dos Executivos */}
+          <div>
+            <h4 className="font-semibold mb-2">Aprovação dos Executivos</h4>
+            <div className="grid grid-cols-3 gap-4">
+              <div className={`p-3 rounded-lg ${output.finalApproval?.ceo ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                <p className="font-medium">CEO</p>
+                <p className={`text-sm ${output.finalApproval?.ceo ? 'text-green-500' : 'text-red-500'}`}>
+                  {output.finalApproval?.ceo ? '✓ Aprovado' : '✗ Não Aprovado'}
+                </p>
+                {output.finalApproval?.ceoNotes && (
+                  <p className="text-xs text-muted-foreground mt-1">{output.finalApproval.ceoNotes}</p>
+                )}
+              </div>
+              <div className={`p-3 rounded-lg ${output.finalApproval?.cfo ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                <p className="font-medium">CFO</p>
+                <p className={`text-sm ${output.finalApproval?.cfo ? 'text-green-500' : 'text-red-500'}`}>
+                  {output.finalApproval?.cfo ? '✓ Aprovado' : '✗ Não Aprovado'}
+                </p>
+                {output.finalApproval?.cfoNotes && (
+                  <p className="text-xs text-muted-foreground mt-1">{output.finalApproval.cfoNotes}</p>
+                )}
+              </div>
+              <div className={`p-3 rounded-lg ${output.finalApproval?.coo ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                <p className="font-medium">COO</p>
+                <p className={`text-sm ${output.finalApproval?.coo ? 'text-green-500' : 'text-red-500'}`}>
+                  {output.finalApproval?.coo ? '✓ Aprovado' : '✗ Não Aprovado'}
+                </p>
+                {output.finalApproval?.cooNotes && (
+                  <p className="text-xs text-muted-foreground mt-1">{output.finalApproval.cooNotes}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Condições para Aprovação */}
+          {output.conditionsForApproval && (
+            <div className="p-4 bg-amber-500/10 rounded-lg">
+              <h4 className="font-semibold mb-2 text-amber-500">Condições para Aprovação</h4>
+              <p className="text-sm">{output.conditionsForApproval}</p>
             </div>
           )}
         </div>

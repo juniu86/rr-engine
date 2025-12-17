@@ -63,3 +63,11 @@
 ## Bugs Reportados
 - [x] Fluxo de Caixa - saldo acumulado não está sendo calculado (mostrando R$ 0,00)
 - [x] Proposta Comercial - planilha de custos não está sendo exibida ao gerar documento
+
+## Melhorias v1.4
+- [x] Board decisor - transformar de analista para decisor com relatório de decisões tomadas (não apenas observações)
+- [x] Fluxo de Caixa - corrigir cálculo negativo e considerar adiantamento corretamente
+- [x] Proposta Comercial - distribuir preço final proporcionalmente entre itens (não mostrar custos abertos)
+- [x] Proposta Comercial - gerar em HTML com botão de imprimir/salvar PDF
+- [x] Planilha de Custos - gerar em formato XLS (Excel 2003 XML)
+- [x] Download conjunto - permitir baixar proposta e planilha simultaneamente

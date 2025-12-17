@@ -440,7 +440,11 @@ export const appRouter = router({
         const juridicaExec = executions.find(e => e.agentType === "juridico");
         const juridicaOutput = juridicaExec?.output;
         
-        const result = await generateProposalPDF(project, budgetItems, juridicaOutput);
+        // Get comercial output to get the final sale price
+        const comercialExec = executions.find(e => e.agentType === "comercial");
+        const comercialOutput = comercialExec?.output;
+        
+        const result = await generateProposalPDF(project, budgetItems, juridicaOutput, comercialOutput);
         return result;
       }),
 

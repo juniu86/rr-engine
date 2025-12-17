@@ -2,16 +2,61 @@ import { storagePut } from "../storage";
 import { createGeneratedDocument } from "../db";
 import type { Project, BudgetItem } from "../../drizzle/schema";
 
-// Generate proposal PDF content
+// Interface para item com preço proporcional (sem mostrar custo aberto)
+interface ProportionalItem {
+  description: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number; // Preço unitário de venda (não custo)
+  totalPrice: number; // Preço total de venda
+}
+
+// Calcular preços proporcionais para proposta (esconde custos, mostra apenas preços de venda)
+function calculateProportionalPrices(budgetItems: BudgetItem[], totalSalePrice: number): ProportionalItem[] {
+  // Calcular custo total de todos os itens
+  const totalCost = budgetItems.reduce((sum, item) => {
+    return sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0));
+  }, 0);
+  
+  if (totalCost === 0) return [];
+  
+  // Fator de markup para distribuir o preço de venda proporcionalmente
+  const markupFactor = totalSalePrice / totalCost;
+  
+  return budgetItems.map(item => {
+    const quantity = Number(item.quantity || 0);
+    const unitCost = Number(item.unitCostTotal || 0);
+    const unitPrice = unitCost * markupFactor; // Preço unitário de venda
+    const totalPrice = quantity * unitPrice;
+    
+    return {
+      description: item.description,
+      unit: item.unit || "un",
+      quantity,
+      unitPrice,
+      totalPrice,
+    };
+  });
+}
+
+// Generate proposal PDF content with proportional prices (hiding costs)
 export async function generateProposalPDF(
   project: Project,
   budgetItems: BudgetItem[],
-  juridicaOutput: any
+  juridicaOutput: any,
+  comercialOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
-  // Generate HTML content for the proposal
-  const htmlContent = generateProposalHTML(project, budgetItems, juridicaOutput);
+  // Get total sale price from comercial output or calculate from budget
+  const totalSalePrice = comercialOutput?.finalPrice || 
+    budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
   
-  // Convert to PDF bytes (simplified - in production use puppeteer or similar)
+  // Calculate proportional prices (hides cost breakdown)
+  const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice);
+  
+  // Generate HTML content for the proposal
+  const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput);
+  
+  // Convert to PDF bytes
   const pdfBuffer = Buffer.from(htmlContent, "utf-8");
   
   const timestamp = Date.now();
@@ -33,23 +78,23 @@ export async function generateProposalPDF(
   return { url, fileKey };
 }
 
-// Generate calculation memory Excel content
+// Generate calculation memory Excel content (XLSX format)
 export async function generateMemoriaCalculo(
   project: Project,
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
   cashFlowItems: any[]
 ): Promise<{ url: string; fileKey: string }> {
-  // Generate CSV content (Excel-compatible)
-  const csvContent = generateMemoriaCSV(project, budgetItems, logisticsCosts, cashFlowItems);
+  // Generate XLSX content using XML format (Excel 2003 XML)
+  const xlsxContent = generateMemoriaXLSX(project, budgetItems, logisticsCosts, cashFlowItems);
   
-  const csvBuffer = Buffer.from(csvContent, "utf-8");
+  const xlsxBuffer = Buffer.from(xlsxContent, "utf-8");
   
   const timestamp = Date.now();
-  const fileName = `memoria_calculo_${project.name.replace(/\s+/g, "_")}_${timestamp}.csv`;
+  const fileName = `memoria_calculo_${project.name.replace(/\s+/g, "_")}_${timestamp}.xls`;
   const fileKey = `memorias/${project.id}/${fileName}`;
   
-  const { url } = await storagePut(fileKey, csvBuffer, "text/csv");
+  const { url } = await storagePut(fileKey, xlsxBuffer, "application/vnd.ms-excel");
   
   // Save document reference
   await createGeneratedDocument({
@@ -64,10 +109,13 @@ export async function generateMemoriaCalculo(
   return { url, fileKey };
 }
 
-// Generate HTML content for proposal
-function generateProposalHTML(project: Project, budgetItems: BudgetItem[], juridicaOutput: any): string {
-  const totalPrice = budgetItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0)), 0);
-  
+// Generate HTML content for proposal with proportional prices
+function generateProposalHTML(
+  project: Project, 
+  items: ProportionalItem[], 
+  totalSalePrice: number,
+  juridicaOutput: any
+): string {
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -76,6 +124,10 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Proposta Comercial - ${project.name}</title>
   <style>
+    @media print {
+      body { margin: 0; padding: 20px; }
+      .no-print { display: none; }
+    }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       line-height: 1.6;
@@ -83,6 +135,7 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
       max-width: 800px;
       margin: 0 auto;
       padding: 40px;
+      background: #fff;
     }
     .header {
       text-align: center;
@@ -93,10 +146,17 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
     .header h1 {
       color: #1e293b;
       margin-bottom: 5px;
+      font-size: 28px;
     }
     .header .subtitle {
       color: #64748b;
       font-size: 14px;
+    }
+    .header .logo {
+      font-size: 24px;
+      font-weight: bold;
+      color: #d97706;
+      margin-bottom: 10px;
     }
     .section {
       margin-bottom: 30px;
@@ -105,15 +165,17 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
       color: #d97706;
       border-bottom: 1px solid #e2e8f0;
       padding-bottom: 10px;
+      font-size: 18px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       margin: 20px 0;
+      font-size: 14px;
     }
     th, td {
       border: 1px solid #e2e8f0;
-      padding: 12px;
+      padding: 10px;
       text-align: left;
     }
     th {
@@ -126,7 +188,7 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
     }
     .price {
       text-align: right;
-      font-family: monospace;
+      font-family: 'Courier New', monospace;
     }
     .footer {
       margin-top: 40px;
@@ -140,36 +202,60 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
       padding: 15px;
       border-radius: 8px;
       margin: 10px 0;
+      border-left: 4px solid #d97706;
     }
     .clause h4 {
       margin-top: 0;
       color: #1e293b;
+      font-size: 14px;
+    }
+    .clause p {
+      margin-bottom: 0;
+      font-size: 13px;
+    }
+    .download-btn {
+      background: #d97706;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 10px 5px;
+    }
+    .download-btn:hover {
+      background: #b45309;
     }
   </style>
 </head>
 <body>
+  <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+    <button class="download-btn" onclick="window.print()">Imprimir / Salvar PDF</button>
+  </div>
+
   <div class="header">
+    <div class="logo">RR ENGENHARIA</div>
     <h1>PROPOSTA COMERCIAL</h1>
-    <p class="subtitle">RR Engenharia - Soluções em Construção Civil</p>
+    <p class="subtitle">Soluções em Construção Civil e Infraestrutura</p>
   </div>
 
   <div class="section">
     <h2>1. IDENTIFICAÇÃO DO PROJETO</h2>
     <table>
       <tr>
-        <th>Projeto</th>
+        <th style="width: 30%;">Projeto</th>
         <td>${project.name}</td>
       </tr>
       <tr>
         <th>Tipo de Contrato</th>
-        <td>${project.contractType === "obra" ? "Obra" : "Manutenção"}</td>
+        <td>${project.contractType === "obra" ? "Execução de Obra" : "Serviço de Manutenção"}</td>
       </tr>
       <tr>
         <th>Localização</th>
-        <td>${project.location || "A definir"}</td>
+        <td>${project.location || "A definir em contrato"}</td>
       </tr>
       <tr>
-        <th>Prazo Estimado</th>
+        <th>Prazo de Execução</th>
         <td>${project.estimatedDuration || "A definir"} semanas</td>
       </tr>
     </table>
@@ -177,7 +263,7 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
 
   <div class="section">
     <h2>2. ESCOPO DOS SERVIÇOS</h2>
-    <p>${project.description || "Conforme memorial descritivo anexo."}</p>
+    <p>${project.description || "Conforme memorial descritivo anexo à presente proposta."}</p>
   </div>
 
   <div class="section">
@@ -185,28 +271,28 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
     <table>
       <thead>
         <tr>
-          <th>Item</th>
-          <th>Descrição</th>
-          <th>Unid.</th>
-          <th>Qtd.</th>
-          <th class="price">Preço Unit.</th>
-          <th class="price">Total</th>
+          <th style="width: 5%;">Item</th>
+          <th style="width: 45%;">Descrição do Serviço</th>
+          <th style="width: 10%;">Unid.</th>
+          <th style="width: 10%;">Qtd.</th>
+          <th style="width: 15%;" class="price">Preço Unit.</th>
+          <th style="width: 15%;" class="price">Total</th>
         </tr>
       </thead>
       <tbody>
-        ${budgetItems.map((item, index) => `
+        ${items.map((item, index) => `
         <tr>
           <td>${index + 1}</td>
           <td>${item.description}</td>
-          <td>${item.unit || "-"}</td>
-          <td>${Number(item.quantity || 0).toFixed(2)}</td>
-          <td class="price">R$ ${Number(item.unitCostTotal || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-          <td class="price">R$ ${(Number(item.quantity || 0) * Number(item.unitCostTotal || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+          <td>${item.unit}</td>
+          <td style="text-align: center;">${item.quantity.toFixed(2)}</td>
+          <td class="price">R$ ${item.unitPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td class="price">R$ ${item.totalPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         </tr>
         `).join("")}
         <tr class="total-row">
-          <td colspan="5">VALOR TOTAL</td>
-          <td class="price">R$ ${totalPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+          <td colspan="5" style="text-align: right;">VALOR TOTAL DA PROPOSTA</td>
+          <td class="price">R$ ${totalSalePrice.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
         </tr>
       </tbody>
     </table>
@@ -215,9 +301,9 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
   ${juridicaOutput?.clauses ? `
   <div class="section">
     <h2>4. CONDIÇÕES GERAIS</h2>
-    ${juridicaOutput.clauses.map((clause: any) => `
+    ${juridicaOutput.clauses.map((clause: any, index: number) => `
     <div class="clause">
-      <h4>${clause.title}</h4>
+      <h4>CLÁUSULA ${toRoman(index + 1)}: ${clause.title.toUpperCase()}</h4>
       <p>${clause.content}</p>
     </div>
     `).join("")}
@@ -227,107 +313,306 @@ function generateProposalHTML(project: Project, budgetItems: BudgetItem[], jurid
   <div class="section">
     <h2>5. VALIDADE DA PROPOSTA</h2>
     <p>Esta proposta tem validade de <strong>${juridicaOutput?.validityDays || 30} dias</strong> a partir da data de emissão.</p>
+    <p>Após este prazo, os valores poderão ser reajustados conforme variação de custos de mercado.</p>
+  </div>
+
+  <div class="section">
+    <h2>6. ACEITE</h2>
+    <p>Para aceite desta proposta, favor devolver este documento assinado ou enviar confirmação por escrito.</p>
+    <br>
+    <table style="border: none;">
+      <tr style="border: none;">
+        <td style="border: none; width: 50%; text-align: center;">
+          <br><br><br>
+          _________________________________<br>
+          <strong>RR Engenharia</strong><br>
+          Contratada
+        </td>
+        <td style="border: none; width: 50%; text-align: center;">
+          <br><br><br>
+          _________________________________<br>
+          <strong>Cliente</strong><br>
+          Contratante
+        </td>
+      </tr>
+    </table>
   </div>
 
   <div class="footer">
     <p><strong>RR Engenharia</strong></p>
-    <p>CNPJ: XX.XXX.XXX/0001-XX</p>
-    <p>Documento gerado automaticamente pelo sistema RR-Engine em ${new Date().toLocaleDateString("pt-BR")}</p>
+    <p>CNPJ: XX.XXX.XXX/0001-XX | Telefone: (XX) XXXX-XXXX</p>
+    <p>Documento gerado pelo sistema RR-Engine em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</p>
   </div>
 </body>
 </html>
   `;
 }
 
-// Generate CSV content for calculation memory
-function generateMemoriaCSV(
+// Convert number to Roman numeral
+function toRoman(num: number): string {
+  const romanNumerals: [number, string][] = [
+    [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]
+  ];
+  let result = "";
+  for (const [value, symbol] of romanNumerals) {
+    while (num >= value) {
+      result += symbol;
+      num -= value;
+    }
+  }
+  return result;
+}
+
+// Generate Excel 2003 XML format (compatible with Excel)
+function generateMemoriaXLSX(
   project: Project,
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
   cashFlowItems: any[]
 ): string {
-  const lines: string[] = [];
+  const escapeXml = (str: string) => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   
-  // Header
-  lines.push("MEMÓRIA DE CÁLCULO - " + project.name);
-  lines.push("Data de Geração: " + new Date().toLocaleDateString("pt-BR"));
-  lines.push("");
-  
-  // Budget Items
-  lines.push("ITENS DO ORÇAMENTO");
-  lines.push("Item;Código;Descrição;Unidade;Quantidade;Custo Material;Custo M.O.;Custo Logística;Custo Total;Impostos;BDI;Preço Final;Fonte;Código Fonte");
-  
-  budgetItems.forEach((item, index) => {
-    lines.push([
-      index + 1,
-      item.code || "",
-      `"${item.description}"`,
-      item.unit || "",
-      Number(item.quantity || 0).toFixed(4),
-      Number(item.unitCostMaterial || 0).toFixed(2),
-      Number(item.unitCostLabor || 0).toFixed(2),
-      Number(item.unitCostLogistics || 0).toFixed(2),
-      Number(item.totalCost || 0).toFixed(2),
-      Number(item.taxAmount || 0).toFixed(2),
-      Number(item.bdiAmount || 0).toFixed(2),
-      Number(item.finalPrice || 0).toFixed(2),
-      item.source || "",
-      item.sourceCode || "",
-    ].join(";"));
-  });
-  
-  lines.push("");
-  
-  // Logistics Costs
-  if (logisticsCosts.length > 0) {
-    lines.push("CUSTOS LOGÍSTICOS");
-    lines.push("Categoria;Descrição;Quantidade;Unidade;Custo Unitário;Custo Total");
-    
-    logisticsCosts.forEach((cost) => {
-      lines.push([
-        cost.category || "",
-        `"${cost.description}"`,
-        Number(cost.quantity || 0).toFixed(2),
-        cost.unit || "",
-        Number(cost.unitCost || 0).toFixed(2),
-        Number(cost.totalCost || 0).toFixed(2),
-      ].join(";"));
-    });
-    
-    lines.push("");
-  }
-  
-  // Cash Flow
-  if (cashFlowItems.length > 0) {
-    lines.push("FLUXO DE CAIXA");
-    lines.push("Semana;Despesa Planejada;Receita Planejada;Saldo;Alerta");
-    
-    cashFlowItems.forEach((item) => {
-      lines.push([
-        item.weekNumber,
-        Number(item.plannedExpense || 0).toFixed(2),
-        Number(item.plannedIncome || 0).toFixed(2),
-        Number(item.cashBalance || 0).toFixed(2),
-        item.hasAlert ? "SIM" : "",
-      ].join(";"));
-    });
-    
-    lines.push("");
-  }
-  
-  // Summary
-  lines.push("RESUMO");
+  // Calculate totals
   const totalDirect = budgetItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
   const totalTax = budgetItems.reduce((sum, item) => sum + Number(item.taxAmount || 0), 0);
   const totalBdi = budgetItems.reduce((sum, item) => sum + Number(item.bdiAmount || 0), 0);
   const totalFinal = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
+  const totalLogistics = logisticsCosts.reduce((sum, cost) => sum + Number(cost.totalCost || 0), 0);
   
-  lines.push(`Custo Direto Total;${totalDirect.toFixed(2)}`);
-  lines.push(`Total Impostos;${totalTax.toFixed(2)}`);
-  lines.push(`Total BDI;${totalBdi.toFixed(2)}`);
-  lines.push(`PREÇO FINAL;${totalFinal.toFixed(2)}`);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
   
-  return lines.join("\n");
+  <Styles>
+    <Style ss:ID="Header">
+      <Font ss:Bold="1" ss:Size="12"/>
+      <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center"/>
+    </Style>
+    <Style ss:ID="Title">
+      <Font ss:Bold="1" ss:Size="14" ss:Color="#D97706"/>
+    </Style>
+    <Style ss:ID="Currency">
+      <NumberFormat ss:Format="R$ #,##0.00"/>
+      <Alignment ss:Horizontal="Right"/>
+    </Style>
+    <Style ss:ID="Total">
+      <Font ss:Bold="1"/>
+      <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="R$ #,##0.00"/>
+    </Style>
+  </Styles>
+
+  <!-- Planilha de Orçamento -->
+  <Worksheet ss:Name="Orçamento Detalhado">
+    <Table>
+      <Column ss:Width="40"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="250"/>
+      <Column ss:Width="60"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="100"/>
+      
+      <!-- Título -->
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">MEMÓRIA DE CÁLCULO - ${escapeXml(project.name)}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Data: ${new Date().toLocaleDateString("pt-BR")}</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <!-- Cabeçalho -->
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Item</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Código</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Unid.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Qtd.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Material</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo M.O.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Logística</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Total</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Impostos</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">BDI</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Preço Final</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Fonte</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Cód. Fonte</Data></Cell>
+      </Row>
+      
+      <!-- Dados -->
+      ${budgetItems.map((item, index) => `
+      <Row>
+        <Cell><Data ss:Type="Number">${index + 1}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(item.code || "")}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(item.description)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(item.unit || "")}</Data></Cell>
+        <Cell><Data ss:Type="Number">${Number(item.quantity || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostMaterial || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostLabor || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostLogistics || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.totalCost || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.taxAmount || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.bdiAmount || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.finalPrice || 0)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(item.source || "")}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(item.sourceCode || "")}</Data></Cell>
+      </Row>
+      `).join("")}
+      
+      <!-- Totais -->
+      <Row/>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTO DIRETO</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalDirect}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL IMPOSTOS</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalTax}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL BDI</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalBdi}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">PREÇO FINAL DE VENDA</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalFinal}</Data></Cell>
+      </Row>
+    </Table>
+  </Worksheet>
+
+  <!-- Planilha de Custos Logísticos -->
+  <Worksheet ss:Name="Custos Logísticos">
+    <Table>
+      <Column ss:Width="120"/>
+      <Column ss:Width="250"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">CUSTOS LOGÍSTICOS</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Categoria</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Qtd.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Unid.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Unit.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Total</Data></Cell>
+      </Row>
+      
+      ${logisticsCosts.map(cost => `
+      <Row>
+        <Cell><Data ss:Type="String">${escapeXml(cost.category || "")}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(cost.description || "")}</Data></Cell>
+        <Cell><Data ss:Type="Number">${Number(cost.quantity || 0)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(cost.unit || "")}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(cost.unitCost || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(cost.totalCost || 0)}</Data></Cell>
+      </Row>
+      `).join("")}
+      
+      <Row/>
+      <Row>
+        <Cell ss:MergeAcross="4" ss:StyleID="Total"><Data ss:Type="String">TOTAL LOGÍSTICA</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
+      </Row>
+    </Table>
+  </Worksheet>
+
+  <!-- Planilha de Fluxo de Caixa -->
+  <Worksheet ss:Name="Fluxo de Caixa">
+    <Table>
+      <Column ss:Width="80"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="80"/>
+      
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">FLUXO DE CAIXA</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Semana</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Despesas</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Receitas</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Saldo Acumulado</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Alerta</Data></Cell>
+      </Row>
+      
+      ${cashFlowItems.map(item => `
+      <Row>
+        <Cell><Data ss:Type="Number">${item.weekNumber}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.plannedExpense || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.plannedIncome || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.cashBalance || 0)}</Data></Cell>
+        <Cell><Data ss:Type="String">${item.hasAlert ? "SIM" : ""}</Data></Cell>
+      </Row>
+      `).join("")}
+    </Table>
+  </Worksheet>
+
+  <!-- Planilha de Resumo -->
+  <Worksheet ss:Name="Resumo">
+    <Table>
+      <Column ss:Width="200"/>
+      <Column ss:Width="150"/>
+      
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">RESUMO DO ORÇAMENTO</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Projeto: ${escapeXml(project.name)}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Data: ${new Date().toLocaleDateString("pt-BR")}</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Valor</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">Custo Direto (Materiais + M.O.)</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalDirect}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Custos Logísticos</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Impostos (ISS/ICMS)</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalTax}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">BDI (Administração + Lucro)</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalBdi}</Data></Cell>
+      </Row>
+      <Row/>
+      <Row>
+        <Cell ss:StyleID="Total"><Data ss:Type="String">PREÇO FINAL DE VENDA</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalFinal}</Data></Cell>
+      </Row>
+    </Table>
+  </Worksheet>
+</Workbook>`;
 }
 
 // Format currency for display

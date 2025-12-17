@@ -551,17 +551,26 @@ export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput
   getSystemPrompt(): string {
     return `Você é o Agente Financeiro da RR Engenharia.
 
-MISSÃO: Análise de Fluxo de Caixa (Cash Flow Exposure).
+MISSÃO: Análise de Fluxo de Caixa e Viabilidade Financeira.
 
 RESPONSABILIDADES:
-1. Cruzar cronograma com custos
-2. Projetar desembolsos semanais
-3. Identificar "buracos de caixa"
-4. Sugerir necessidade de adiantamento
+1. Cruzar cronograma com custos para projetar desembolsos semanais
+2. Calcular receitas baseadas nas medições (tipicamente 30 dias após execução)
+3. Identificar necessidade de capital de giro
+4. Sugerir adiantamento para cobrir mobilização inicial
+5. Calcular saldo acumulado semana a semana
 
-REGRA DE SEGURANÇA:
-- Se desembolso inicial > primeira medição: ALERTAR
-- Sugerir sinal/adiantamento para cobrir mobilização`;
+REGRAS DE CÁLCULO DO FLUXO DE CAIXA:
+1. DESPESAS (expense): Distribua os custos totais proporcionalmente ao cronograma
+2. RECEITAS (income): Considere que o cliente paga após medição (tipicamente 30 dias)
+3. SALDO (balance): Calcule o SALDO ACUMULADO = Saldo anterior + Receitas - Despesas
+4. Se sugerir adiantamento, INCLUA o valor do adiantamento como receita na semana 1
+
+IMPORTANTE:
+- O saldo acumulado deve começar considerando o adiantamento (se houver)
+- Se needsAdvance = true, a receita da semana 1 deve incluir o suggestedAdvance
+- O fluxo de caixa deve FECHAR POSITIVO ao final do projeto (lucro)
+- Se o projeto é viável, o saldo final deve ser positivo`;
   }
   
   getUserPrompt(input: FinanceiroInput): string {
@@ -572,11 +581,18 @@ ${JSON.stringify(input.scheduleItems, null, 2)}
 
 ITENS DO ORÇAMENTO (resumo):
 Total de itens: ${input.budgetItems.length}
-Valor total: R$ ${input.totalPrice.toFixed(2)}
+Valor total da proposta (preço de venda): R$ ${input.totalPrice.toFixed(2)}
 
 CONDIÇÕES DE PAGAMENTO: ${input.paymentTerms}
 
-Projete o fluxo de caixa semanal e identifique riscos.`;
+INSTRUÇÕES:
+1. Distribua as despesas (custos) ao longo das semanas do cronograma
+2. Distribua as receitas (pagamentos do cliente) considerando prazo de medição
+3. Se precisar de adiantamento, inclua-o como receita na semana 1
+4. O saldo (balance) deve ser ACUMULADO: saldo_semana_N = saldo_semana_N-1 + receitas - despesas
+5. O saldo final deve ser POSITIVO (representa o lucro do projeto)
+
+Projete o fluxo de caixa semanal com saldo acumulado.`;
   }
   
   getOutputSchema(): object {
@@ -678,43 +694,64 @@ Gere o texto da proposta com todas as cláusulas necessárias.`;
   }
 }
 
-// Agent 9: Board
+// Agent 9: Board (Decisor)
 export class BoardAgent extends BaseAgent<BoardInput, BoardOutput> {
   name = AGENT_NAMES.board;
   type: AgentType = "board";
   
   getSystemPrompt(): string {
-    return `Você é o Board de Aprovação da RR Engenharia (CEO, CFO, COO).
+    return `Você é o BOARD EXECUTIVO da RR Engenharia, composto por especialistas sêniores em Gestão de Negócios:
+- CEO (Chief Executive Officer): Visão estratégica e continuidade do negócio
+- CFO (Chief Financial Officer): Viabilidade financeira e risco de caixa
+- COO (Chief Operating Officer): Capacidade operacional e execução
 
-MISSÃO: Auditoria Geral e Aprovação Final.
+MISSÃO: VOCÊ NÃO É APENAS UM ANALISTA - VOCÊ É UM DECISOR.
 
-RESPONSABILIDADES:
-1. Revisar coerência entre todos os agentes
-2. Identificar inconsistências
-3. Solicitar correções se necessário
-4. Aprovar apenas com consenso unânime
+SUA FUNÇÃO:
+1. Analisar TODAS as divergências e incoerências encontradas pelos agentes
+2. TOMAR DECISÕES EXECUTIVAS baseadas na continuidade do negócio
+3. Resolver conflitos entre laudos de diferentes agentes
+4. Emitir RELATÓRIO DE DECISÕES TOMADAS (não apenas observações)
+5. Definir ações corretivas com responsáveis e prazos
 
-CRITÉRIOS DE APROVAÇÃO:
-- Preços coerentes com mercado
-- BDI adequado ao risco
-- Fluxo de caixa sustentável
-- Cláusulas contratuais completas
-- Cronograma realista`;
+CRITÉRIOS DE DECISÃO:
+- VIABILIDADE: O projeto gera lucro líquido para a empresa?
+- RISCO: O fluxo de caixa é sustentável com ou sem adiantamento?
+- ESTRATÉGIA: O projeto contribui para o posicionamento da empresa?
+- OPERAÇÃO: Temos capacidade técnica e recursos para executar?
+
+FORMATO DA DECISÃO:
+Para cada problema identificado, você DEVE:
+1. Descrever o problema encontrado
+2. Analisar o impacto no negócio
+3. DECIDIR a ação a ser tomada
+4. Justificar a decisão com base em critérios de negócio
+
+SE O PROJETO NÃO FOR VIÁVEL:
+- Indique claramente: "PROJETO NÃO RECOMENDADO"
+- Explique os motivos de negócio
+- Sugira condições para viabilização (ex: aumento de preço, redução de escopo)`;
   }
   
   getUserPrompt(input: BoardInput): string {
-    return `Revise e aprove o projeto:
+    return `REUNIÃO DO BOARD EXECUTIVO - ANÁLISE E DECISÃO
 
-RESUMO DO PROJETO:
+PROJETO EM ANÁLISE:
 - Nome: ${input.projectSummary.name}
-- Valor: R$ ${input.projectSummary.totalPrice.toFixed(2)}
-- Prazo: ${input.projectSummary.duration} semanas
-- Tipo: ${input.projectSummary.contractType}
+- Valor da Proposta: R$ ${input.projectSummary.totalPrice.toFixed(2)}
+- Prazo de Execução: ${input.projectSummary.duration} semanas
+- Tipo de Contrato: ${input.projectSummary.contractType}
 
-SAÍDAS DOS AGENTES:
+LAUDOS DOS AGENTES ESPECIALISTAS:
 ${JSON.stringify(input.allAgentOutputs, null, 2)}
 
-Verifique a coerência e aprove ou solicite correções.`;
+AÇÃO REQUERIDA:
+1. Analise TODOS os laudos e identifique divergências
+2. Para cada divergência, TOME UMA DECISÃO EXECUTIVA
+3. Avalie se o projeto é VIÁVEL para o negócio
+4. Emita seu PARECER FINAL com decisões tomadas
+
+Lembre-se: Você é o DECISOR, não apenas um revisor.`;
   }
   
   getOutputSchema(): object {
@@ -722,44 +759,51 @@ Verifique a coerência e aprove ou solicite correções.`;
       type: "object",
       properties: {
         approved: { type: "boolean" },
-        issues: {
+        projectViability: {
+          type: "object",
+          properties: {
+            isViable: { type: "boolean" },
+            profitMargin: { type: "string" },
+            riskLevel: { type: "string", enum: ["baixo", "medio", "alto", "critico"] },
+            recommendation: { type: "string", enum: ["aprovar", "aprovar_com_ressalvas", "revisar", "rejeitar"] },
+          },
+          required: ["isViable", "profitMargin", "riskLevel", "recommendation"],
+          additionalProperties: false,
+        },
+        decisions: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              agent: { type: "string" },
               issue: { type: "string" },
-              severity: { type: "string", enum: ["critical", "warning", "info"] },
+              agentsInvolved: { type: "string" },
+              businessImpact: { type: "string" },
+              decision: { type: "string" },
+              justification: { type: "string" },
+              actionRequired: { type: "string" },
+              responsible: { type: "string" },
             },
-            required: ["agent", "issue", "severity"],
+            required: ["issue", "agentsInvolved", "businessImpact", "decision", "justification", "actionRequired", "responsible"],
             additionalProperties: false,
           },
         },
-        corrections: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              agent: { type: "string" },
-              correction: { type: "string" },
-            },
-            required: ["agent", "correction"],
-            additionalProperties: false,
-          },
-        },
+        executiveSummary: { type: "string" },
         finalApproval: {
           type: "object",
           properties: {
             ceo: { type: "boolean" },
+            ceoNotes: { type: "string" },
             cfo: { type: "boolean" },
+            cfoNotes: { type: "string" },
             coo: { type: "boolean" },
+            cooNotes: { type: "string" },
           },
-          required: ["ceo", "cfo", "coo"],
+          required: ["ceo", "ceoNotes", "cfo", "cfoNotes", "coo", "cooNotes"],
           additionalProperties: false,
         },
-        approvalNotes: { type: "string" },
+        conditionsForApproval: { type: "string" },
       },
-      required: ["approved", "issues", "corrections", "finalApproval", "approvalNotes"],
+      required: ["approved", "projectViability", "decisions", "executiveSummary", "finalApproval", "conditionsForApproval"],
       additionalProperties: false,
     };
   }

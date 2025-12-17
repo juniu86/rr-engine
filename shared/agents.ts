@@ -268,19 +268,29 @@ export interface BoardInput {
 
 export interface BoardOutput {
   approved: boolean;
-  issues: {
-    agent: AgentType;
+  projectViability: {
+    isViable: boolean;
+    profitMargin: string;
+    riskLevel: "baixo" | "medio" | "alto" | "critico";
+    recommendation: "aprovar" | "aprovar_com_ressalvas" | "revisar" | "rejeitar";
+  };
+  decisions: {
     issue: string;
-    severity: "critical" | "warning" | "info";
+    agentsInvolved: string;
+    businessImpact: string;
+    decision: string;
+    justification: string;
+    actionRequired: string;
+    responsible: string;
   }[];
-  corrections: {
-    agent: AgentType;
-    correction: string;
-  }[];
+  executiveSummary: string;
   finalApproval: {
     ceo: boolean;
+    ceoNotes: string;
     cfo: boolean;
+    cfoNotes: string;
     coo: boolean;
+    cooNotes: string;
   };
-  approvalNotes: string;
+  conditionsForApproval: string;
 }
