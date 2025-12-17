@@ -75,3 +75,6 @@
 ## Bugs Graves v1.4
 - [x] Impostos zerados - Agente Tributário corrigido com prompt mais explícito sobre cálculo de alíquotas
 - [x] Valor da proposta duplicado - adicionada validação para evitar duplicação de BDI (máximo 2.5x custo base)
+
+## Melhorias v1.6
+- [x] Agente Logística - calcular diárias baseado em índices SINAPI de homem-hora por unidade de serviço
