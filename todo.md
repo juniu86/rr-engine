@@ -78,3 +78,10 @@
 
 ## Melhorias v1.6
 - [x] Agente Logística - calcular diárias baseado em índices SINAPI de homem-hora por unidade de serviço
+
+## Revisão Crítica v1.7
+- [x] Logística calculando mão de obra duplicada - Orçamentista já inclui na composição SINAPI
+- [x] Bitributação - Tributário calcula impostos e Comercial aplica BDI que já inclui impostos
+- [x] Cronograma genérico de 4 semanas - Gestão de Projetos deve calcular prazo real baseado em produtividade
+- [x] Faturamento incorreto - Deve ser 40% adiantamento + 60% ao final do prazo real
+- [x] Proposta mostrando custos em vez de preço cheio proporcional (regressão)

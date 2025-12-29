@@ -57,27 +57,45 @@ export async function generateProposalPDF(
   // Preço do agente comercial
   const comercialPrice = comercialOutput?.finalPrice || 0;
   
+  // BDI do agente comercial (se disponível)
+  const comercialBdi = comercialOutput?.adjustedBdi || 0.55;
+  
   console.log('[Proposta] Debug de valores:');
   console.log(`  - Custo base total: R$ ${totalBaseCost.toFixed(2)}`);
   console.log(`  - Preço dos items (BDI 55%): R$ ${totalFromItems.toFixed(2)}`);
   console.log(`  - Preço do agente comercial: R$ ${comercialPrice.toFixed(2)}`);
+  console.log(`  - BDI do agente comercial: ${(comercialBdi * 100).toFixed(1)}%`);
   
-  // VALIDAÇÃO: Se o preço comercial for muito maior que o esperado (> 2x custo base), usar o preço dos items
-  // Isso evita duplicação caso o agente comercial tenha calculado errado
+  // DETERMINAR O PREÇO DE VENDA CORRETO
+  // Prioridade:
+  // 1. Preço do agente comercial (se válido e dentro do range esperado)
+  // 2. Preço dos items salvos (já com BDI de 55%)
+  // 3. Recalcular com BDI padrão de 55%
+  
   let totalSalePrice: number;
-  const maxExpectedPrice = totalBaseCost * 2.5; // Máximo razoável: BDI de 150%
+  const minExpectedPrice = totalBaseCost * 1.30; // Mínimo: BDI de 30%
+  const maxExpectedPrice = totalBaseCost * 2.00; // Máximo: BDI de 100%
   
-  if (comercialPrice > 0 && comercialPrice <= maxExpectedPrice) {
+  if (comercialPrice >= minExpectedPrice && comercialPrice <= maxExpectedPrice) {
+    // Preço comercial está dentro do range esperado
     totalSalePrice = comercialPrice;
-    console.log(`  - Usando preço comercial: R$ ${totalSalePrice.toFixed(2)}`);
+    console.log(`  - Usando preço comercial (dentro do range): R$ ${totalSalePrice.toFixed(2)}`);
+  } else if (totalFromItems >= minExpectedPrice && totalFromItems <= maxExpectedPrice) {
+    // Preço dos items está dentro do range esperado
+    totalSalePrice = totalFromItems;
+    console.log(`  - Usando preço dos items (dentro do range): R$ ${totalSalePrice.toFixed(2)}`);
   } else if (comercialPrice > maxExpectedPrice) {
-    // Preço comercial parece duplicado, usar preço dos items
-    totalSalePrice = totalFromItems;
-    console.log(`  - ALERTA: Preço comercial muito alto, usando preço dos items: R$ ${totalSalePrice.toFixed(2)}`);
+    // Preço comercial muito alto (possível duplicação) - recalcular
+    totalSalePrice = totalBaseCost * 1.55; // BDI padrão de 55%
+    console.log(`  - ALERTA: Preço comercial muito alto (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI 55%: R$ ${totalSalePrice.toFixed(2)}`);
+  } else if (comercialPrice > 0 && comercialPrice < minExpectedPrice) {
+    // Preço comercial muito baixo - recalcular
+    totalSalePrice = totalBaseCost * 1.55;
+    console.log(`  - ALERTA: Preço comercial muito baixo (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI 55%: R$ ${totalSalePrice.toFixed(2)}`);
   } else {
-    // Sem preço comercial, usar preço dos items
-    totalSalePrice = totalFromItems;
-    console.log(`  - Usando preço dos items: R$ ${totalSalePrice.toFixed(2)}`);
+    // Sem preço comercial válido - usar preço dos items ou recalcular
+    totalSalePrice = totalFromItems > 0 ? totalFromItems : totalBaseCost * 1.55;
+    console.log(`  - Usando fallback: R$ ${totalSalePrice.toFixed(2)}`);
   }
   
   // Calculate proportional prices (hides cost breakdown)
