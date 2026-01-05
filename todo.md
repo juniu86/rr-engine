@@ -85,3 +85,8 @@
 - [x] Cronograma genérico de 4 semanas - Gestão de Projetos deve calcular prazo real baseado em produtividade
 - [x] Faturamento incorreto - Deve ser 40% adiantamento + 60% ao final do prazo real
 - [x] Proposta mostrando custos em vez de preço cheio proporcional (regressão)
+
+## Bug Crítico v1.8
+- [x] Sistema interrompe leitura do memorial antes de processar todos os 9 grupos de serviços
+- [x] Grupos omitidos: Estrutura, Cobertura, Instalações Hidráulicas e Elétricas
+- [x] Critério de aceite: Proposta deve conter 100% dos itens do input

@@ -124,18 +124,44 @@ export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, En
 
 MISSÃO: Transformar descrições genéricas em especificações técnicas baseadas em NBRs.
 
+⚠️ REGRA CRÍTICA: PROCESSAR 100% DOS ITENS!
+Você DEVE processar TODOS os grupos de serviços e TODOS os itens do memorial.
+NÃO interrompa a leitura antes de processar o documento completo.
+NÃO omita nenhum grupo, mesmo que pareça repetitivo ou similar.
+
+GRUPOS TÍPICOS DE SERVIÇOS (processar TODOS):
+1. SERVIÇOS PRELIMINARES (mobilização, locação, proteção)
+2. ESTRUTURA E VEDAÇÃO (steel frame, alvenaria, paredes)
+3. COBERTURA (telhas, estrutura de telhado, calhas)
+4. IMPERMEABILIZAÇÃO (mantas, argamassas poliméricas)
+5. REVESTIMENTOS (pisos, paredes, contrapiso, cerâmica)
+6. FORRO E ACABAMENTOS (gesso, pintura, rodapés)
+7. ESQUADRIAS (portas, janelas, ferragens)
+8. INSTALAÇÕES HIDROSSANITÁRIAS (tubulações, louças, metais)
+9. INSTALAÇÕES ELÉTRICAS (fiação, quadros, pontos, iluminação)
+10. LIMPEZA E FINALIZAÇÃO (limpeza, remoção de entulho)
+
 REGRAS:
-1. Criticar o memorial e identificar inconsistências
-2. Transformar linhas genéricas (ex: "instalação elétrica") em lista de materiais e serviços específicos
-3. Se faltar medida, NÃO ESTIMAR - marcar como "Pendente de Vistoria"
-4. Referenciar normas ABNT NBR aplicáveis
-5. Identificar itens críticos que precisam de atenção especial
+1. Ler o memorial COMPLETO do início ao fim
+2. Extrair CADA ITEM de CADA TABELA do documento
+3. Manter o número do grupo/seção original (ex: 1.1, 2.3, 8.5)
+4. Se faltar medida, NÃO ESTIMAR - marcar como "Pendente de Vistoria"
+5. Referenciar normas ABNT NBR aplicáveis
+6. Identificar itens críticos que precisam de atenção especial
+
+VALIDAÇÃO FINAL:
+- Verifique se processou TODOS os grupos numerados do memorial
+- Verifique se nenhuma tabela foi pulada
+- O número de itens na saída deve ser >= número de linhas nas tabelas do input
 
 FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences e criticalNotes.`;
   }
   
   getUserPrompt(input: EngenheiroTecnicoInput): string {
-    return `Analise o seguinte Memorial Descritivo e extraia os itens de engenharia:
+    return `Analise o seguinte Memorial Descritivo e extraia TODOS os itens de engenharia.
+
+⚠️ IMPORTANTE: Você DEVE processar o documento COMPLETO, do início ao fim.
+NÃO interrompa a leitura. NÃO omita nenhum grupo de serviços.
 
 MEMORIAL DESCRITIVO:
 ${input.memorialDescritivo}
@@ -143,11 +169,24 @@ ${input.memorialDescritivo}
 LOCALIZAÇÃO: ${input.location}
 RESTRIÇÕES: ${input.restrictions}
 
+INSTRUÇÕES:
+1. Leia o memorial COMPLETO
+2. Identifique TODOS os grupos de serviços (1, 2, 3... até o último)
+3. Extraia CADA ITEM de CADA TABELA
+4. Mantenha a numeração original (1.1, 1.2, 2.1, etc.)
+5. NÃO pule nenhum grupo, especialmente:
+   - Estrutura e Vedação
+   - Cobertura
+   - Instalações Hidrossanitárias
+   - Instalações Elétricas
+
 Retorne um JSON com:
-- items: lista de itens com description, quantity (se disponível), unit, specifications, nbrReference, isPendingVistoria
+- items: lista COMPLETA de itens com group (número do grupo), itemNumber (número do item), description, quantity (se disponível), unit, specifications, nbrReference, isPendingVistoria
 - pendingItems: lista de itens que precisam de vistoria para definir quantidade
 - nbrReferences: lista de normas ABNT aplicáveis
-- criticalNotes: observações críticas sobre o memorial`;
+- criticalNotes: observações críticas sobre o memorial
+- groupsProcessed: lista dos grupos processados (ex: ["1. SERVIÇOS PRELIMINARES", "2. ESTRUTURA", ...])
+- totalItemsExtracted: número total de itens extraídos`;
   }
   
   getOutputSchema(): object {
@@ -159,6 +198,8 @@ Retorne um JSON com:
           items: {
             type: "object",
             properties: {
+              group: { type: "string" },
+              itemNumber: { type: "string" },
               description: { type: "string" },
               quantity: { type: "number" },
               unit: { type: "string" },
@@ -166,15 +207,17 @@ Retorne um JSON com:
               nbrReference: { type: "string" },
               isPendingVistoria: { type: "boolean" },
             },
-            required: ["description", "quantity", "unit", "specifications", "nbrReference", "isPendingVistoria"],
+            required: ["group", "itemNumber", "description", "quantity", "unit", "specifications", "nbrReference", "isPendingVistoria"],
             additionalProperties: false,
           },
         },
         pendingItems: { type: "array", items: { type: "string" } },
         nbrReferences: { type: "array", items: { type: "string" } },
         criticalNotes: { type: "array", items: { type: "string" } },
+        groupsProcessed: { type: "array", items: { type: "string" } },
+        totalItemsExtracted: { type: "number" },
       },
-      required: ["items", "pendingItems", "nbrReferences", "criticalNotes"],
+      required: ["items", "pendingItems", "nbrReferences", "criticalNotes", "groupsProcessed", "totalItemsExtracted"],
       additionalProperties: false,
     };
   }
@@ -304,6 +347,11 @@ export class OrcamentistaAgent extends BaseAgent<OrcamentistaInput, Orcamentista
 
 MISSÃO: Precificar com realidade de mercado.
 
+⚠️ REGRA CRÍTICA: PRECIFICAR 100% DOS ITENS!
+Você DEVE precificar TODOS os itens recebidos do Engenheiro Técnico.
+NÃO omita nenhum item, mesmo que seja similar a outro.
+O número de itens na saída DEVE ser igual ao número de itens na entrada.
+
 METODOLOGIA:
 1. Itens Comuns (Curva C): Usar bases SINAPI e PINI
 2. Itens Críticos (Curva A - 80% do valor): Simular cotação de mercado atual
@@ -314,6 +362,17 @@ REGRAS:
 - Separar custo de material e mão de obra
 - Identificar itens de alto impacto (Curva A)
 - NÃO inventar preços - usar referências reais
+- PROCESSAR TODOS OS GRUPOS DE SERVIÇOS:
+  * Serviços Preliminares
+  * Estrutura e Vedação
+  * Cobertura
+  * Impermeabilização
+  * Revestimentos
+  * Forro e Acabamentos
+  * Esquadrias
+  * Instalações Hidrossanitárias
+  * Instalações Elétricas
+  * Limpeza e Finalização
 
 REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
 - Concreto usinado fck 25: R$ 450-550/m³
@@ -321,13 +380,24 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
 - Tijolo cerâmico: R$ 0,80-1,20/un
 - Cimento CP-II: R$ 35-45/saco 50kg
 - Areia média: R$ 120-180/m³
-- Brita 1: R$ 100-150/m³`;
+- Brita 1: R$ 100-150/m³
+- Steel frame/estrutura metálica leve: R$ 300-400/m²
+- Telha termoacústica: R$ 120-180/m²
+- Instalações hidráulicas completas: R$ 250-400/m²
+- Instalações elétricas completas: R$ 180-300/m²
+- Janela alumínio com vidro: R$ 600-900/m²
+- Porta de entrada completa: R$ 1.500-3.000/un
+- Porta interna completa: R$ 600-1.200/un`;
   }
   
   getUserPrompt(input: OrcamentistaInput): string {
-    return `Precifique os seguintes itens de obra:
+    const totalItems = input.items?.length || 0;
+    return `Precifique TODOS os ${totalItems} itens de obra listados abaixo.
 
-ITENS:
+⚠️ IMPORTANTE: Você DEVE retornar exatamente ${totalItems} itens no budgetItems.
+NÃO omita nenhum item. NÃO agrupe itens diferentes.
+
+ITENS (${totalItems} no total):
 ${JSON.stringify(input.items, null, 2)}
 
 CUSTOS LOGÍSTICOS:
@@ -335,11 +405,21 @@ ${JSON.stringify(input.logisticsCosts, null, 2)}
 
 REGIÃO: ${input.region}
 
-Para cada item, forneça:
-- Código e descrição
-- Unidade e quantidade
-- Custo unitário (material + mão de obra + logística)
-- Fonte do preço (SINAPI/PINI/Mercado com código se disponível)`;
+INSTRUÇÕES:
+1. Processe CADA UM dos ${totalItems} itens
+2. Mantenha a numeração/grupo original do item
+3. Para cada item, forneça:
+   - Código e descrição
+   - Unidade e quantidade
+   - Custo unitário (material + mão de obra + logística)
+   - Fonte do preço (SINAPI/PINI/Mercado com código se disponível)
+4. NÃO pule nenhum grupo, especialmente:
+   - Estrutura e Vedação
+   - Cobertura
+   - Instalações Hidrossanitárias
+   - Instalações Elétricas
+
+VALIDAÇÃO: budgetItems.length DEVE ser igual a ${totalItems}`;
   }
   
   getOutputSchema(): object {

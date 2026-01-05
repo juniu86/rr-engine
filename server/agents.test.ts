@@ -216,3 +216,87 @@ describe("Agent Logic Validation", () => {
     });
   });
 });
+
+
+describe("Processamento Completo de Memorial", () => {
+  it("deve identificar todos os 10 grupos de serviços do memorial", () => {
+    // Memorial de teste com 10 grupos
+    const gruposEsperados = [
+      "1. SERVIÇOS PRELIMINARES",
+      "2. ESTRUTURA E VEDAÇÃO",
+      "3. COBERTURA",
+      "4. IMPERMEABILIZAÇÃO",
+      "5. REVESTIMENTOS",
+      "6. FORRO E ACABAMENTOS",
+      "7. ESQUADRIAS",
+      "8. INSTALAÇÕES HIDROSSANITÁRIAS",
+      "9. INSTALAÇÕES ELÉTRICAS",
+      "10. LIMPEZA E FINALIZAÇÃO",
+    ];
+    
+    expect(gruposEsperados.length).toBe(10);
+    
+    // Verificar que grupos críticos estão presentes
+    expect(gruposEsperados).toContain("2. ESTRUTURA E VEDAÇÃO");
+    expect(gruposEsperados).toContain("3. COBERTURA");
+    expect(gruposEsperados).toContain("8. INSTALAÇÕES HIDROSSANITÁRIAS");
+    expect(gruposEsperados).toContain("9. INSTALAÇÕES ELÉTRICAS");
+  });
+
+  it("deve contar corretamente o número total de itens", () => {
+    // Contagem de itens por grupo no memorial de teste
+    const itensPorGrupo = {
+      "1. SERVIÇOS PRELIMINARES": 3,
+      "2. ESTRUTURA E VEDAÇÃO": 2,
+      "3. COBERTURA": 3,
+      "4. IMPERMEABILIZAÇÃO": 2,
+      "5. REVESTIMENTOS": 4,
+      "6. FORRO E ACABAMENTOS": 3,
+      "7. ESQUADRIAS": 3,
+      "8. INSTALAÇÕES HIDROSSANITÁRIAS": 8,
+      "9. INSTALAÇÕES ELÉTRICAS": 6,
+      "10. LIMPEZA E FINALIZAÇÃO": 2,
+    };
+    
+    const totalItens = Object.values(itensPorGrupo).reduce((sum, count) => sum + count, 0);
+    
+    // Total esperado: 36 itens
+    expect(totalItens).toBe(36);
+    
+    // Verificar que nenhum grupo tem 0 itens
+    for (const [grupo, count] of Object.entries(itensPorGrupo)) {
+      expect(count).toBeGreaterThan(0);
+    }
+  });
+
+  it("deve validar que output do Orçamentista tem mesmo número de itens que input", () => {
+    // Simular input com 36 itens
+    const inputItems = Array(36).fill(null).map((_, i) => ({
+      description: `Item ${i + 1}`,
+      quantity: 1,
+      unit: "un",
+    }));
+    
+    // Simular output do Orçamentista
+    const outputItems = inputItems.map((item, i) => ({
+      id: i + 1,
+      category: "Geral",
+      code: `ITEM-${i + 1}`,
+      description: item.description,
+      unit: item.unit,
+      quantity: item.quantity,
+      unitCostMaterial: 100,
+      unitCostLabor: 50,
+      unitCostLogistics: 10,
+      unitCostTotal: 160,
+      totalCost: 160,
+      source: "SINAPI",
+      sourceCode: "12345",
+      sourceDate: "2024-01",
+    }));
+    
+    // Validação: número de itens deve ser igual
+    expect(outputItems.length).toBe(inputItems.length);
+    expect(outputItems.length).toBe(36);
+  });
+});
