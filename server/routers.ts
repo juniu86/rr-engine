@@ -109,6 +109,86 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // Criar revisão do projeto com memorial editado
+    createRevision: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        newMemorialDescritivo: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Criar nova revisão do projeto
+        const newProjectId = await db.createProjectRevision(
+          input.projectId,
+          input.newMemorialDescritivo,
+          ctx.user.id
+        );
+        
+        // Criar execuções de agentes para o novo projeto
+        const agentTypes: AgentType[] = [
+          "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
+          "comercial", "gestao_projetos", "financeiro", "juridico", "board"
+        ];
+        
+        for (const agentType of agentTypes) {
+          await db.createAgentExecution({
+            projectId: newProjectId,
+            agentType,
+            agentOrder: AGENT_ORDER[agentType],
+            status: "pending",
+          });
+        }
+        
+        return { 
+          success: true, 
+          newProjectId,
+          message: "Revisão criada com sucesso. Execute os agentes para processar o novo memorial."
+        };
+      }),
+
+    // Listar revisões de um projeto
+    getRevisions: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Determinar o ID do projeto pai
+        const parentId = project.parentProjectId || project.id;
+        
+        // Buscar projeto original e todas as revisões
+        const parentProject = await db.getProjectById(parentId);
+        const revisions = await db.getProjectRevisions(parentId);
+        
+        return {
+          original: parentProject,
+          revisions,
+          currentRevisionNumber: project.revisionNumber || 0,
+        };
+      }),
+
+    // Obter próximo número de revisão
+    getNextRevisionNumber: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        const nextNumber = await db.getNextRevisionNumber(input.projectId);
+        const originalName = project.originalName || project.name;
+        const nextRevisionName = `${originalName}_REV_${String(nextNumber).padStart(2, '0')}`;
+        
+        return {
+          nextRevisionNumber: nextNumber,
+          nextRevisionName,
+        };
+      }),
+
     getDetails: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {

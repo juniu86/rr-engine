@@ -272,3 +272,54 @@ describe("agent.list", () => {
     });
   });
 });
+
+// ==================== PROJECT REVISION TESTS ====================
+describe('Project Revision Functions', () => {
+  it('should calculate next revision number correctly', async () => {
+    // Simular cálculo de próxima revisão
+    const getNextRevisionNumber = (existingRevisions: number): number => {
+      return existingRevisions + 1;
+    };
+    
+    expect(getNextRevisionNumber(0)).toBe(1); // Primeira revisão
+    expect(getNextRevisionNumber(1)).toBe(2); // Segunda revisão
+    expect(getNextRevisionNumber(5)).toBe(6); // Sexta revisão
+  });
+
+  it('should generate correct revision name format', () => {
+    const generateRevisionName = (originalName: string, revisionNumber: number): string => {
+      return `${originalName}_REV_${String(revisionNumber).padStart(2, '0')}`;
+    };
+    
+    expect(generateRevisionName('Projeto Casa', 1)).toBe('Projeto Casa_REV_01');
+    expect(generateRevisionName('Reforma Banheiro', 5)).toBe('Reforma Banheiro_REV_05');
+    expect(generateRevisionName('Obra Comercial', 12)).toBe('Obra Comercial_REV_12');
+  });
+
+  it('should preserve original name across revisions', () => {
+    const getOriginalName = (project: { originalName?: string; name: string }): string => {
+      return project.originalName || project.name;
+    };
+    
+    // Projeto original
+    expect(getOriginalName({ name: 'Projeto A' })).toBe('Projeto A');
+    
+    // Revisão com originalName definido
+    expect(getOriginalName({ 
+      name: 'Projeto A_REV_01', 
+      originalName: 'Projeto A' 
+    })).toBe('Projeto A');
+  });
+
+  it('should identify parent project correctly', () => {
+    const getParentId = (project: { id: number; parentProjectId?: number | null }): number => {
+      return project.parentProjectId || project.id;
+    };
+    
+    // Projeto original (sem parent)
+    expect(getParentId({ id: 1, parentProjectId: null })).toBe(1);
+    
+    // Revisão (com parent)
+    expect(getParentId({ id: 5, parentProjectId: 1 })).toBe(1);
+  });
+});

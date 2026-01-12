@@ -267,3 +267,95 @@ export async function setCachedPrice(data: InsertPriceCache): Promise<void> {
     }
   });
 }
+
+
+// ==================== PROJECT REVISION QUERIES ====================
+export async function getProjectRevisions(parentProjectId: number): Promise<Project[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(projects)
+    .where(eq(projects.parentProjectId, parentProjectId))
+    .orderBy(desc(projects.revisionNumber));
+}
+
+export async function getNextRevisionNumber(projectId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 1;
+  
+  // Buscar o projeto original
+  const project = await getProjectById(projectId);
+  if (!project) return 1;
+  
+  // Se o projeto já é uma revisão, buscar o parent
+  const parentId = project.parentProjectId || project.id;
+  
+  // Contar revisões existentes
+  const revisions = await db.select().from(projects)
+    .where(eq(projects.parentProjectId, parentId));
+  
+  return revisions.length + 1;
+}
+
+export async function createProjectRevision(
+  originalProjectId: number, 
+  newMemorial: string,
+  userId: number
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Buscar projeto original
+  const originalProject = await getProjectById(originalProjectId);
+  if (!originalProject) throw new Error("Projeto original não encontrado");
+  
+  // Determinar o ID do projeto pai (original)
+  const parentId = originalProject.parentProjectId || originalProject.id;
+  
+  // Buscar o projeto pai para pegar o nome original
+  const parentProject = originalProject.parentProjectId 
+    ? await getProjectById(originalProject.parentProjectId) 
+    : originalProject;
+  
+  // Calcular próximo número de revisão
+  const nextRevision = await getNextRevisionNumber(parentId);
+  
+  // Nome original (sem sufixo de revisão)
+  const originalName = parentProject?.originalName || parentProject?.name || originalProject.name;
+  
+  // Criar nome da revisão: "Nome Original_REV_01"
+  const revisionName = `${originalName}_REV_${String(nextRevision).padStart(2, '0')}`;
+  
+  // Criar novo projeto como revisão
+  const newProjectData: InsertProject = {
+    userId,
+    name: revisionName,
+    description: originalProject.description,
+    contractType: originalProject.contractType,
+    location: originalProject.location,
+    restrictions: originalProject.restrictions,
+    memorialDescritivo: newMemorial,
+    memorialFileUrl: originalProject.memorialFileUrl,
+    status: "draft",
+    currentAgentId: 1,
+    parentProjectId: parentId,
+    revisionNumber: nextRevision,
+    originalName: originalName,
+  };
+  
+  const newProjectId = await createProject(newProjectData);
+  
+  return newProjectId;
+}
+
+export async function getAllProjectsWithRevisions(userId: number): Promise<Project[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Buscar todos os projetos do usuário
+  const allProjects = await db.select().from(projects)
+    .where(eq(projects.userId, userId))
+    .orderBy(desc(projects.createdAt));
+  
+  return allProjects;
+}

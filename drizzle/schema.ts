@@ -35,6 +35,10 @@ export const projects = mysqlTable("projects", {
   totalBdi: decimal("totalBdi", { precision: 15, scale: 2 }),
   totalPrice: decimal("totalPrice", { precision: 15, scale: 2 }),
   estimatedDuration: int("estimatedDuration"),
+  // Campos de revisão
+  parentProjectId: int("parentProjectId"), // ID do projeto original (null se for o original)
+  revisionNumber: int("revisionNumber").default(0), // 0 = original, 1 = REV_01, 2 = REV_02, etc.
+  originalName: varchar("originalName", { length: 255 }), // Nome original antes das revisões
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

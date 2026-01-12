@@ -94,3 +94,10 @@
 ## Correções v1.9
 - [x] Erro 500 no agente Board - "received bad response from upstream" (resumido payload)
 - [x] Inverter ordem dos agentes Logística e Orçamentista (Orçamentista agora é 2º, Logística é 3º)
+
+## Feature v1.10 - Sistema de Revisões do Memorial
+- [x] Mostrar texto do memorial descritivo na interface do projeto
+- [x] Campo de edição do memorial descritivo
+- [x] Modal de confirmação ao editar memorial
+- [x] Criar novo orçamento com nome "ORIGINAL_REV_XX" ao confirmar edição
+- [x] Manter histórico de revisões vinculadas ao projeto original

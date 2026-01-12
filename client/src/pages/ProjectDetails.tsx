@@ -30,12 +30,19 @@ import {
   Download,
   RefreshCw,
   Eye,
-  Table
+  Table,
+  Edit3,
+  GitBranch,
+  History,
+  Save,
+  X
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Streamdown } from "streamdown";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 const agentIcons: Record<string, any> = {
   engenheiro_tecnico: FileText,
@@ -60,11 +67,43 @@ const statusConfig = {
 export default function ProjectDetails() {
   const params = useParams<{ id: string }>();
   const projectId = parseInt(params.id || "0");
+  const [, navigate] = useLocation();
+  
+  // Estados para edição do memorial
+  const [isEditingMemorial, setIsEditingMemorial] = useState(false);
+  const [editedMemorial, setEditedMemorial] = useState("");
+  const [showRevisionDialog, setShowRevisionDialog] = useState(false);
   
   const { data: details, isLoading, refetch } = trpc.project.getDetails.useQuery(
     { id: projectId },
     { enabled: projectId > 0, refetchInterval: 5000 }
   );
+  
+  // Query para obter próximo número de revisão
+  const { data: revisionInfo } = trpc.project.getNextRevisionNumber.useQuery(
+    { projectId },
+    { enabled: projectId > 0 }
+  );
+  
+  // Query para obter revisões existentes
+  const { data: revisionsData } = trpc.project.getRevisions.useQuery(
+    { projectId },
+    { enabled: projectId > 0 }
+  );
+  
+  // Mutation para criar revisão
+  const createRevision = trpc.project.createRevision.useMutation({
+    onSuccess: (data) => {
+      toast.success("Revisão criada com sucesso!");
+      setShowRevisionDialog(false);
+      setIsEditingMemorial(false);
+      // Navegar para o novo projeto
+      navigate(`/project/${data.newProjectId}`);
+    },
+    onError: (error) => {
+      toast.error("Erro ao criar revisão: " + error.message);
+    },
+  });
   
   const executeAll = trpc.agent.executeAll.useMutation({
     onSuccess: () => {
@@ -205,13 +244,249 @@ export default function ProjectDetails() {
         </Card>
 
         {/* Main Content Tabs */}
-        <Tabs defaultValue="agents" className="space-y-4">
+        <Tabs defaultValue="memorial" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="memorial">Memorial</TabsTrigger>
             <TabsTrigger value="agents">Agentes</TabsTrigger>
             <TabsTrigger value="budget">Orçamento</TabsTrigger>
             <TabsTrigger value="cashflow">Fluxo de Caixa</TabsTrigger>
             <TabsTrigger value="documents">Documentos</TabsTrigger>
           </TabsList>
+
+          {/* Memorial Tab */}
+          <TabsContent value="memorial" className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-3">
+              {/* Memorial Descritivo */}
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-amber-500" />
+                      <CardTitle>Memorial Descritivo</CardTitle>
+                    </div>
+                    {!isEditingMemorial ? (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          setEditedMemorial(project.memorialDescritivo || "");
+                          setIsEditingMemorial(true);
+                        }}
+                      >
+                        <Edit3 className="mr-2 h-4 w-4" />
+                        Editar Memorial
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setIsEditingMemorial(false);
+                            setEditedMemorial("");
+                          }}
+                        >
+                          <X className="mr-2 h-4 w-4" />
+                          Cancelar
+                        </Button>
+                        <Button 
+                          size="sm"
+                          className="bg-amber-600 hover:bg-amber-700"
+                          onClick={() => {
+                            if (editedMemorial !== project.memorialDescritivo) {
+                              setShowRevisionDialog(true);
+                            } else {
+                              toast.info("Nenhuma alteração detectada.");
+                              setIsEditingMemorial(false);
+                            }
+                          }}
+                        >
+                          <Save className="mr-2 h-4 w-4" />
+                          Salvar como Revisão
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <CardDescription>
+                    {project.revisionNumber && project.revisionNumber > 0 ? (
+                      <span className="flex items-center gap-1">
+                        <GitBranch className="h-3 w-3" />
+                        Revisão {String(project.revisionNumber).padStart(2, '0')} do projeto original
+                      </span>
+                    ) : (
+                      "Documento base para geração do orçamento"
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isEditingMemorial ? (
+                    <Textarea
+                      value={editedMemorial}
+                      onChange={(e) => setEditedMemorial(e.target.value)}
+                      className="min-h-[400px] font-mono text-sm"
+                      placeholder="Digite o memorial descritivo..."
+                    />
+                  ) : (
+                    <ScrollArea className="h-[400px] rounded-md border p-4">
+                      {project.memorialDescritivo ? (
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <Streamdown>{project.memorialDescritivo}</Streamdown>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-center py-8">
+                          Nenhum memorial descritivo cadastrado.
+                        </p>
+                      )}
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Histórico de Revisões */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <History className="h-5 w-5 text-amber-500" />
+                    <CardTitle>Histórico de Revisões</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Versões anteriores do orçamento
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[400px]">
+                    {revisionsData?.original && (
+                      <div className="space-y-2">
+                        {/* Projeto Original */}
+                        <div 
+                          className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                            revisionsData.original.id === projectId 
+                              ? 'border-amber-500 bg-amber-500/10' 
+                              : 'hover:bg-muted'
+                          }`}
+                          onClick={() => navigate(`/project/${revisionsData.original!.id}`)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm">
+                              {revisionsData.original.originalName || revisionsData.original.name}
+                            </span>
+                            <Badge variant="outline" className="text-xs">Original</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Criado em {new Date(revisionsData.original.createdAt).toLocaleDateString('pt-BR')}
+                          </p>
+                          {revisionsData.original.totalPrice && (
+                            <p className="text-xs text-amber-500 mt-1">
+                              R$ {Number(revisionsData.original.totalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Revisões */}
+                        {revisionsData.revisions.map((rev) => (
+                          <div 
+                            key={rev.id}
+                            className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                              rev.id === projectId 
+                                ? 'border-amber-500 bg-amber-500/10' 
+                                : 'hover:bg-muted'
+                            }`}
+                            onClick={() => navigate(`/project/${rev.id}`)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm">
+                                REV_{String(rev.revisionNumber).padStart(2, '0')}
+                              </span>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-xs ${
+                                  rev.status === 'approved' ? 'border-green-500 text-green-500' :
+                                  rev.status === 'rejected' ? 'border-red-500 text-red-500' :
+                                  ''
+                                }`}
+                              >
+                                {statusConfig[rev.status as keyof typeof statusConfig]?.label || rev.status}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Criado em {new Date(rev.createdAt).toLocaleDateString('pt-BR')}
+                            </p>
+                            {rev.totalPrice && (
+                              <p className="text-xs text-amber-500 mt-1">
+                                R$ {Number(rev.totalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+
+                        {revisionsData.revisions.length === 0 && (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            Nenhuma revisão criada ainda.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Dialog de Confirmação de Revisão */}
+            <Dialog open={showRevisionDialog} onOpenChange={setShowRevisionDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <GitBranch className="h-5 w-5 text-amber-500" />
+                    Criar Nova Revisão
+                  </DialogTitle>
+                  <DialogDescription>
+                    Ao confirmar, será criado um novo orçamento com o memorial editado.
+                    O orçamento atual será mantido inalterado.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                  <div className="rounded-lg bg-muted p-4">
+                    <p className="text-sm font-medium">Nova revisão:</p>
+                    <p className="text-lg font-bold text-amber-500">
+                      {revisionInfo?.nextRevisionName || 'Carregando...'}
+                    </p>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Após criar a revisão, você precisará executar os agentes novamente
+                    para processar o novo memorial.
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowRevisionDialog(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    className="bg-amber-600 hover:bg-amber-700"
+                    onClick={() => createRevision.mutate({
+                      projectId,
+                      newMemorialDescritivo: editedMemorial,
+                    })}
+                    disabled={createRevision.isPending}
+                  >
+                    {createRevision.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Criando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Criar Revisão
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
 
           {/* Agents Tab */}
           <TabsContent value="agents" className="space-y-4">
