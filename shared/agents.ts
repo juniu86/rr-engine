@@ -1,8 +1,8 @@
 // Agent Types
 export type AgentType = 
   | "engenheiro_tecnico"
-  | "logistica"
   | "orcamentista"
+  | "logistica"
   | "tributario"
   | "comercial"
   | "gestao_projetos"
@@ -12,8 +12,8 @@ export type AgentType =
 
 export const AGENT_ORDER: Record<AgentType, number> = {
   engenheiro_tecnico: 1,
-  logistica: 2,
-  orcamentista: 3,
+  orcamentista: 2,
+  logistica: 3,
   tributario: 4,
   comercial: 5,
   gestao_projetos: 6,
@@ -24,8 +24,8 @@ export const AGENT_ORDER: Record<AgentType, number> = {
 
 export const AGENT_NAMES: Record<AgentType, string> = {
   engenheiro_tecnico: "Engenheiro Técnico",
-  logistica: "Logística e Mobilização",
   orcamentista: "Orçamentista & Suprimentos",
+  logistica: "Logística e Mobilização",
   tributario: "Tributário",
   comercial: "Comercial",
   gestao_projetos: "Gestão de Projetos",
@@ -36,8 +36,8 @@ export const AGENT_NAMES: Record<AgentType, string> = {
 
 export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
   engenheiro_tecnico: "Traduz o Memorial Descritivo em tarefas de engenharia específicas baseadas em NBRs",
-  logistica: "Calcula custos invisíveis de execução: fretes, bota-fora, deslocamento, hospedagem",
   orcamentista: "Precifica com realidade de mercado usando SINAPI, PINI e cotações atuais",
+  logistica: "Calcula custos invisíveis de execução: fretes, bota-fora, deslocamento, hospedagem",
   tributario: "Otimiza a classificação fiscal entre Serviço (ISS) e Material (ICMS)",
   comercial: "Define o preço de venda aplicando BDI adequado ao tipo de contrato",
   gestao_projetos: "Estima tempo de execução e cria cronograma físico",

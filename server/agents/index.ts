@@ -1026,6 +1026,49 @@ SE O PROJETO NÃO FOR VIÁVEL:
   }
   
   getUserPrompt(input: BoardInput): string {
+    // Resumir os outputs dos agentes para evitar payload muito grande
+    const resumo = {
+      engenheiro: {
+        totalItens: input.allAgentOutputs.engenheiro?.items?.length || 0,
+        itensPendentes: input.allAgentOutputs.engenheiro?.pendingItems?.length || 0,
+        notasCriticas: input.allAgentOutputs.engenheiro?.criticalNotes || [],
+      },
+      orcamentista: {
+        totalItens: input.allAgentOutputs.orcamentista?.budgetItems?.length || 0,
+        custoDireto: input.allAgentOutputs.orcamentista?.totalDirectCost || 0,
+        custoIndireto: input.allAgentOutputs.orcamentista?.totalIndirectCost || 0,
+        itensCurvaA: input.allAgentOutputs.orcamentista?.curvaAItems || [],
+      },
+      logistica: {
+        custoTotal: input.allAgentOutputs.logistica?.totalLogisticsCost || 0,
+        restricoes: input.allAgentOutputs.logistica?.restrictions || [],
+      },
+      tributario: {
+        totalImpostos: input.allAgentOutputs.tributario?.totalTaxes || 0,
+        alertas: input.allAgentOutputs.tributario?.alerts || [],
+      },
+      comercial: {
+        bdiAjustado: input.allAgentOutputs.comercial?.adjustedBdi || 0,
+        precoFinal: input.allAgentOutputs.comercial?.finalPrice || 0,
+        justificativaBdi: input.allAgentOutputs.comercial?.bdiJustification || "",
+      },
+      gestao: {
+        duracaoTotal: input.allAgentOutputs.gestao?.totalDuration || 0,
+        caminhosCriticos: input.allAgentOutputs.gestao?.criticalPath || [],
+        marcos: input.allAgentOutputs.gestao?.milestones || [],
+      },
+      financeiro: {
+        exposicaoMaxima: input.allAgentOutputs.financeiro?.maxExposure || 0,
+        precisaAdiantamento: input.allAgentOutputs.financeiro?.needsAdvance || false,
+        adiantamentoSugerido: input.allAgentOutputs.financeiro?.suggestedAdvance || 0,
+        alertas: input.allAgentOutputs.financeiro?.alerts || [],
+      },
+      juridico: {
+        validadeDias: input.allAgentOutputs.juridico?.validityDays || 30,
+        totalClausulas: input.allAgentOutputs.juridico?.clauses?.length || 0,
+      },
+    };
+    
     return `REUNIÃO DO BOARD EXECUTIVO - ANÁLISE E DECISÃO
 
 PROJETO EM ANÁLISE:
@@ -1034,12 +1077,12 @@ PROJETO EM ANÁLISE:
 - Prazo de Execução: ${input.projectSummary.duration} semanas
 - Tipo de Contrato: ${input.projectSummary.contractType}
 
-LAUDOS DOS AGENTES ESPECIALISTAS:
-${JSON.stringify(input.allAgentOutputs, null, 2)}
+RESUMO DOS LAUDOS DOS AGENTES:
+${JSON.stringify(resumo, null, 2)}
 
 AÇÃO REQUERIDA:
-1. Analise TODOS os laudos e identifique divergências
-2. Para cada divergência, TOME UMA DECISÃO EXECUTIVA
+1. Analise os resumos e identifique divergências ou riscos
+2. Para cada problema, TOME UMA DECISÃO EXECUTIVA
 3. Avalie se o projeto é VIÁVEL para o negócio
 4. Emita seu PARECER FINAL com decisões tomadas
 

@@ -49,7 +49,7 @@ export const appRouter = router({
         });
         
         const agentTypes: AgentType[] = [
-          "engenheiro_tecnico", "logistica", "orcamentista", "tributario",
+          "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
           "comercial", "gestao_projetos", "financeiro", "juridico", "board"
         ];
         
@@ -213,7 +213,7 @@ export const appRouter = router({
         await db.updateProject(input.projectId, { status: "processing" });
         
         const agentTypes: AgentType[] = [
-          "engenheiro_tecnico", "logistica", "orcamentista", "tributario",
+          "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
           "comercial", "gestao_projetos", "financeiro", "juridico", "board"
         ];
         
@@ -482,20 +482,27 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
         restrictions: project.restrictions || "",
       };
       
+    case "orcamentista":
+      // Orçamentista agora vem ANTES de Logística
+      // Recebe itens do Engenheiro Técnico e precifica
+      return {
+        items: getOutput("engenheiro_tecnico").items || [],
+        logisticsCosts: { costs: [], totalLogisticsCost: 0, restrictions: [] }, // Logística ainda não executou
+        region: project.location || "São Paulo",
+      };
+      
     case "logistica":
+      // Logística agora vem DEPOIS de Orçamentista
+      // Recebe itens do Engenheiro Técnico e orçamento para calcular custos indiretos
       const engenheiroOutput = getOutput("engenheiro_tecnico");
+      const orcamentistaOutput = getOutput("orcamentista");
       return {
         items: engenheiroOutput.items || [],
         location: project.location || "",
         restrictions: project.restrictions || "",
         estimatedDuration: 8,
-      };
-      
-    case "orcamentista":
-      return {
-        items: getOutput("engenheiro_tecnico").items || [],
-        logisticsCosts: getOutput("logistica"),
-        region: project.location || "São Paulo",
+        // Passar informações do orçamento para ajudar a estimar logística
+        budgetItems: orcamentistaOutput.budgetItems || [],
       };
       
     case "tributario":

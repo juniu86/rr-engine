@@ -90,3 +90,7 @@
 - [x] Sistema interrompe leitura do memorial antes de processar todos os 9 grupos de serviços
 - [x] Grupos omitidos: Estrutura, Cobertura, Instalações Hidráulicas e Elétricas
 - [x] Critério de aceite: Proposta deve conter 100% dos itens do input
+
+## Correções v1.9
+- [x] Erro 500 no agente Board - "received bad response from upstream" (resumido payload)
+- [x] Inverter ordem dos agentes Logística e Orçamentista (Orçamentista agora é 2º, Logística é 3º)
