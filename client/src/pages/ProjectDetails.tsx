@@ -98,7 +98,7 @@ export default function ProjectDetails() {
       setShowRevisionDialog(false);
       setIsEditingMemorial(false);
       // Navegar para o novo projeto
-      navigate(`/project/${data.newProjectId}`);
+      navigate(`/projects/${data.newProjectId}`);
     },
     onError: (error) => {
       toast.error("Erro ao criar revisão: " + error.message);
@@ -364,7 +364,7 @@ export default function ProjectDetails() {
                               ? 'border-amber-500 bg-amber-500/10' 
                               : 'hover:bg-muted'
                           }`}
-                          onClick={() => navigate(`/project/${revisionsData.original!.id}`)}
+                          onClick={() => navigate(`/projects/${revisionsData.original!.id}`)}
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-medium text-sm">
@@ -391,7 +391,7 @@ export default function ProjectDetails() {
                                 ? 'border-amber-500 bg-amber-500/10' 
                                 : 'hover:bg-muted'
                             }`}
-                            onClick={() => navigate(`/project/${rev.id}`)}
+                            onClick={() => navigate(`/projects/${rev.id}`)}
                           >
                             <div className="flex items-center justify-between">
                               <span className="font-medium text-sm">

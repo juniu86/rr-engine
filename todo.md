@@ -101,3 +101,6 @@
 - [x] Modal de confirmação ao editar memorial
 - [x] Criar novo orçamento com nome "ORIGINAL_REV_XX" ao confirmar edição
 - [x] Manter histórico de revisões vinculadas ao projeto original
+
+## Bug v1.10.1
+- [x] Erro 404 ao criar revisão de projeto - navegação para novo projeto falha (corrigido: /project/ -> /projects/)
