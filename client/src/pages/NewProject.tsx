@@ -23,7 +23,6 @@ export default function NewProject() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    contractType: "obra" as "obra" | "manutencao",
     location: "",
     restrictions: "",
     memorialDescritivo: "",
@@ -68,38 +67,19 @@ export default function NewProject() {
                 Informações Básicas
               </CardTitle>
               <CardDescription>
-                Dados gerais do projeto e tipo de contrato
+                Dados gerais do projeto
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nome do Projeto *</Label>
-                  <Input
-                    id="name"
-                    placeholder="Ex: Reforma Posto Shell - BR 101"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="contractType">Tipo de Contrato *</Label>
-                  <Select
-                    value={formData.contractType}
-                    onValueChange={(value: "obra" | "manutencao") => 
-                      setFormData({ ...formData, contractType: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="obra">Obra (BDI 55%)</SelectItem>
-                      <SelectItem value="manutencao">Manutenção (BDI 40%)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="name">Nome do Projeto *</Label>
+                <Input
+                  id="name"
+                  placeholder="Ex: Reforma Posto Shell - BR 101"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Descrição</Label>

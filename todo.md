@@ -112,3 +112,8 @@
 - [x] Interface de configuração no dashboard/perfil (/settings)
 - [x] Integrar configurações nos agentes Comercial e Tributário
 - [x] Atualizar geração de proposta para usar configurações do usuário
+
+## Correção v1.12 - Remover Tipo de Contrato
+- [x] Remover campo "Tipo de Contrato" do formulário de criação de projeto
+- [x] Verificar e remover referências ao tipo de contrato nos agentes (evitar duplicação)
+- [x] BDI e impostos devem vir apenas das configurações da empresa

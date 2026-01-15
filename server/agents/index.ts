@@ -519,7 +519,6 @@ ITENS DO ORÇAMENTO:
 ${JSON.stringify(input.budgetItems, null, 2)}
 
 CUSTO TOTAL DOS ITENS: R$ ${totalCost.toFixed(2)}
-TIPO DE CONTRATO: ${input.contractType}
 
 === CONFIGURAÇÕES DE IMPOSTOS DA EMPRESA ===
 Regime Tributário: ${taxSettings.regimeTributario}
@@ -648,7 +647,6 @@ Administração Central: ${bdiSettings.adminCentralPercentual}%
 Despesas Financeiras: ${bdiSettings.despesasFinanceirasPercentual}%
 Riscos: ${bdiSettings.riscosPercentual}%
 
-TIPO DE CONTRATO: ${input.contractType}
 COMPLEXIDADE LOGÍSTICA: ${input.logisticsComplexity}
 RISCO FISCAL: ${input.fiscalRisk}
 
@@ -984,7 +982,6 @@ CLÁUSULAS ESSENCIAIS:
     return `Redija a proposta técnica para o projeto:
 
 PROJETO: ${input.projectName}
-TIPO DE CONTRATO: ${input.contractType}
 VALOR TOTAL: R$ ${input.totalPrice.toFixed(2)}
 CONDIÇÕES DE PAGAMENTO: ${input.paymentTerms}
 PRAZO: ${input.duration} semanas
@@ -1113,7 +1110,6 @@ PROJETO EM ANÁLISE:
 - Nome: ${input.projectSummary.name}
 - Valor da Proposta: R$ ${input.projectSummary.totalPrice.toFixed(2)}
 - Prazo de Execução: ${input.projectSummary.duration} semanas
-- Tipo de Contrato: ${input.projectSummary.contractType}
 
 RESUMO DOS LAUDOS DOS AGENTES:
 ${JSON.stringify(resumo, null, 2)}

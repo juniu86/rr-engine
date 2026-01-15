@@ -30,7 +30,7 @@ export const appRouter = router({
       .input(z.object({
         name: z.string().min(1),
         description: z.string().optional(),
-        contractType: z.enum(["manutencao", "obra"]),
+        contractType: z.enum(["manutencao", "obra"]).optional().default("obra"),
         location: z.string().optional(),
         restrictions: z.string().optional(),
         memorialDescritivo: z.string().optional(),

@@ -155,7 +155,7 @@ export interface OrcamentistaOutput {
 
 export interface TributarioInput {
   budgetItems: BudgetItemDetail[];
-  contractType: ContractType;
+  contractType?: ContractType;
 }
 
 export interface TributarioOutput {
@@ -174,7 +174,7 @@ export interface ComercialInput {
   totalDirectCost: number;
   totalIndirectCost: number;
   totalTaxes: number;
-  contractType: ContractType;
+  contractType?: ContractType;
   logisticsComplexity: "low" | "medium" | "high";
   fiscalRisk: "low" | "medium" | "high";
 }
@@ -229,7 +229,7 @@ export interface FinanceiroOutput {
 
 export interface JuridicoInput {
   projectName: string;
-  contractType: ContractType;
+  contractType?: ContractType;
   totalPrice: number;
   paymentTerms: string;
   duration: number;
@@ -262,7 +262,7 @@ export interface BoardInput {
     name: string;
     totalPrice: number;
     duration: number;
-    contractType: ContractType;
+    contractType?: ContractType;
   };
 }
 
