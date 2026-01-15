@@ -191,3 +191,73 @@ export const priceCache = mysqlTable("price_cache", {
 
 export type PriceCache = typeof priceCache.$inferSelect;
 export type InsertPriceCache = typeof priceCache.$inferInsert;
+
+// ==================== COMPANY SETTINGS ====================
+// Configurações personalizadas de impostos e BDI por usuário/empresa
+export const companySettings = mysqlTable("company_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // Um registro por usuário
+  
+  // Informações da Empresa
+  companyName: varchar("companyName", { length: 255 }),
+  cnpj: varchar("cnpj", { length: 20 }),
+  
+  // Região de Preços (SINAPI/PINI)
+  priceRegion: mysqlEnum("priceRegion", [
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
+    "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
+    "RS", "RO", "RR", "SC", "SP", "SE", "TO"
+  ]).default("SP").notNull(),
+  
+  // Taxa de Leis Sociais (LS) - Encargos Trabalhistas
+  // Valores típicos: 80% a 130% dependendo do regime tributário
+  taxaLeisSociais: decimal("taxaLeisSociais", { precision: 6, scale: 2 }).default("128.23").notNull(),
+  
+  // BDI - Bonificação e Despesas Indiretas
+  // Composição típica: Administração Central + Despesas Financeiras + Riscos + Tributos + Lucro
+  bdiPercentual: decimal("bdiPercentual", { precision: 6, scale: 2 }).default("25.00").notNull(),
+  
+  // Lucro Esperado (já incluso no BDI, mas editável separadamente)
+  lucroPercentual: decimal("lucroPercentual", { precision: 6, scale: 2 }).default("8.00").notNull(),
+  
+  // Tributos (composição detalhada)
+  // ISS - Imposto Sobre Serviços (2% a 5%)
+  issPercentual: decimal("issPercentual", { precision: 6, scale: 2 }).default("5.00").notNull(),
+  
+  // PIS - Programa de Integração Social (0.65% ou 1.65%)
+  pisPercentual: decimal("pisPercentual", { precision: 6, scale: 2 }).default("0.65").notNull(),
+  
+  // COFINS - Contribuição para Financiamento da Seguridade Social (3% ou 7.6%)
+  cofinsPercentual: decimal("cofinsPercentual", { precision: 6, scale: 2 }).default("3.00").notNull(),
+  
+  // IRPJ - Imposto de Renda Pessoa Jurídica (1.2% sobre faturamento presumido)
+  irpjPercentual: decimal("irpjPercentual", { precision: 6, scale: 2 }).default("1.20").notNull(),
+  
+  // CSLL - Contribuição Social sobre Lucro Líquido (1.08% sobre faturamento presumido)
+  csllPercentual: decimal("csllPercentual", { precision: 6, scale: 2 }).default("1.08").notNull(),
+  
+  // Administração Central (%)
+  adminCentralPercentual: decimal("adminCentralPercentual", { precision: 6, scale: 2 }).default("4.00").notNull(),
+  
+  // Despesas Financeiras (%)
+  despesasFinanceirasPercentual: decimal("despesasFinanceirasPercentual", { precision: 6, scale: 2 }).default("1.00").notNull(),
+  
+  // Riscos e Imprevistos (%)
+  riscosPercentual: decimal("riscosPercentual", { precision: 6, scale: 2 }).default("1.00").notNull(),
+  
+  // Regime Tributário
+  regimeTributario: mysqlEnum("regimeTributario", [
+    "simples_nacional",
+    "lucro_presumido",
+    "lucro_real"
+  ]).default("lucro_presumido").notNull(),
+  
+  // Data de referência dos preços (formato YYYY/MM)
+  dataReferenciaPrecos: varchar("dataReferenciaPrecos", { length: 10 }).default("2025/01"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CompanySettings = typeof companySettings.$inferSelect;
+export type InsertCompanySettings = typeof companySettings.$inferInsert;

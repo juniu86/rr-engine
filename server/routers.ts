@@ -258,7 +258,7 @@ export const appRouter = router({
         await db.updateAgentExecution(execution.id, { status: "running", startedAt: new Date() });
         
         try {
-          const agentInput = await buildAgentInput(input.agentType, project, executions);
+          const agentInput = await buildAgentInput(input.agentType, project, executions, ctx.user.id);
           const agent = agents[input.agentType];
           const output = await agent.execute(agentInput);
           
@@ -307,7 +307,7 @@ export const appRouter = router({
           await db.updateAgentExecution(execution.id, { status: "running", startedAt: new Date() });
           
           try {
-            const agentInput = await buildAgentInput(agentType, project, executions);
+            const agentInput = await buildAgentInput(agentType, project, executions, ctx.user.id);
             const agent = agents[agentType];
             const output = await agent.execute(agentInput);
             
@@ -448,6 +448,80 @@ export const appRouter = router({
   }),
 
   // Budget Router
+  // Company Settings Router - Configurações de Impostos e BDI por Empresa
+  settings: router({
+    get: protectedProcedure
+      .query(async ({ ctx }) => {
+        return db.getCompanySettingsOrDefault(ctx.user.id);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        companyName: z.string().optional(),
+        cnpj: z.string().optional(),
+        priceRegion: z.enum(["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]).optional(),
+        taxaLeisSociais: z.string().optional(),
+        bdiPercentual: z.string().optional(),
+        lucroPercentual: z.string().optional(),
+        issPercentual: z.string().optional(),
+        pisPercentual: z.string().optional(),
+        cofinsPercentual: z.string().optional(),
+        irpjPercentual: z.string().optional(),
+        csllPercentual: z.string().optional(),
+        adminCentralPercentual: z.string().optional(),
+        despesasFinanceirasPercentual: z.string().optional(),
+        riscosPercentual: z.string().optional(),
+        regimeTributario: z.enum(["simples_nacional", "lucro_presumido", "lucro_real"]).optional(),
+        dataReferenciaPrecos: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.upsertCompanySettings(ctx.user.id, input);
+      }),
+
+    // Calcular BDI baseado nos componentes
+    calculateBdi: protectedProcedure
+      .input(z.object({
+        adminCentral: z.number(),
+        despesasFinanceiras: z.number(),
+        riscos: z.number(),
+        lucro: z.number(),
+        iss: z.number(),
+        pis: z.number(),
+        cofins: z.number(),
+        irpj: z.number(),
+        csll: z.number(),
+      }))
+      .query(({ input }) => {
+        // Fórmula do BDI: ((1 + AC + DF + R + L) / (1 - T)) - 1
+        // Onde T = soma dos tributos sobre faturamento
+        const { adminCentral, despesasFinanceiras, riscos, lucro, iss, pis, cofins, irpj, csll } = input;
+        
+        const tributos = (iss + pis + cofins + irpj + csll) / 100;
+        const despesas = (adminCentral + despesasFinanceiras + riscos + lucro) / 100;
+        
+        const bdi = ((1 + despesas) / (1 - tributos)) - 1;
+        const bdiPercentual = bdi * 100;
+        
+        return {
+          bdiPercentual: bdiPercentual.toFixed(2),
+          composicao: {
+            administracaoCentral: adminCentral,
+            despesasFinanceiras,
+            riscos,
+            lucro,
+            tributos: {
+              iss,
+              pis,
+              cofins,
+              irpj,
+              csll,
+              total: (iss + pis + cofins + irpj + csll).toFixed(2),
+            },
+          },
+        };
+      }),
+  }),
+
   budget: router({
     getItems: protectedProcedure
       .input(z.object({ projectId: z.number() }))
@@ -512,9 +586,10 @@ export const appRouter = router({
         if (!project) throw new TRPCError({ code: "NOT_FOUND" });
         if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         
-        const [budgetItems, executions] = await Promise.all([
+        const [budgetItems, executions, companySettings] = await Promise.all([
           db.getBudgetItemsByProjectId(input.projectId),
           db.getAgentExecutionsByProjectId(input.projectId),
+          db.getCompanySettingsOrDefault(ctx.user.id),
         ]);
         
         const juridicaExec = executions.find(e => e.agentType === "juridico");
@@ -524,7 +599,7 @@ export const appRouter = router({
         const comercialExec = executions.find(e => e.agentType === "comercial");
         const comercialOutput = comercialExec?.output;
         
-        const result = await generateProposalPDF(project, budgetItems, juridicaOutput, comercialOutput);
+        const result = await generateProposalPDF(project, budgetItems, juridicaOutput, comercialOutput, companySettings);
         return result;
       }),
 
@@ -548,11 +623,14 @@ export const appRouter = router({
 });
 
 // Helper function to build agent input based on previous outputs
-async function buildAgentInput(agentType: AgentType, project: any, executions: any[]): Promise<any> {
+async function buildAgentInput(agentType: AgentType, project: any, executions: any[], userId: number): Promise<any> {
   const getOutput = (type: AgentType) => {
     const exec = executions.find(e => e.agentType === type);
     return exec?.output || {};
   };
+  
+  // Buscar configurações da empresa do usuário
+  const companySettings = await db.getCompanySettingsOrDefault(userId);
   
   switch (agentType) {
     case "engenheiro_tecnico":
@@ -589,6 +667,16 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
       return {
         budgetItems: getOutput("orcamentista").budgetItems || [],
         contractType: project.contractType,
+        // Configurações de impostos da empresa
+        companyTaxSettings: {
+          regimeTributario: companySettings.regimeTributario,
+          issPercentual: parseFloat(companySettings.issPercentual as string) || 5.0,
+          pisPercentual: parseFloat(companySettings.pisPercentual as string) || 0.65,
+          cofinsPercentual: parseFloat(companySettings.cofinsPercentual as string) || 3.0,
+          irpjPercentual: parseFloat(companySettings.irpjPercentual as string) || 1.2,
+          csllPercentual: parseFloat(companySettings.csllPercentual as string) || 1.08,
+          taxaLeisSociais: parseFloat(companySettings.taxaLeisSociais as string) || 128.23,
+        },
       };
       
     case "comercial":
@@ -603,6 +691,14 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
         contractType: project.contractType,
         logisticsComplexity: logOutput.totalLogisticsCost > 50000 ? "high" : logOutput.totalLogisticsCost > 20000 ? "medium" : "low",
         fiscalRisk: tribOutput.alerts?.length > 2 ? "high" : tribOutput.alerts?.length > 0 ? "medium" : "low",
+        // Configurações de BDI e lucro da empresa
+        companyBdiSettings: {
+          bdiPercentual: parseFloat(companySettings.bdiPercentual as string) || 25.0,
+          lucroPercentual: parseFloat(companySettings.lucroPercentual as string) || 8.0,
+          adminCentralPercentual: parseFloat(companySettings.adminCentralPercentual as string) || 4.0,
+          despesasFinanceirasPercentual: parseFloat(companySettings.despesasFinanceirasPercentual as string) || 1.0,
+          riscosPercentual: parseFloat(companySettings.riscosPercentual as string) || 1.0,
+        },
       };
       
     case "gestao_projetos":

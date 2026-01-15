@@ -104,3 +104,11 @@
 
 ## Bug v1.10.1
 - [x] Erro 404 ao criar revisão de projeto - navegação para novo projeto falha (corrigido: /project/ -> /projects/)
+
+## Feature v1.11 - Configuração Personalizada de Impostos e BDI por Empresa
+- [x] Criar tabela company_settings no banco de dados
+- [x] Campos: região de preços, taxa LS (leis sociais), BDI, lucro esperado, ISS, PIS, COFINS, IRPJ, CSLL
+- [x] Endpoints CRUD para configurações de empresa
+- [x] Interface de configuração no dashboard/perfil (/settings)
+- [x] Integrar configurações nos agentes Comercial e Tributário
+- [x] Atualizar geração de proposta para usar configurações do usuário

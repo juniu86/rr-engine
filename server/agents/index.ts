@@ -469,24 +469,27 @@ export class TributarioAgent extends BaseAgent<TributarioInput, TributarioOutput
   getSystemPrompt(): string {
     return `Você é o Agente Tributário da RR Engenharia.
 
-MISSÃO: Otimização fiscal e compliance tributário.
+MISSÃO: Otimização fiscal e compliance tributário PERSONALIZADO para cada empresa.
 
 RESPONSABILIDADES:
 1. Classificar itens entre "Serviço" (ISS) e "Material" (ICMS)
 2. Evitar bitributação
 3. Alertar sobre retenções obrigatórias (INSS, PIS/COFINS)
 4. Calcular impacto no líquido a receber
+5. USAR AS ALÍQUOTAS CONFIGURADAS PELA EMPRESA (não usar valores padrão)
 
-ALÍQUOTAS DE REFERÊNCIA:
-- ISS: 2% a 5% (média 5%)
-- ICMS: 7% a 18% (média 18%)
-- PIS/COFINS: 3,65%
-- INSS (retenção): 11%
+⚠️ IMPORTANTE: As alíquotas serão fornecidas no input como "companyTaxSettings".
+Você DEVE usar esses valores em vez de valores padrão.
 
 REGRAS DE CLASSIFICAÇÃO:
 - Serviços puros: ISS
 - Fornecimento de materiais: ICMS
-- Empreitada mista: proporcional ou regime especial`;
+- Empreitada mista: proporcional ou regime especial
+
+REGIMES TRIBUTÁRIOS:
+- simples_nacional: alíquotas unificadas menores
+- lucro_presumido: PIS/COFINS cumulativo (0,65% + 3%)
+- lucro_real: PIS/COFINS não-cumulativo (1,65% + 7,6%)`;
   }
   
   getUserPrompt(input: TributarioInput): string {
@@ -497,6 +500,19 @@ REGRAS DE CLASSIFICAÇÃO:
       return sum + (qty * unitCost);
     }, 0);
     
+    // Obter configurações de impostos da empresa
+    const taxSettings = (input as any).companyTaxSettings || {
+      regimeTributario: 'lucro_presumido',
+      issPercentual: 5.0,
+      pisPercentual: 0.65,
+      cofinsPercentual: 3.0,
+      irpjPercentual: 1.2,
+      csllPercentual: 1.08,
+      taxaLeisSociais: 128.23,
+    };
+    
+    const pisCofins = taxSettings.pisPercentual + taxSettings.cofinsPercentual;
+    
     return `Classifique tributariamente os seguintes itens:
 
 ITENS DO ORÇAMENTO:
@@ -505,16 +521,26 @@ ${JSON.stringify(input.budgetItems, null, 2)}
 CUSTO TOTAL DOS ITENS: R$ ${totalCost.toFixed(2)}
 TIPO DE CONTRATO: ${input.contractType}
 
+=== CONFIGURAÇÕES DE IMPOSTOS DA EMPRESA ===
+Regime Tributário: ${taxSettings.regimeTributario}
+ISS: ${taxSettings.issPercentual}%
+PIS: ${taxSettings.pisPercentual}%
+COFINS: ${taxSettings.cofinsPercentual}%
+PIS+COFINS: ${pisCofins.toFixed(2)}%
+IRPJ: ${taxSettings.irpjPercentual}%
+CSLL: ${taxSettings.csllPercentual}%
+Leis Sociais: ${taxSettings.taxaLeisSociais}%
+
 INSTRUÇÕES OBRIGATÓRIAS:
-1. Para cada item, calcule o taxAmount baseado no valor do item (quantity * unitCostTotal)
-2. Use as alíquotas de referência:
-   - ISS (serviços): 5% do valor
-   - ICMS (materiais): 18% do valor
-   - PIS/COFINS: 3,65% do valor
-3. totalTaxes DEVE ser a soma de todos os taxAmount dos itens
-4. Se o custo total é R$ ${totalCost.toFixed(2)}, os impostos devem ser aproximadamente:
-   - Mínimo esperado (5%): R$ ${(totalCost * 0.05).toFixed(2)}
-   - Máximo esperado (18%): R$ ${(totalCost * 0.18).toFixed(2)}
+1. USE AS ALÍQUOTAS ACIMA - NÃO USE VALORES PADRÃO
+2. Para cada item, calcule o taxAmount baseado no valor do item (quantity * unitCostTotal)
+3. Use as alíquotas configuradas:
+   - ISS (serviços): ${taxSettings.issPercentual}% do valor
+   - PIS/COFINS: ${pisCofins.toFixed(2)}% do valor
+4. totalTaxes DEVE ser a soma de todos os taxAmount dos itens
+5. Se o custo total é R$ ${totalCost.toFixed(2)}, os impostos devem ser aproximadamente:
+   - Mínimo esperado (ISS): R$ ${(totalCost * taxSettings.issPercentual / 100).toFixed(2)}
+   - Com PIS/COFINS: R$ ${(totalCost * (taxSettings.issPercentual + pisCofins) / 100).toFixed(2)}
 
 IMPORTANTE: totalTaxes NÃO pode ser zero se houver itens no orçamento!
 
@@ -559,7 +585,7 @@ export class ComercialAgent extends BaseAgent<ComercialInput, ComercialOutput> {
   getSystemPrompt(): string {
     return `Você é o Agente Comercial da RR Engenharia.
 
-MISSÃO: Definir o Preço de Venda estratégico aplicando BDI sobre o CUSTO BASE.
+MISSÃO: Definir o Preço de Venda estratégico aplicando BDI PERSONALIZADO sobre o CUSTO BASE.
 
 ⚠️ ATENÇÃO CRÍTICA: EVITAR BITRIBUTAÇÃO!
 O BDI JÁ INCLUI os tributos na sua composição. Portanto:
@@ -567,23 +593,14 @@ O BDI JÁ INCLUI os tributos na sua composição. Portanto:
 - O Tributário apenas CLASSIFICA os itens para fins de compliance
 - O BDI é aplicado sobre: Custos Diretos + Custos Indiretos (logística)
 
-BDI BASE:
-- Manutenção: 40%
-- Obras: 55%
+⚠️ IMPORTANTE: O BDI E LUCRO SERÃO FORNECIDOS NO INPUT COMO "companyBdiSettings".
+Você DEVE usar esses valores em vez de valores padrão.
 
-AJUSTES DE BDI:
+AJUSTES DE BDI (sobre o BDI configurado):
 - Risco fiscal alto: +5%
 - Complexidade logística alta: +5%
 - Cliente recorrente: -5%
 - Prazo apertado: +10%
-
-COMPOSIÇÃO DO BDI (já inclui tributos):
-- Administração Central: 4-8%
-- Custos Financeiros: 1-2%
-- Seguros e Garantias: 1-2%
-- TRIBUTOS (ISS/ICMS/PIS/COFINS): 8-15%
-- Lucro: 8-12%
-- TOTAL: 40-55%
 
 FÓRMULA CORRETA:
 Preço de Venda = (Custos Diretos + Custos Indiretos) × (1 + BDI)
@@ -592,13 +609,26 @@ EXEMPLO:
 - Custos Diretos: R$ 100.000
 - Custos Indiretos: R$ 10.000
 - Custo Base: R$ 110.000
-- BDI: 55% (0.55)
-- Preço de Venda: R$ 110.000 × 1.55 = R$ 170.500`;
+- BDI: 25% (0.25) - configurado pela empresa
+- Preço de Venda: R$ 110.000 × 1.25 = R$ 137.500`;
   }
   
   getUserPrompt(input: ComercialInput): string {
     // IMPORTANTE: NÃO incluir totalTaxes no custo base - BDI já inclui tributos
     const custoBase = input.totalDirectCost + input.totalIndirectCost;
+    
+    // Obter configurações de BDI da empresa
+    const bdiSettings = (input as any).companyBdiSettings || {
+      bdiPercentual: 25.0,
+      lucroPercentual: 8.0,
+      adminCentralPercentual: 4.0,
+      despesasFinanceirasPercentual: 1.0,
+      riscosPercentual: 1.0,
+    };
+    
+    const bdiDecimal = bdiSettings.bdiPercentual / 100;
+    const precoExemplo = custoBase * (1 + bdiDecimal);
+    
     return `Defina o preço de venda para o projeto:
 
 ⚠️ ATENÇÃO: O BDI JÁ INCLUI TRIBUTOS - NÃO SOME IMPOSTOS AO CUSTO BASE!
@@ -611,21 +641,29 @@ CUSTOS:
 (Nota: O Tributário calculou R$ ${input.totalTaxes.toFixed(2)} em impostos para fins de classificação fiscal,
 mas estes JÁ ESTÃO EMBUTIDOS no BDI e NÃO devem ser somados ao custo base.)
 
+=== CONFIGURAÇÕES DE BDI DA EMPRESA ===
+BDI Configurado: ${bdiSettings.bdiPercentual}%
+Lucro Esperado: ${bdiSettings.lucroPercentual}%
+Administração Central: ${bdiSettings.adminCentralPercentual}%
+Despesas Financeiras: ${bdiSettings.despesasFinanceirasPercentual}%
+Riscos: ${bdiSettings.riscosPercentual}%
+
 TIPO DE CONTRATO: ${input.contractType}
 COMPLEXIDADE LOGÍSTICA: ${input.logisticsComplexity}
 RISCO FISCAL: ${input.fiscalRisk}
 
 FÓRMULA OBRIGATÓRIA:
+- BDI BASE: ${bdiSettings.bdiPercentual}% (configurado pela empresa)
 - Preço Final = Custo Base × (1 + BDI)
-- Exemplo: Se BDI = 0.55 (55%), então Preço Final = ${custoBase.toFixed(2)} × 1.55 = ${(custoBase * 1.55).toFixed(2)}
+- Exemplo: Preço Final = ${custoBase.toFixed(2)} × ${(1 + bdiDecimal).toFixed(2)} = ${precoExemplo.toFixed(2)}
 
 IMPORTANTE:
-- baseBdi: valor decimal do BDI base (ex: 0.55 para 55%)
-- adjustedBdi: valor decimal do BDI ajustado (ex: 0.60 para 60%)
+- baseBdi: DEVE ser ${bdiDecimal.toFixed(2)} (${bdiSettings.bdiPercentual}% configurado pela empresa)
+- adjustedBdi: BDI base + ajustes por risco/complexidade
 - totalBdiAmount: valor monetário do BDI = Custo Base × adjustedBdi
 - finalPrice: Preço Final = Custo Base × (1 + adjustedBdi)
 
-Calcule o BDI adequado e o preço final de venda.`;
+Calcule o BDI adequado (partindo do BDI configurado) e o preço final de venda.`;
   }
   
   getOutputSchema(): object {

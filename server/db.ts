@@ -9,7 +9,8 @@ import {
   scheduleItems, InsertScheduleItem,
   cashFlowItems, InsertCashFlowItem,
   generatedDocuments, InsertGeneratedDocument,
-  priceCache, InsertPriceCache
+  priceCache, InsertPriceCache,
+  companySettings, InsertCompanySettings, CompanySettings
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -358,4 +359,79 @@ export async function getAllProjectsWithRevisions(userId: number): Promise<Proje
     .orderBy(desc(projects.createdAt));
   
   return allProjects;
+}
+
+
+// ==================== COMPANY SETTINGS QUERIES ====================
+export async function getCompanySettingsByUserId(userId: number): Promise<CompanySettings | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select().from(companySettings).where(eq(companySettings.userId, userId)).limit(1);
+  return result[0];
+}
+
+export async function createCompanySettings(data: InsertCompanySettings): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(companySettings).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function updateCompanySettings(userId: number, data: Partial<InsertCompanySettings>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(companySettings).set(data).where(eq(companySettings.userId, userId));
+}
+
+export async function upsertCompanySettings(userId: number, data: Partial<InsertCompanySettings>): Promise<CompanySettings> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const existing = await getCompanySettingsByUserId(userId);
+  
+  if (existing) {
+    await updateCompanySettings(userId, data);
+    const updated = await getCompanySettingsByUserId(userId);
+    return updated!;
+  } else {
+    await createCompanySettings({ userId, ...data } as InsertCompanySettings);
+    const created = await getCompanySettingsByUserId(userId);
+    return created!;
+  }
+}
+
+// Função para obter configurações com valores padrão
+export async function getCompanySettingsOrDefault(userId: number): Promise<CompanySettings> {
+  const settings = await getCompanySettingsByUserId(userId);
+  
+  if (settings) {
+    return settings;
+  }
+  
+  // Retornar valores padrão se não existir configuração
+  return {
+    id: 0,
+    userId,
+    companyName: null,
+    cnpj: null,
+    priceRegion: "SP",
+    taxaLeisSociais: "128.23",
+    bdiPercentual: "25.00",
+    lucroPercentual: "8.00",
+    issPercentual: "5.00",
+    pisPercentual: "0.65",
+    cofinsPercentual: "3.00",
+    irpjPercentual: "1.20",
+    csllPercentual: "1.08",
+    adminCentralPercentual: "4.00",
+    despesasFinanceirasPercentual: "1.00",
+    riscosPercentual: "1.00",
+    regimeTributario: "lucro_presumido",
+    dataReferenciaPrecos: "2025/01",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 }

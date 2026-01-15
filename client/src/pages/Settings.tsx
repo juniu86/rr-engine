@@ -1,0 +1,529 @@
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, Building2, Calculator, Percent, Receipt, Save, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+
+const ESTADOS_BRASIL = [
+  { value: "AC", label: "Acre" },
+  { value: "AL", label: "Alagoas" },
+  { value: "AP", label: "Amapá" },
+  { value: "AM", label: "Amazonas" },
+  { value: "BA", label: "Bahia" },
+  { value: "CE", label: "Ceará" },
+  { value: "DF", label: "Distrito Federal" },
+  { value: "ES", label: "Espírito Santo" },
+  { value: "GO", label: "Goiás" },
+  { value: "MA", label: "Maranhão" },
+  { value: "MT", label: "Mato Grosso" },
+  { value: "MS", label: "Mato Grosso do Sul" },
+  { value: "MG", label: "Minas Gerais" },
+  { value: "PA", label: "Pará" },
+  { value: "PB", label: "Paraíba" },
+  { value: "PR", label: "Paraná" },
+  { value: "PE", label: "Pernambuco" },
+  { value: "PI", label: "Piauí" },
+  { value: "RJ", label: "Rio de Janeiro" },
+  { value: "RN", label: "Rio Grande do Norte" },
+  { value: "RS", label: "Rio Grande do Sul" },
+  { value: "RO", label: "Rondônia" },
+  { value: "RR", label: "Roraima" },
+  { value: "SC", label: "Santa Catarina" },
+  { value: "SP", label: "São Paulo" },
+  { value: "SE", label: "Sergipe" },
+  { value: "TO", label: "Tocantins" },
+];
+
+const REGIMES_TRIBUTARIOS = [
+  { value: "simples_nacional", label: "Simples Nacional" },
+  { value: "lucro_presumido", label: "Lucro Presumido" },
+  { value: "lucro_real", label: "Lucro Real" },
+];
+
+export default function Settings() {
+  const [, navigate] = useLocation();
+  const { user, loading: authLoading } = useAuth();
+  
+  const { data: settings, isLoading, refetch } = trpc.settings.get.useQuery(undefined, {
+    enabled: !!user,
+  });
+  
+  const updateSettings = trpc.settings.update.useMutation({
+    onSuccess: () => {
+      toast.success("Configurações salvas com sucesso!");
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao salvar: " + error.message);
+    },
+  });
+
+  // Form state
+  const [formData, setFormData] = useState({
+    companyName: "",
+    cnpj: "",
+    priceRegion: "SP",
+    taxaLeisSociais: "128.23",
+    bdiPercentual: "25.00",
+    lucroPercentual: "8.00",
+    issPercentual: "5.00",
+    pisPercentual: "0.65",
+    cofinsPercentual: "3.00",
+    irpjPercentual: "1.20",
+    csllPercentual: "1.08",
+    adminCentralPercentual: "4.00",
+    despesasFinanceirasPercentual: "1.00",
+    riscosPercentual: "1.00",
+    regimeTributario: "lucro_presumido",
+    dataReferenciaPrecos: "2025/01",
+  });
+
+  // Load settings into form
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        companyName: settings.companyName || "",
+        cnpj: settings.cnpj || "",
+        priceRegion: settings.priceRegion || "SP",
+        taxaLeisSociais: settings.taxaLeisSociais || "128.23",
+        bdiPercentual: settings.bdiPercentual || "25.00",
+        lucroPercentual: settings.lucroPercentual || "8.00",
+        issPercentual: settings.issPercentual || "5.00",
+        pisPercentual: settings.pisPercentual || "0.65",
+        cofinsPercentual: settings.cofinsPercentual || "3.00",
+        irpjPercentual: settings.irpjPercentual || "1.20",
+        csllPercentual: settings.csllPercentual || "1.08",
+        adminCentralPercentual: settings.adminCentralPercentual || "4.00",
+        despesasFinanceirasPercentual: settings.despesasFinanceirasPercentual || "1.00",
+        riscosPercentual: settings.riscosPercentual || "1.00",
+        regimeTributario: settings.regimeTributario || "lucro_presumido",
+        dataReferenciaPrecos: settings.dataReferenciaPrecos || "2025/01",
+      });
+    }
+  }, [settings]);
+
+  // Calculate BDI from components
+  const calculateBdi = () => {
+    const adminCentral = parseFloat(formData.adminCentralPercentual) || 0;
+    const despesasFinanceiras = parseFloat(formData.despesasFinanceirasPercentual) || 0;
+    const riscos = parseFloat(formData.riscosPercentual) || 0;
+    const lucro = parseFloat(formData.lucroPercentual) || 0;
+    const iss = parseFloat(formData.issPercentual) || 0;
+    const pis = parseFloat(formData.pisPercentual) || 0;
+    const cofins = parseFloat(formData.cofinsPercentual) || 0;
+    const irpj = parseFloat(formData.irpjPercentual) || 0;
+    const csll = parseFloat(formData.csllPercentual) || 0;
+
+    const tributos = (iss + pis + cofins + irpj + csll) / 100;
+    const despesas = (adminCentral + despesasFinanceiras + riscos + lucro) / 100;
+    
+    const bdi = ((1 + despesas) / (1 - tributos)) - 1;
+    const bdiPercentual = (bdi * 100).toFixed(2);
+    
+    setFormData(prev => ({ ...prev, bdiPercentual }));
+    toast.info(`BDI calculado: ${bdiPercentual}%`);
+  };
+
+  // Calculate total taxes
+  const totalTributos = () => {
+    const iss = parseFloat(formData.issPercentual) || 0;
+    const pis = parseFloat(formData.pisPercentual) || 0;
+    const cofins = parseFloat(formData.cofinsPercentual) || 0;
+    const irpj = parseFloat(formData.irpjPercentual) || 0;
+    const csll = parseFloat(formData.csllPercentual) || 0;
+    return (iss + pis + cofins + irpj + csll).toFixed(2);
+  };
+
+  const handleSave = () => {
+    updateSettings.mutate({
+      ...formData,
+      priceRegion: formData.priceRegion as "AC" | "AL" | "AP" | "AM" | "BA" | "CE" | "DF" | "ES" | "GO" | "MA" | "MT" | "MS" | "MG" | "PA" | "PB" | "PR" | "PE" | "PI" | "RJ" | "RN" | "RS" | "RO" | "RR" | "SC" | "SP" | "SE" | "TO",
+      regimeTributario: formData.regimeTributario as "simples_nacional" | "lucro_presumido" | "lucro_real",
+    });
+  };
+
+  if (authLoading || isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    navigate("/");
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container flex items-center justify-between h-16">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold">Configurações da Empresa</h1>
+              <p className="text-sm text-muted-foreground">Impostos, BDI e parâmetros de orçamentação</p>
+            </div>
+          </div>
+          <Button onClick={handleSave} disabled={updateSettings.isPending}>
+            <Save className="h-4 w-4 mr-2" />
+            {updateSettings.isPending ? "Salvando..." : "Salvar Configurações"}
+          </Button>
+        </div>
+      </header>
+
+      <main className="container py-8">
+        <Tabs defaultValue="empresa" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[600px]">
+            <TabsTrigger value="empresa" className="flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Empresa</span>
+            </TabsTrigger>
+            <TabsTrigger value="tributos" className="flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              <span className="hidden sm:inline">Tributos</span>
+            </TabsTrigger>
+            <TabsTrigger value="bdi" className="flex items-center gap-2">
+              <Calculator className="h-4 w-4" />
+              <span className="hidden sm:inline">BDI</span>
+            </TabsTrigger>
+            <TabsTrigger value="precos" className="flex items-center gap-2">
+              <Percent className="h-4 w-4" />
+              <span className="hidden sm:inline">Preços</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Tab: Empresa */}
+          <TabsContent value="empresa">
+            <Card>
+              <CardHeader>
+                <CardTitle>Dados da Empresa</CardTitle>
+                <CardDescription>
+                  Informações básicas da sua empresa para identificação nas propostas
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="companyName">Razão Social</Label>
+                    <Input
+                      id="companyName"
+                      placeholder="Nome da empresa"
+                      value={formData.companyName}
+                      onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cnpj">CNPJ</Label>
+                    <Input
+                      id="cnpj"
+                      placeholder="00.000.000/0000-00"
+                      value={formData.cnpj}
+                      onChange={(e) => setFormData(prev => ({ ...prev, cnpj: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="regimeTributario">Regime Tributário</Label>
+                  <Select
+                    value={formData.regimeTributario}
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, regimeTributario: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o regime" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REGIMES_TRIBUTARIOS.map((regime) => (
+                        <SelectItem key={regime.value} value={regime.value}>
+                          {regime.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    O regime tributário afeta as alíquotas de PIS, COFINS e outros tributos
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Tributos */}
+          <TabsContent value="tributos">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuração de Tributos</CardTitle>
+                <CardDescription>
+                  Defina as alíquotas de impostos aplicáveis à sua empresa. Total atual: <strong>{totalTributos()}%</strong>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="iss">ISS - Imposto Sobre Serviços (%)</Label>
+                    <Input
+                      id="iss"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="5"
+                      value={formData.issPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, issPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Típico: 2% a 5%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pis">PIS (%)</Label>
+                    <Input
+                      id="pis"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="2"
+                      value={formData.pisPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, pisPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Cumulativo: 0.65% | Não-cumulativo: 1.65%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="cofins">COFINS (%)</Label>
+                    <Input
+                      id="cofins"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="8"
+                      value={formData.cofinsPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, cofinsPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Cumulativo: 3% | Não-cumulativo: 7.6%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="irpj">IRPJ (%)</Label>
+                    <Input
+                      id="irpj"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="5"
+                      value={formData.irpjPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, irpjPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Sobre faturamento presumido: ~1.2%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="csll">CSLL (%)</Label>
+                    <Input
+                      id="csll"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="3"
+                      value={formData.csllPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, csllPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Sobre faturamento presumido: ~1.08%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="leisSociais">Leis Sociais - LS (%)</Label>
+                    <Input
+                      id="leisSociais"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="150"
+                      value={formData.taxaLeisSociais}
+                      onChange={(e) => setFormData(prev => ({ ...prev, taxaLeisSociais: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Encargos trabalhistas: 80% a 130%</p>
+                  </div>
+                </div>
+
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                  <p className="text-sm text-amber-200">
+                    <strong>Importante:</strong> Os tributos configurados aqui são utilizados no cálculo do BDI e na 
+                    precificação das propostas. Certifique-se de que os valores estão corretos para o regime tributário 
+                    da sua empresa.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: BDI */}
+          <TabsContent value="bdi">
+            <Card>
+              <CardHeader>
+                <CardTitle>Composição do BDI</CardTitle>
+                <CardDescription>
+                  Bonificação e Despesas Indiretas. BDI atual: <strong>{formData.bdiPercentual}%</strong>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="adminCentral">Administração Central (%)</Label>
+                    <Input
+                      id="adminCentral"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="10"
+                      value={formData.adminCentralPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, adminCentralPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Típico: 3% a 5%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="despesasFinanceiras">Despesas Financeiras (%)</Label>
+                    <Input
+                      id="despesasFinanceiras"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="5"
+                      value={formData.despesasFinanceirasPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, despesasFinanceirasPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Típico: 0.5% a 2%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="riscos">Riscos e Imprevistos (%)</Label>
+                    <Input
+                      id="riscos"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="5"
+                      value={formData.riscosPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, riscosPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Típico: 0.5% a 2%</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="lucro">Lucro Esperado (%)</Label>
+                    <Input
+                      id="lucro"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="20"
+                      value={formData.lucroPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, lucroPercentual: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Típico: 5% a 12%</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="bdiTotal">BDI Total (%)</Label>
+                    <Input
+                      id="bdiTotal"
+                      type="number"
+                      step="0.01"
+                      value={formData.bdiPercentual}
+                      onChange={(e) => setFormData(prev => ({ ...prev, bdiPercentual: e.target.value }))}
+                      className="text-lg font-bold"
+                    />
+                  </div>
+                  <Button variant="outline" onClick={calculateBdi} className="mt-6">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Recalcular BDI
+                  </Button>
+                </div>
+
+                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-medium">Fórmula do BDI:</p>
+                  <code className="text-xs bg-background px-2 py-1 rounded">
+                    BDI = ((1 + AC + DF + R + L) / (1 - Tributos)) - 1
+                  </code>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Onde: AC = Administração Central, DF = Despesas Financeiras, R = Riscos, L = Lucro
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Preços */}
+          <TabsContent value="precos">
+            <Card>
+              <CardHeader>
+                <CardTitle>Referência de Preços</CardTitle>
+                <CardDescription>
+                  Configure a região e data de referência para consultas SINAPI/PINI
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="priceRegion">Região de Preços</Label>
+                    <Select
+                      value={formData.priceRegion}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, priceRegion: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ESTADOS_BRASIL.map((estado) => (
+                          <SelectItem key={estado.value} value={estado.value}>
+                            {estado.label} ({estado.value})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Os preços SINAPI variam por estado
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="dataReferencia">Data de Referência</Label>
+                    <Input
+                      id="dataReferencia"
+                      placeholder="YYYY/MM"
+                      value={formData.dataReferenciaPrecos}
+                      onChange={(e) => setFormData(prev => ({ ...prev, dataReferenciaPrecos: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Formato: 2025/01 (ano/mês)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                  <p className="text-sm text-blue-200">
+                    <strong>Dica:</strong> Mantenha a data de referência atualizada para garantir que os preços 
+                    das composições estejam alinhados com o mercado atual.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  );
+}

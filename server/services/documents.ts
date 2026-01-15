@@ -39,12 +39,23 @@ function calculateProportionalPrices(budgetItems: BudgetItem[], totalSalePrice: 
   });
 }
 
+// Interface para configurações da empresa
+interface CompanySettings {
+  companyName?: string | null;
+  cnpj?: string | null;
+  priceRegion?: string | null;
+  bdiPercentual?: string | null;
+  lucroPercentual?: string | null;
+  taxaLeisSociais?: string | null;
+}
+
 // Generate proposal PDF content with proportional prices (hiding costs)
 export async function generateProposalPDF(
   project: Project,
   budgetItems: BudgetItem[],
   juridicaOutput: any,
-  comercialOutput?: any
+  comercialOutput?: any,
+  companySettings?: CompanySettings
 ): Promise<{ url: string; fileKey: string }> {
   // Calcular custo base total (sem BDI)
   const totalBaseCost = budgetItems.reduce((sum, item) => {
@@ -57,14 +68,17 @@ export async function generateProposalPDF(
   // Preço do agente comercial
   const comercialPrice = comercialOutput?.finalPrice || 0;
   
-  // BDI do agente comercial (se disponível)
-  const comercialBdi = comercialOutput?.adjustedBdi || 0.55;
+  // BDI do agente comercial (se disponível) ou BDI configurado pela empresa
+  const bdiConfigurado = companySettings?.bdiPercentual ? parseFloat(companySettings.bdiPercentual) / 100 : 0.25;
+  const comercialBdi = comercialOutput?.adjustedBdi || bdiConfigurado;
   
   console.log('[Proposta] Debug de valores:');
   console.log(`  - Custo base total: R$ ${totalBaseCost.toFixed(2)}`);
-  console.log(`  - Preço dos items (BDI 55%): R$ ${totalFromItems.toFixed(2)}`);
+  console.log(`  - Preço dos items: R$ ${totalFromItems.toFixed(2)}`);
   console.log(`  - Preço do agente comercial: R$ ${comercialPrice.toFixed(2)}`);
+  console.log(`  - BDI configurado pela empresa: ${(bdiConfigurado * 100).toFixed(1)}%`);
   console.log(`  - BDI do agente comercial: ${(comercialBdi * 100).toFixed(1)}%`);
+  console.log(`  - Empresa: ${companySettings?.companyName || 'Não configurada'}`);
   
   // DETERMINAR O PREÇO DE VENDA CORRETO
   // Prioridade:
@@ -85,24 +99,24 @@ export async function generateProposalPDF(
     totalSalePrice = totalFromItems;
     console.log(`  - Usando preço dos items (dentro do range): R$ ${totalSalePrice.toFixed(2)}`);
   } else if (comercialPrice > maxExpectedPrice) {
-    // Preço comercial muito alto (possível duplicação) - recalcular
-    totalSalePrice = totalBaseCost * 1.55; // BDI padrão de 55%
-    console.log(`  - ALERTA: Preço comercial muito alto (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI 55%: R$ ${totalSalePrice.toFixed(2)}`);
+    // Preço comercial muito alto (possível duplicação) - recalcular com BDI configurado
+    totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
+    console.log(`  - ALERTA: Preço comercial muito alto (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI ${(bdiConfigurado * 100).toFixed(1)}%: R$ ${totalSalePrice.toFixed(2)}`);
   } else if (comercialPrice > 0 && comercialPrice < minExpectedPrice) {
-    // Preço comercial muito baixo - recalcular
-    totalSalePrice = totalBaseCost * 1.55;
-    console.log(`  - ALERTA: Preço comercial muito baixo (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI 55%: R$ ${totalSalePrice.toFixed(2)}`);
+    // Preço comercial muito baixo - recalcular com BDI configurado
+    totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
+    console.log(`  - ALERTA: Preço comercial muito baixo (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI ${(bdiConfigurado * 100).toFixed(1)}%: R$ ${totalSalePrice.toFixed(2)}`);
   } else {
-    // Sem preço comercial válido - usar preço dos items ou recalcular
-    totalSalePrice = totalFromItems > 0 ? totalFromItems : totalBaseCost * 1.55;
-    console.log(`  - Usando fallback: R$ ${totalSalePrice.toFixed(2)}`);
+    // Sem preço comercial válido - usar preço dos items ou recalcular com BDI configurado
+    totalSalePrice = totalFromItems > 0 ? totalFromItems : totalBaseCost * (1 + bdiConfigurado);
+    console.log(`  - Usando fallback (BDI ${(bdiConfigurado * 100).toFixed(1)}%): R$ ${totalSalePrice.toFixed(2)}`);
   }
   
   // Calculate proportional prices (hides cost breakdown)
   const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice);
   
   // Generate HTML content for the proposal
-  const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput);
+  const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput, companySettings);
   
   // Convert to PDF bytes
   const pdfBuffer = Buffer.from(htmlContent, "utf-8");
@@ -162,8 +176,11 @@ function generateProposalHTML(
   project: Project, 
   items: ProportionalItem[], 
   totalSalePrice: number,
-  juridicaOutput: any
+  juridicaOutput: any,
+  companySettings?: CompanySettings
 ): string {
+  const companyName = companySettings?.companyName || 'RR Engenharia';
+  const companyCnpj = companySettings?.cnpj || '';
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -282,9 +299,10 @@ function generateProposalHTML(
   </div>
 
   <div class="header">
-    <div class="logo">RR ENGENHARIA</div>
+    <div class="logo">${companyName.toUpperCase()}</div>
     <h1>PROPOSTA COMERCIAL</h1>
     <p class="subtitle">Soluções em Construção Civil e Infraestrutura</p>
+    ${companyCnpj ? `<p class="subtitle">CNPJ: ${companyCnpj}</p>` : ''}
   </div>
 
   <div class="section">
