@@ -117,3 +117,11 @@
 - [x] Remover campo "Tipo de Contrato" do formulário de criação de projeto
 - [x] Verificar e remover referências ao tipo de contrato nos agentes (evitar duplicação)
 - [x] BDI e impostos devem vir apenas das configurações da empresa
+
+## Auditoria e Melhorias v1.13
+- [x] Auditoria técnica completa do código - identificar erros legados
+- [x] Criar documentação detalhada do sistema (arquitetura, fluxo, componentes)
+- [x] Redesign da página inicial - melhorar apresentação
+- [x] Redesign da seção de agentes - visual mais profissional
+- [x] Extrair relatório de usuários que acessaram o sistema
+- [x] Extrair relatório de orçamentos gerados por usuário

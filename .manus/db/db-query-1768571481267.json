@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT \n  u.id as user_id,\n  u.name as user_name,\n  u.email,\n  u.loginMethod,\n  u.createdAt as user_created,\n  u.lastSignedIn,\n  COUNT(DISTINCT p.id) as total_projects,\n  SUM(CASE WHEN p.status = 'approved' THEN 1 ELSE 0 END) as approved_projects,\n  SUM(CASE WHEN p.status = 'processing' THEN 1 ELSE 0 END) as processing_projects,\n  SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) as draft_projects\nFROM users u\nLEFT JOIN projects p ON u.id = p.userId\nGROUP BY u.id, u.name, u.email, u.loginMethod, u.createdAt, u.lastSignedIn\nORDER BY u.lastSignedIn DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute \nSELECT \n  u.id as user_id,\n  u.name as user_name,\n  u.email,\n  u.loginMethod,\n  u.createdAt as user_created,\n  u.lastSignedIn,\n  COUNT(DISTINCT p.id) as total_projects,\n  SUM(CASE WHEN p.status = 'approved' THEN 1 ELSE 0 END) as approved_projects,\n  SUM(CASE WHEN p.status = 'processing' THEN 1 ELSE 0 END) as processing_projects,\n  SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) as draft_projects\nFROM users u\nLEFT JOIN projects p ON u.id = p.userId\nGROUP BY u.id, u.name, u.email, u.loginMethod, u.createdAt, u.lastSignedIn\nORDER BY u.lastSignedIn DESC;\n",
+  "rows": [
+    {
+      "user_id": "1",
+      "user_name": "Reginaldo Carmo Jr",
+      "email": "reginaldo.carmojr@gmail.com",
+      "loginMethod": "google",
+      "user_created": "2025-12-16 20:29:31",
+      "lastSignedIn": "2026-01-16 13:46:30",
+      "total_projects": "29",
+      "approved_projects": "6",
+      "processing_projects": "0",
+      "draft_projects": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "user_id\tuser_name\temail\tloginMethod\tuser_created\tlastSignedIn\ttotal_projects\tapproved_projects\tprocessing_projects\tdraft_projects\n1\tReginaldo Carmo Jr\treginaldo.carmojr@gmail.com\tgoogle\t2025-12-16 20:29:31\t2026-01-16 13:46:30\t29\t6\t0\t0\n",
+  "stderr": "",
+  "execution_time_ms": 1057
+}
