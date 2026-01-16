@@ -997,13 +997,18 @@ export const appRouter = router({
         if (!project) throw new TRPCError({ code: "NOT_FOUND" });
         if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         
-        const [budgetItems, logisticsCosts, cashFlowItems] = await Promise.all([
+        const [budgetItems, logisticsCosts, cashFlowItems, executions] = await Promise.all([
           db.getBudgetItemsByProjectId(input.projectId),
           db.getLogisticsCostsByProjectId(input.projectId),
           db.getCashFlowItemsByProjectId(input.projectId),
+          db.getAgentExecutionsByProjectId(input.projectId),
         ]);
         
-        const result = await generateMemoriaCalculo(project, budgetItems, logisticsCosts, cashFlowItems);
+        // Obter output do agente comercial para usar o preço final correto
+        const comercialExec = executions.find(e => e.agentType === "comercial");
+        const comercialOutput = comercialExec?.output;
+        
+        const result = await generateMemoriaCalculo(project, budgetItems, logisticsCosts, cashFlowItems, comercialOutput);
         return result;
       }),
 

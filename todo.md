@@ -171,3 +171,11 @@
 - [x] Adicionar instruções de correção específicas para cada agente no ciclo de revisão
 - [x] Limitar a uma única tentativa de auto-correção
 - [x] Exibir status de revisão no frontend
+
+## Bug Crítico v1.20 - Inconsistência de Valores entre Agentes e Documentos
+- [x] Preço final na planilha não inclui custos de logística - CORRIGIDO: generateMemoriaXLSX agora usa preço do Comercial
+- [x] Fluxo de caixa mostra despesas maiores que receitas - CORRIGIDO: Financeiro já recebia preço correto do Comercial
+- [x] Agente Comercial calculou R$13.520 mas planilha mostra R$8.920 - CORRIGIDO: Planilha usa comercialOutput.finalPrice
+- [x] Aba Resumo da planilha soma incorretamente - CORRIGIDO: Mostra Custo Base (Direto + Logística) + BDI = Preço Final
+- [x] Proposta Comercial mostra valor diferente - CORRIGIDO: Já usava comercialOutput.finalPrice
+- [x] Garantir consistência de valores - CORRIGIDO: Fonte única de verdade é o agente Comercial

@@ -1,0 +1,423 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  
+  <Styles>
+    <Style ss:ID="Header">
+      <Font ss:Bold="1" ss:Size="12"/>
+      <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center"/>
+    </Style>
+    <Style ss:ID="Title">
+      <Font ss:Bold="1" ss:Size="14" ss:Color="#D97706"/>
+    </Style>
+    <Style ss:ID="Currency">
+      <NumberFormat ss:Format="R$ #,##0.00"/>
+      <Alignment ss:Horizontal="Right"/>
+    </Style>
+    <Style ss:ID="Total">
+      <Font ss:Bold="1"/>
+      <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="R$ #,##0.00"/>
+    </Style>
+  </Styles>
+
+  <!-- Planilha de Orçamento -->
+  <Worksheet ss:Name="Orçamento Detalhado">
+    <Table>
+      <Column ss:Width="40"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="250"/>
+      <Column ss:Width="60"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="100"/>
+      
+      <!-- Título -->
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">MEMÓRIA DE CÁLCULO - Vania Esgoto REV06</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Data: 16/01/2026</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <!-- Cabeçalho -->
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Item</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Código</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Unid.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Qtd.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Material</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo M.O.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Logística</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Total</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Impostos</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">BDI</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Preço Final</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Fonte</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Cód. Fonte</Data></Cell>
+      </Row>
+      
+      <!-- Dados -->
+      
+      <Row>
+        <Cell><Data ss:Type="Number">1</Data></Cell>
+        <Cell><Data ss:Type="String">1.1</Data></Cell>
+        <Cell><Data ss:Type="String">Quebra e remoção de concreto existente para abertura de vala</Data></Cell>
+        <Cell><Data ss:Type="String">m²</Data></Cell>
+        <Cell><Data ss:Type="Number">15</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">5</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">45</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">5</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">825</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">453.75</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">1278.75</Data></Cell>
+        <Cell><Data ss:Type="String">SINAPI</Data></Cell>
+        <Cell><Data ss:Type="String">88307/1</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell><Data ss:Type="String">1.2</Data></Cell>
+        <Cell><Data ss:Type="String">Escavação manual/mecanizada de vala para rede de esgoto</Data></Cell>
+        <Cell><Data ss:Type="String">m</Data></Cell>
+        <Cell><Data ss:Type="Number">15</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">28</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">2</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">450</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">247.5</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">697.5</Data></Cell>
+        <Cell><Data ss:Type="String">SINAPI</Data></Cell>
+        <Cell><Data ss:Type="String">88265/1</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">3</Data></Cell>
+        <Cell><Data ss:Type="String">1.3</Data></Cell>
+        <Cell><Data ss:Type="String">Aterramento e desativação de caixas de passagem inutilizadas</Data></Cell>
+        <Cell><Data ss:Type="String">un</Data></Cell>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">15</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">75</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">5</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">190</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">104.5</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">294.5</Data></Cell>
+        <Cell><Data ss:Type="String">SINAPI</Data></Cell>
+        <Cell><Data ss:Type="String">92797/1</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">4</Data></Cell>
+        <Cell><Data ss:Type="String">8.1</Data></Cell>
+        <Cell><Data ss:Type="String">Instalação de tubulação de esgoto (Rede Principal)</Data></Cell>
+        <Cell><Data ss:Type="String">m</Data></Cell>
+        <Cell><Data ss:Type="Number">15</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">35</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">25</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">3</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">945</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">519.75</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">1464.75</Data></Cell>
+        <Cell><Data ss:Type="String">Mercado</Data></Cell>
+        <Cell><Data ss:Type="String">Cotação PVC 100mm</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">5</Data></Cell>
+        <Cell><Data ss:Type="String">1.4</Data></Cell>
+        <Cell><Data ss:Type="String">Reaterro da vala escavada</Data></Cell>
+        <Cell><Data ss:Type="String">m</Data></Cell>
+        <Cell><Data ss:Type="Number">15</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">18</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">2</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">300</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">165</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">465</Data></Cell>
+        <Cell><Data ss:Type="String">SINAPI</Data></Cell>
+        <Cell><Data ss:Type="String">88339/1</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">6</Data></Cell>
+        <Cell><Data ss:Type="String">5.1</Data></Cell>
+        <Cell><Data ss:Type="String">Concretagem de piso/pavimento sobre vala reaterrada</Data></Cell>
+        <Cell><Data ss:Type="String">m²</Data></Cell>
+        <Cell><Data ss:Type="Number">15</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">110</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">60</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">5</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">2625</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">1443.75</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">4068.75</Data></Cell>
+        <Cell><Data ss:Type="String">Mercado</Data></Cell>
+        <Cell><Data ss:Type="String">Cotação Concreto 30MPa</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">7</Data></Cell>
+        <Cell><Data ss:Type="String">5.2</Data></Cell>
+        <Cell><Data ss:Type="String">Concretagem de tampa de caixas de passagem desativadas</Data></Cell>
+        <Cell><Data ss:Type="String">un</Data></Cell>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">120</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">80</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">10</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">420</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">231</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">651</Data></Cell>
+        <Cell><Data ss:Type="String">Mercado</Data></Cell>
+        <Cell><Data ss:Type="String">Cotação Concreto 30MPa</Data></Cell>
+      </Row>
+      
+      
+      <!-- Totais -->
+      <Row/>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTO DIRETO</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">5755</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL IMPOSTOS</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">0</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL BDI</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">3165.25</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">PREÇO FINAL DE VENDA</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">8920.25</Data></Cell>
+      </Row>
+    </Table>
+  </Worksheet>
+
+  <!-- Planilha de Custos Logísticos -->
+  <Worksheet ss:Name="Custos Logísticos">
+    <Table>
+      <Column ss:Width="120"/>
+      <Column ss:Width="250"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">CUSTOS LOGÍSTICOS</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Categoria</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Qtd.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Unid.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Unit.</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Total</Data></Cell>
+      </Row>
+      
+      
+      <Row>
+        <Cell><Data ss:Type="String">outros</Data></Cell>
+        <Cell><Data ss:Type="String">Transporte de equipamentos e ferramentas (Betoneira, rompedor, etc.)</Data></Cell>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell><Data ss:Type="String">viagem</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">300</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">600</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">frete</Data></Cell>
+        <Cell><Data ss:Type="String">Frete de materiais pesados (Concreto usinado FCK=30 MPa)</Data></Cell>
+        <Cell><Data ss:Type="Number">1</Data></Cell>
+        <Cell><Data ss:Type="String">viagem</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">350</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">350</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">bota_fora</Data></Cell>
+        <Cell><Data ss:Type="String">Caçamba 5m³ para entulho (Quebra de concreto e escavação)</Data></Cell>
+        <Cell><Data ss:Type="Number">4</Data></Cell>
+        <Cell><Data ss:Type="String">un</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">400</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">1600</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">equipamentos</Data></Cell>
+        <Cell><Data ss:Type="String">Locação de Betoneira 400L (8 semanas = 2 meses)</Data></Cell>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell><Data ss:Type="String">mês</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">400</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">800</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">equipamentos</Data></Cell>
+        <Cell><Data ss:Type="String">Locação de Rompedor Elétrico (para quebra do concreto)</Data></Cell>
+        <Cell><Data ss:Type="Number">10</Data></Cell>
+        <Cell><Data ss:Type="String">dia</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">80</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">800</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">outros</Data></Cell>
+        <Cell><Data ss:Type="String">Taxa de Estacionamento para veículos de apoio/carga e descarga (2 meses)</Data></Cell>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell><Data ss:Type="String">mês</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">250</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">500</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">outros</Data></Cell>
+        <Cell><Data ss:Type="String">Seguro de Obra (All Risks)</Data></Cell>
+        <Cell><Data ss:Type="Number">1</Data></Cell>
+        <Cell><Data ss:Type="String">pacote</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">1200</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">1200</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">outros</Data></Cell>
+        <Cell><Data ss:Type="String">Limpeza final profissional da área</Data></Cell>
+        <Cell><Data ss:Type="Number">1</Data></Cell>
+        <Cell><Data ss:Type="String">serviço</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">500</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">500</Data></Cell>
+      </Row>
+      
+      
+      <Row/>
+      <Row>
+        <Cell ss:MergeAcross="4" ss:StyleID="Total"><Data ss:Type="String">TOTAL LOGÍSTICA</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">6350</Data></Cell>
+      </Row>
+    </Table>
+  </Worksheet>
+
+  <!-- Planilha de Fluxo de Caixa -->
+  <Worksheet ss:Name="Fluxo de Caixa">
+    <Table>
+      <Column ss:Width="80"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="80"/>
+      
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">FLUXO DE CAIXA</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Semana</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Despesas</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Receitas</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Saldo Acumulado</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Alerta</Data></Cell>
+      </Row>
+      
+      
+      <Row>
+        <Cell><Data ss:Type="Number">1</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">3380</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">5408</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">2028</Data></Cell>
+        <Cell><Data ss:Type="String"></Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">2</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">3380</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">-1352</Data></Cell>
+        <Cell><Data ss:Type="String">SIM</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">3</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">3380</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">-4732</Data></Cell>
+        <Cell><Data ss:Type="String">SIM</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="Number">4</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">3380</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">8112</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+        <Cell><Data ss:Type="String"></Data></Cell>
+      </Row>
+      
+    </Table>
+  </Worksheet>
+
+  <!-- Planilha de Resumo -->
+  <Worksheet ss:Name="Resumo">
+    <Table>
+      <Column ss:Width="200"/>
+      <Column ss:Width="150"/>
+      
+      <Row>
+        <Cell ss:StyleID="Title"><Data ss:Type="String">RESUMO DO ORÇAMENTO</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Projeto: Vania Esgoto REV06</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Data: 16/01/2026</Data></Cell>
+      </Row>
+      <Row/>
+      
+      <Row>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
+        <Cell ss:StyleID="Header"><Data ss:Type="String">Valor</Data></Cell>
+      </Row>
+      
+      <Row>
+        <Cell><Data ss:Type="String">Custo Direto (Materiais + M.O.)</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">5755</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Custos Logísticos</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">6350</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Impostos (ISS/ICMS)</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">0</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">BDI (Administração + Lucro)</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">3165.25</Data></Cell>
+      </Row>
+      <Row/>
+      <Row>
+        <Cell ss:StyleID="Total"><Data ss:Type="String">PREÇO FINAL DE VENDA</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">8920.25</Data></Cell>
+      </Row>
+    </Table>
+  </Worksheet>
+</Workbook>

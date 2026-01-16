@@ -145,10 +145,11 @@ export async function generateMemoriaCalculo(
   project: Project,
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
-  cashFlowItems: any[]
+  cashFlowItems: any[],
+  comercialOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
   // Generate XLSX content using XML format (Excel 2003 XML)
-  const xlsxContent = generateMemoriaXLSX(project, budgetItems, logisticsCosts, cashFlowItems);
+  const xlsxContent = generateMemoriaXLSX(project, budgetItems, logisticsCosts, cashFlowItems, comercialOutput);
   
   const xlsxBuffer = Buffer.from(xlsxContent, "utf-8");
   
@@ -434,16 +435,44 @@ function generateMemoriaXLSX(
   project: Project,
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
-  cashFlowItems: any[]
+  cashFlowItems: any[],
+  comercialOutput?: any
 ): string {
   const escapeXml = (str: string) => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   
   // Calculate totals
   const totalDirect = budgetItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
   const totalTax = budgetItems.reduce((sum, item) => sum + Number(item.taxAmount || 0), 0);
-  const totalBdi = budgetItems.reduce((sum, item) => sum + Number(item.bdiAmount || 0), 0);
-  const totalFinal = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
   const totalLogistics = logisticsCosts.reduce((sum, cost) => sum + Number(cost.totalCost || 0), 0);
+  
+  // CORREÇÃO CRÍTICA: Usar o preço final do agente Comercial como fonte única de verdade
+  // O preço do Comercial já inclui: Custo Direto + Logística + BDI
+  const custoBase = totalDirect + totalLogistics;
+  const comercialFinalPrice = comercialOutput?.finalPrice || 0;
+  const comercialBdi = comercialOutput?.adjustedBdi || 0.30; // BDI padrão de 30%
+  
+  // Se temos preço do comercial, usar ele; senão calcular com BDI padrão
+  let totalFinal: number;
+  let totalBdi: number;
+  
+  if (comercialFinalPrice > 0 && comercialFinalPrice >= custoBase) {
+    // Usar preço do agente comercial
+    totalFinal = comercialFinalPrice;
+    totalBdi = totalFinal - custoBase;
+  } else {
+    // Fallback: calcular com BDI padrão sobre custo base (direto + logística)
+    totalBdi = custoBase * comercialBdi;
+    totalFinal = custoBase + totalBdi;
+  }
+  
+  console.log('[Memória de Cálculo] Valores calculados:');
+  console.log(`  - Custo Direto: R$ ${totalDirect.toFixed(2)}`);
+  console.log(`  - Custo Logística: R$ ${totalLogistics.toFixed(2)}`);
+  console.log(`  - Custo Base: R$ ${custoBase.toFixed(2)}`);
+  console.log(`  - BDI: R$ ${totalBdi.toFixed(2)}`);
+  console.log(`  - Preço Final: R$ ${totalFinal.toFixed(2)}`);
+  console.log(`  - Preço Comercial: R$ ${comercialFinalPrice.toFixed(2)}`);
+  console.log(`  - BDI Comercial: ${(comercialBdi * 100).toFixed(1)}%`);
   
   return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -538,15 +567,19 @@ function generateMemoriaXLSX(
       <!-- Totais -->
       <Row/>
       <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTO DIRETO</Data></Cell>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTO DIRETO (Materiais + M.O.)</Data></Cell>
         <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalDirect}</Data></Cell>
       </Row>
       <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL IMPOSTOS</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalTax}</Data></Cell>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTOS LOGÍSTICOS</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
       </Row>
       <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL BDI</Data></Cell>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">CUSTO BASE (Direto + Logística)</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${custoBase}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">BDI (Administração + Lucro + Tributos)</Data></Cell>
         <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalBdi}</Data></Cell>
       </Row>
       <Row>
@@ -664,11 +697,16 @@ function generateMemoriaXLSX(
         <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
       </Row>
       <Row>
-        <Cell><Data ss:Type="String">Impostos (ISS/ICMS)</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="String">CUSTO BASE (Direto + Logística)</Data></Cell>
+        <Cell ss:StyleID="Total"><Data ss:Type="Number">${custoBase}</Data></Cell>
+      </Row>
+      <Row/>
+      <Row>
+        <Cell><Data ss:Type="String">Impostos (para referência fiscal)</Data></Cell>
         <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalTax}</Data></Cell>
       </Row>
       <Row>
-        <Cell><Data ss:Type="String">BDI (Administração + Lucro)</Data></Cell>
+        <Cell><Data ss:Type="String">BDI (Administração + Lucro + Tributos)</Data></Cell>
         <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalBdi}</Data></Cell>
       </Row>
       <Row/>
