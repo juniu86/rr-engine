@@ -522,6 +522,27 @@ export const appRouter = router({
       }),
   }),
 
+  // Admin Dashboard Router
+  admin: router({
+    getStats: protectedProcedure
+      .query(async ({ ctx }) => {
+        const stats = await db.getAdminStats();
+        return stats;
+      }),
+
+    getUsers: protectedProcedure
+      .query(async ({ ctx }) => {
+        const users = await db.getAdminUsers();
+        return users;
+      }),
+
+    getProjects: protectedProcedure
+      .query(async ({ ctx }) => {
+        const projects = await db.getAdminProjects();
+        return projects;
+      }),
+  }),
+
   budget: router({
     getItems: protectedProcedure
       .input(z.object({ projectId: z.number() }))

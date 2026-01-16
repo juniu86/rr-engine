@@ -109,6 +109,65 @@ export default function Settings() {
     }
   }, [settings]);
 
+  // Presets de regime tributário
+  const applyPreset = (preset: 'simples_nacional' | 'lucro_presumido' | 'lucro_real') => {
+    const presets = {
+      simples_nacional: {
+        regimeTributario: 'simples_nacional',
+        issPercentual: '3.00',
+        pisPercentual: '0.00',
+        cofinsPercentual: '0.00',
+        irpjPercentual: '0.00',
+        csllPercentual: '0.00',
+        taxaLeisSociais: '68.00', // Menor encargo trabalhista
+        adminCentralPercentual: '3.00',
+        despesasFinanceirasPercentual: '0.50',
+        riscosPercentual: '0.50',
+        lucroPercentual: '8.00',
+      },
+      lucro_presumido: {
+        regimeTributario: 'lucro_presumido',
+        issPercentual: '5.00',
+        pisPercentual: '0.65',
+        cofinsPercentual: '3.00',
+        irpjPercentual: '1.20',
+        csllPercentual: '1.08',
+        taxaLeisSociais: '128.23',
+        adminCentralPercentual: '4.00',
+        despesasFinanceirasPercentual: '1.00',
+        riscosPercentual: '1.00',
+        lucroPercentual: '8.00',
+      },
+      lucro_real: {
+        regimeTributario: 'lucro_real',
+        issPercentual: '5.00',
+        pisPercentual: '1.65',
+        cofinsPercentual: '7.60',
+        irpjPercentual: '2.40',
+        csllPercentual: '1.44',
+        taxaLeisSociais: '128.23',
+        adminCentralPercentual: '5.00',
+        despesasFinanceirasPercentual: '1.50',
+        riscosPercentual: '1.50',
+        lucroPercentual: '10.00',
+      },
+    };
+
+    const selectedPreset = presets[preset];
+    setFormData(prev => ({
+      ...prev,
+      ...selectedPreset,
+    }));
+
+    const regimeLabels = {
+      simples_nacional: 'Simples Nacional',
+      lucro_presumido: 'Lucro Presumido',
+      lucro_real: 'Lucro Real',
+    };
+
+    toast.success(`Preset "${regimeLabels[preset]}" aplicado! Clique em Salvar para confirmar.`);
+  };
+
   // Calculate BDI from components
   const calculateBdi = () => {
     const adminCentral = parseFloat(formData.adminCentralPercentual) || 0;
@@ -264,10 +323,45 @@ export default function Settings() {
           <TabsContent value="tributos">
             <Card>
               <CardHeader>
-                <CardTitle>Configuração de Tributos</CardTitle>
-                <CardDescription>
-                  Defina as alíquotas de impostos aplicáveis à sua empresa. Total atual: <strong>{totalTributos()}%</strong>
-                </CardDescription>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle>Configuração de Tributos</CardTitle>
+                    <CardDescription>
+                      Defina as alíquotas de impostos aplicáveis à sua empresa. Total atual: <strong>{totalTributos()}%</strong>
+                    </CardDescription>
+                  </div>
+                </div>
+                {/* Preset Buttons */}
+                <div className="flex flex-wrap gap-2 pt-4 border-t mt-4">
+                  <span className="text-sm text-muted-foreground mr-2 self-center">Presets:</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyPreset('simples_nacional')}
+                    className={formData.regimeTributario === 'simples_nacional' ? 'border-green-500 bg-green-500/10' : ''}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Simples Nacional
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyPreset('lucro_presumido')}
+                    className={formData.regimeTributario === 'lucro_presumido' ? 'border-amber-500 bg-amber-500/10' : ''}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Lucro Presumido
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyPreset('lucro_real')}
+                    className={formData.regimeTributario === 'lucro_real' ? 'border-blue-500 bg-blue-500/10' : ''}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Lucro Real
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

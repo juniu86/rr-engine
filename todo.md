@@ -137,3 +137,8 @@
 
 ## Bug v1.15.1
 - [x] Numeração dos agentes no Pipeline está incorreta - segunda linha mostra 08, 07, 06, 05 em vez de 06, 07, 08, 09
+
+## Feature v1.16 - Melhorias Avançadas
+- [x] Presets de Regime Tributário (Simples Nacional, Lucro Presumido, Lucro Real)
+- [x] Dashboard Administrativo com métricas de usuários e projetos (/admin)
+- [x] Comparativo de Revisões lado a lado com diferenças destacadas (/projects/:id/compare)

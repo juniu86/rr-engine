@@ -9,14 +9,18 @@ import Dashboard from "./pages/Dashboard";
 import NewProject from "./pages/NewProject";
 import ProjectDetails from "./pages/ProjectDetails";
 import Settings from "./pages/Settings";
+import AdminDashboard from "./pages/AdminDashboard";
+import CompareRevisions from "./pages/CompareRevisions";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/admin" component={AdminDashboard} />
       <Route path="/projects/new" component={NewProject} />
       <Route path="/projects/:id" component={ProjectDetails} />
+      <Route path="/projects/:id/compare" component={CompareRevisions} />
       <Route path="/settings" component={Settings} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

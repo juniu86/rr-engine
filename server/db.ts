@@ -1,5 +1,5 @@
-import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { 
   InsertUser, users, 
   projects, InsertProject, Project,
@@ -434,4 +434,187 @@ export async function getCompanySettingsOrDefault(userId: number): Promise<Compa
     createdAt: new Date(),
     updatedAt: new Date(),
   };
+}
+
+
+// ==================== ADMIN DASHBOARD QUERIES ====================
+export async function getAdminStats() {
+  const db = await getDb();
+  if (!db) return {
+    totalUsers: 0,
+    activeUsersLast30Days: 0,
+    totalProjects: 0,
+    approvedProjects: 0,
+    reviewProjects: 0,
+    rejectedProjects: 0,
+    approvalRate: 0,
+    totalBudgetValue: 0,
+    averageBudgetValue: 0,
+    totalDocuments: 0,
+    proposalsGenerated: 0,
+    projectsThisWeek: 0,
+    documentsThisWeek: 0,
+  };
+  
+  // Total users
+  const usersResult = await db.select({ count: sql<number>`count(*)` }).from(users);
+  const totalUsers = Number(usersResult[0]?.count || 0);
+  
+  // Active users in last 30 days
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const activeUsersResult = await db.select({ count: sql<number>`count(distinct ${projects.userId})` })
+    .from(projects)
+    .where(gte(projects.createdAt, thirtyDaysAgo));
+  const activeUsersLast30Days = Number(activeUsersResult[0]?.count || 0);
+  
+  // Projects stats
+  const projectsResult = await db.select({ count: sql<number>`count(*)` }).from(projects);
+  const totalProjects = Number(projectsResult[0]?.count || 0);
+  
+  const approvedResult = await db.select({ count: sql<number>`count(*)` })
+    .from(projects)
+    .where(eq(projects.status, "approved"));
+  const approvedProjects = Number(approvedResult[0]?.count || 0);
+  
+  const reviewResult = await db.select({ count: sql<number>`count(*)` })
+    .from(projects)
+    .where(eq(projects.status, "review"));
+  const reviewProjects = Number(reviewResult[0]?.count || 0);
+  
+  const rejectedResult = await db.select({ count: sql<number>`count(*)` })
+    .from(projects)
+    .where(eq(projects.status, "rejected"));
+  const rejectedProjects = Number(rejectedResult[0]?.count || 0);
+  
+  const approvalRate = totalProjects > 0 ? Math.round((approvedProjects / totalProjects) * 100) : 0;
+  
+  // Budget values from agent executions (comercial output)
+  const budgetResult = await db.select({ 
+    totalValue: sql<number>`COALESCE(SUM(CAST(JSON_EXTRACT(output, '$.finalPrice') AS DECIMAL(15,2))), 0)`,
+    avgValue: sql<number>`COALESCE(AVG(CAST(JSON_EXTRACT(output, '$.finalPrice') AS DECIMAL(15,2))), 0)`,
+  })
+    .from(agentExecutions)
+    .where(and(
+      eq(agentExecutions.agentType, "comercial"),
+      eq(agentExecutions.status, "completed")
+    ));
+  const totalBudgetValue = Number(budgetResult[0]?.totalValue || 0);
+  const averageBudgetValue = Number(budgetResult[0]?.avgValue || 0);
+  
+  // Documents count
+  const docsResult = await db.select({ count: sql<number>`count(*)` }).from(generatedDocuments);
+  const totalDocuments = Number(docsResult[0]?.count || 0);
+  
+  const proposalsResult = await db.select({ count: sql<number>`count(*)` })
+    .from(generatedDocuments)
+    .where(eq(generatedDocuments.documentType, "proposta_comercial"));
+  const proposalsGenerated = Number(proposalsResult[0]?.count || 0);
+  
+  // Projects this week
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  const projectsWeekResult = await db.select({ count: sql<number>`count(*)` })
+    .from(projects)
+    .where(gte(projects.createdAt, oneWeekAgo));
+  const projectsThisWeek = Number(projectsWeekResult[0]?.count || 0);
+  
+  // Documents this week
+  const docsWeekResult = await db.select({ count: sql<number>`count(*)` })
+    .from(generatedDocuments)
+    .where(gte(generatedDocuments.createdAt, oneWeekAgo));
+  const documentsThisWeek = Number(docsWeekResult[0]?.count || 0);
+  
+  return {
+    totalUsers,
+    activeUsersLast30Days,
+    totalProjects,
+    approvedProjects,
+    reviewProjects,
+    rejectedProjects,
+    approvalRate,
+    totalBudgetValue,
+    averageBudgetValue,
+    totalDocuments,
+    proposalsGenerated,
+    projectsThisWeek,
+    documentsThisWeek,
+  };
+}
+
+export async function getAdminUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+    createdAt: users.createdAt,
+    lastLogin: users.updatedAt,
+  }).from(users).orderBy(desc(users.createdAt));
+  
+  // Get project counts for each user
+  const usersWithCounts = await Promise.all(result.map(async (u) => {
+    const projectCountResult = await db.select({ count: sql<number>`count(*)` })
+      .from(projects)
+      .where(eq(projects.userId, u.id));
+    const projectCount = Number(projectCountResult[0]?.count || 0);
+    
+    const approvedCountResult = await db.select({ count: sql<number>`count(*)` })
+      .from(projects)
+      .where(and(eq(projects.userId, u.id), eq(projects.status, "approved")));
+    const approvedCount = Number(approvedCountResult[0]?.count || 0);
+    
+    return {
+      ...u,
+      projectCount,
+      approvedCount,
+    };
+  }));
+  
+  return usersWithCounts;
+}
+
+export async function getAdminProjects() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db.select({
+    id: projects.id,
+    name: projects.name,
+    status: projects.status,
+    createdAt: projects.createdAt,
+    userId: projects.userId,
+  }).from(projects).orderBy(desc(projects.createdAt)).limit(50);
+  
+  // Get user names and final values
+  const projectsWithDetails = await Promise.all(result.map(async (p) => {
+    const userResult = await db.select({ name: users.name }).from(users).where(eq(users.id, p.userId)).limit(1);
+    const userName = userResult[0]?.name || "Desconhecido";
+    
+    // Get final value from comercial agent
+    const comercialResult = await db.select({ output: agentExecutions.output })
+      .from(agentExecutions)
+      .where(and(
+        eq(agentExecutions.projectId, p.id),
+        eq(agentExecutions.agentType, "comercial"),
+        eq(agentExecutions.status, "completed")
+      ))
+      .limit(1);
+    
+    let finalValue = null;
+    if (comercialResult[0]?.output) {
+      const output = comercialResult[0].output as any;
+      finalValue = output.finalPrice || null;
+    }
+    
+    return {
+      ...p,
+      userName,
+      finalValue,
+    };
+  }));
+  
+  return projectsWithDetails;
 }

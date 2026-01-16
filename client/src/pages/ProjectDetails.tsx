@@ -358,9 +358,21 @@ export default function ProjectDetails() {
               {/* Histórico de Revisões */}
               <Card>
                 <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <History className="h-5 w-5 text-amber-500" />
-                    <CardTitle>Histórico de Revisões</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <History className="h-5 w-5 text-amber-500" />
+                      <CardTitle>Histórico de Revisões</CardTitle>
+                    </div>
+                    {revisionsData && (revisionsData.revisions.length > 0 || revisionsData.original) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => navigate(`/projects/${projectId}/compare`)}
+                      >
+                        <GitBranch className="h-4 w-4 mr-2" />
+                        Comparar
+                      </Button>
+                    )}
                   </div>
                   <CardDescription>
                     Versões anteriores do orçamento
