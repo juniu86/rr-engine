@@ -134,3 +134,6 @@
 - [x] Animação fade-in sequencial nos agentes ao rolar a página
 - [x] Tooltips interativos com detalhes dos agentes
 - [x] Indicador de progresso real na página de detalhes do projeto (Pipeline visual)
+
+## Bug v1.15.1
+- [x] Numeração dos agentes no Pipeline está incorreta - segunda linha mostra 08, 07, 06, 05 em vez de 06, 07, 08, 09

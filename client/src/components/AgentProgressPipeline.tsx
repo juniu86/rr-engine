@@ -279,10 +279,10 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
             <div className="absolute right-[8%] top-1/2 w-6 h-6 border-r border-b border-slate-700 -translate-y-1/2 translate-x-3" />
           </div>
 
-          {/* Bottom row - agents 6-9 (reversed for flow) */}
+          {/* Bottom row - agents 6-9 (in order from left to right) */}
           <div className="flex justify-end items-start gap-6 pr-[8%]">
-            {agentConfig.slice(5).reverse().map((agent, idx) => {
-              const actualIdx = 8 - idx; // 9, 8, 7, 6
+            {agentConfig.slice(5).map((agent, idx) => {
+              const actualIdx = idx + 6; // 6, 7, 8, 9
               const execution = executionMap.get(agent.type);
               const status = execution?.status || "pending";
               const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
