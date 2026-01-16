@@ -125,3 +125,7 @@
 - [x] Redesign da seção de agentes - visual mais profissional
 - [x] Extrair relatório de usuários que acessaram o sistema
 - [x] Extrair relatório de orçamentos gerados por usuário
+
+## Redesign v1.14 - Seção de Agentes
+- [x] Redesenhar seção de agentes com design sofisticado e profissional
+- [x] Remover cores excessivas e criar visual elegante

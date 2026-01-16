@@ -12,14 +12,6 @@ import {
   ArrowRight,
   Building2,
   Zap,
-  HardHat,
-  Truck,
-  Receipt,
-  Briefcase,
-  CalendarDays,
-  Wallet,
-  Scale,
-  CheckCircle2,
   ChevronRight
 } from "lucide-react";
 import { Link } from "wouter";
@@ -36,7 +28,7 @@ export default function Home() {
     {
       icon: Users,
       title: "9 Agentes Especialistas",
-      description: "Sistema sequencial de IA: Engenheiro, Orçamentista, Logística, Tributário, Comercial, Gestão, Financeiro, Jurídico e Board"
+      description: "Sistema sequencial de IA que analisa cada aspecto do orçamento"
     },
     {
       icon: Calculator,
@@ -60,85 +52,22 @@ export default function Home() {
     }
   ];
 
-  const agentDetails = [
-    {
-      num: 1,
-      name: "Engenheiro Técnico",
-      icon: HardHat,
-      color: "from-blue-500 to-blue-600",
-      description: "Interpreta o memorial descritivo e extrai todos os itens de serviço com especificações técnicas detalhadas.",
-      output: "Lista de itens técnicos com quantitativos"
-    },
-    {
-      num: 2,
-      name: "Orçamentista",
-      icon: Calculator,
-      color: "from-emerald-500 to-emerald-600",
-      description: "Precifica cada item utilizando bases SINAPI e PINI, com composição de custos de material e mão de obra.",
-      output: "Planilha orçamentária completa"
-    },
-    {
-      num: 3,
-      name: "Logística",
-      icon: Truck,
-      color: "from-orange-500 to-orange-600",
-      description: "Calcula custos indiretos: mobilização, frete, caçambas, equipamentos e deslocamentos.",
-      output: "Custos logísticos detalhados"
-    },
-    {
-      num: 4,
-      name: "Tributário",
-      icon: Receipt,
-      color: "from-red-500 to-red-600",
-      description: "Classifica cada item quanto à incidência de ISS, ICMS e demais tributos aplicáveis.",
-      output: "Classificação fiscal dos itens"
-    },
-    {
-      num: 5,
-      name: "Comercial",
-      icon: Briefcase,
-      color: "from-purple-500 to-purple-600",
-      description: "Aplica BDI configurável e define o preço de venda final com margem de lucro.",
-      output: "Preço de venda por item"
-    },
-    {
-      num: 6,
-      name: "Gestão de Projetos",
-      icon: CalendarDays,
-      color: "from-cyan-500 to-cyan-600",
-      description: "Cria cronograma físico baseado em índices de produtividade SINAPI para cada atividade.",
-      output: "Cronograma detalhado em semanas"
-    },
-    {
-      num: 7,
-      name: "Financeiro",
-      icon: Wallet,
-      color: "from-green-500 to-green-600",
-      description: "Analisa fluxo de caixa com faturamento 40% entrada + 60% final, identificando alertas.",
-      output: "Fluxo de caixa e alertas"
-    },
-    {
-      num: 8,
-      name: "Jurídico",
-      icon: Scale,
-      color: "from-indigo-500 to-indigo-600",
-      description: "Redige a proposta comercial com cláusulas contratuais e condições de pagamento.",
-      output: "Texto da proposta comercial"
-    },
-    {
-      num: 9,
-      name: "Board",
-      icon: CheckCircle2,
-      color: "from-amber-500 to-amber-600",
-      description: "Revisa todos os outputs e emite parecer final de aprovação ou ajustes necessários.",
-      output: "Decisão final e observações"
-    }
+  const agents = [
+    { num: "01", name: "Engenheiro Técnico", desc: "Extrai e especifica itens do memorial" },
+    { num: "02", name: "Orçamentista", desc: "Precifica com bases SINAPI e PINI" },
+    { num: "03", name: "Logística", desc: "Calcula custos indiretos e mobilização" },
+    { num: "04", name: "Tributário", desc: "Classifica incidência fiscal" },
+    { num: "05", name: "Comercial", desc: "Aplica BDI e define preço de venda" },
+    { num: "06", name: "Gestão de Projetos", desc: "Cria cronograma com produtividade" },
+    { num: "07", name: "Financeiro", desc: "Analisa fluxo de caixa" },
+    { num: "08", name: "Jurídico", desc: "Redige cláusulas contratuais" },
+    { num: "09", name: "Board", desc: "Aprova e emite parecer final" },
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-slate-950">
       {/* Header */}
-      <header className="border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
             <Building2 className="h-8 w-8 text-amber-500" />
@@ -147,7 +76,7 @@ export default function Home() {
           <nav className="flex items-center gap-4">
             {isAuthenticated ? (
               <>
-                <span className="text-slate-300 text-sm">Olá, {user?.name || "Usuário"}</span>
+                <span className="text-slate-400 text-sm">Olá, {user?.name || "Usuário"}</span>
                 <Link href="/dashboard">
                   <Button variant="default" className="bg-amber-600 hover:bg-amber-700">
                     Dashboard
@@ -169,7 +98,7 @@ export default function Home() {
       {/* Hero Section */}
       <section className="container py-24 text-center">
         <div className="mx-auto max-w-4xl">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-4 py-2 text-amber-500">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-4 py-2 text-amber-500 border border-amber-500/20">
             <Zap className="h-4 w-4" />
             <span className="text-sm font-medium">Powered by AI</span>
           </div>
@@ -199,7 +128,7 @@ export default function Home() {
               </a>
             )}
             <a href="#agentes">
-              <Button size="lg" variant="outline" className="text-lg px-8 border-slate-600 text-slate-300 hover:bg-slate-800">
+              <Button size="lg" variant="outline" className="text-lg px-8 border-slate-700 text-slate-300 hover:bg-slate-800/50">
                 Ver Agentes
               </Button>
             </a>
@@ -220,7 +149,7 @@ export default function Home() {
         </div>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature, index) => (
-            <Card key={index} className="bg-slate-800/50 border-slate-700 hover:border-amber-500/50 transition-colors">
+            <Card key={index} className="bg-slate-900/50 border-slate-800 hover:border-slate-700 transition-colors">
               <CardHeader>
                 <feature.icon className="h-10 w-10 text-amber-500 mb-2" />
                 <CardTitle className="text-white">{feature.title}</CardTitle>
@@ -235,92 +164,115 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Agent Flow Section - Redesigned */}
-      <section id="agentes" className="py-20 bg-slate-800/30">
-        <div className="container">
+      {/* Agent Flow Section - Elegant Redesign */}
+      <section id="agentes" className="py-24 relative overflow-hidden">
+        {/* Subtle background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900/50 to-slate-950" />
+        
+        <div className="container relative">
           <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-4 py-2 text-amber-500 mb-4">
-              <Users className="h-4 w-4" />
-              <span className="text-sm font-medium">Pipeline de IA</span>
-            </div>
-            <h2 className="text-4xl font-bold text-white mb-4">
+            <p className="text-amber-500 text-sm font-medium tracking-widest uppercase mb-3">
+              Pipeline de Processamento
+            </p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
               9 Agentes Especializados
             </h2>
-            <p className="text-slate-400 max-w-3xl mx-auto text-lg">
-              Cada orçamento passa por uma cadeia de 9 agentes de inteligência artificial, 
-              onde cada especialista contribui com sua expertise para garantir precisão, 
-              conformidade e transparência em cada etapa do processo.
+            <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+              Cada orçamento passa por uma cadeia sequencial de especialistas em IA, 
+              garantindo precisão e conformidade em cada etapa.
             </p>
           </div>
 
-          {/* Visual Pipeline */}
-          <div className="relative mb-16">
-            {/* Connection Line */}
-            <div className="absolute top-6 left-0 right-0 h-1 bg-gradient-to-r from-amber-500/0 via-amber-500/30 to-amber-500/0 hidden lg:block" />
-            
-            {/* Agent Numbers */}
-            <div className="flex flex-wrap justify-center gap-4 lg:gap-0 lg:justify-between">
-              {agentDetails.map((agent, index) => (
-                <div key={agent.num} className="flex flex-col items-center group">
-                  <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${agent.color} flex items-center justify-center text-white font-bold shadow-lg shadow-${agent.color.split('-')[1]}-500/20 relative z-10 group-hover:scale-110 transition-transform`}>
+          {/* Elegant Agent Timeline */}
+          <div className="max-w-5xl mx-auto">
+            {/* Desktop: Horizontal Flow */}
+            <div className="hidden lg:block">
+              {/* Top row - agents 1-5 */}
+              <div className="flex justify-between items-start mb-2">
+                {agents.slice(0, 5).map((agent, idx) => (
+                  <div key={agent.num} className="flex flex-col items-center w-40">
+                    <div className="text-5xl font-extralight text-slate-700 mb-2 tabular-nums">
+                      {agent.num}
+                    </div>
+                    <h3 className="text-white font-medium text-sm text-center mb-1">
+                      {agent.name}
+                    </h3>
+                    <p className="text-slate-500 text-xs text-center leading-relaxed">
+                      {agent.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Connection line */}
+              <div className="relative h-16 my-4">
+                <div className="absolute top-1/2 left-[10%] right-[10%] h-px bg-gradient-to-r from-slate-800 via-amber-500/30 to-slate-800" />
+                {/* Dots on the line */}
+                <div className="absolute top-1/2 left-[10%] right-[10%] flex justify-between -translate-y-1/2">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="w-2 h-2 rounded-full bg-amber-500/50" />
+                  ))}
+                </div>
+                {/* Arrow pointing down-right */}
+                <div className="absolute right-[10%] top-1/2 w-8 h-8 border-r border-b border-amber-500/30 -translate-y-1/2 translate-x-4" />
+              </div>
+
+              {/* Bottom row - agents 6-9 (reversed for flow) */}
+              <div className="flex justify-end items-start gap-8 pr-[10%]">
+                {agents.slice(5).reverse().map((agent, idx) => (
+                  <div key={agent.num} className="flex flex-col items-center w-40">
+                    <div className="text-5xl font-extralight text-slate-700 mb-2 tabular-nums">
+                      {agent.num}
+                    </div>
+                    <h3 className="text-white font-medium text-sm text-center mb-1">
+                      {agent.name}
+                    </h3>
+                    <p className="text-slate-500 text-xs text-center leading-relaxed">
+                      {agent.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Mobile/Tablet: Vertical List */}
+            <div className="lg:hidden space-y-1">
+              {agents.map((agent, idx) => (
+                <div 
+                  key={agent.num}
+                  className="group flex items-center gap-6 p-4 rounded-lg hover:bg-slate-800/30 transition-colors"
+                >
+                  <div className="text-4xl font-extralight text-slate-700 tabular-nums w-16 text-right">
                     {agent.num}
                   </div>
-                  <span className="text-xs text-slate-400 mt-2 text-center max-w-[80px] leading-tight">
-                    {agent.name}
-                  </span>
+                  <div className="h-px w-8 bg-slate-800 group-hover:bg-amber-500/50 transition-colors" />
+                  <div className="flex-1">
+                    <h3 className="text-white font-medium mb-0.5">
+                      {agent.name}
+                    </h3>
+                    <p className="text-slate-500 text-sm">
+                      {agent.desc}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-700 group-hover:text-amber-500 transition-colors" />
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Detailed Agent Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {agentDetails.map((agent) => (
-              <Card 
-                key={agent.num} 
-                className="bg-slate-800/50 border-slate-700 hover:border-slate-600 transition-all hover:shadow-lg hover:shadow-slate-900/50 group"
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${agent.color} flex items-center justify-center shadow-md`}>
-                      <agent.icon className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-slate-500">#{agent.num}</span>
-                        <CardTitle className="text-white text-base">{agent.name}</CardTitle>
-                      </div>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <p className="text-slate-400 text-sm mb-3">
-                    {agent.description}
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-amber-500/80 bg-amber-500/10 rounded-md px-2 py-1.5">
-                    <ChevronRight className="h-3 w-3" />
-                    <span className="font-medium">{agent.output}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Process Summary */}
-          <div className="mt-12 bg-slate-800/50 rounded-xl border border-slate-700 p-6">
-            <div className="grid md:grid-cols-3 gap-6 text-center">
-              <div>
-                <div className="text-3xl font-bold text-amber-500 mb-1">100%</div>
-                <div className="text-slate-400 text-sm">Processamento Automático</div>
-              </div>
-              <div>
-                <div className="text-3xl font-bold text-amber-500 mb-1">9</div>
-                <div className="text-slate-400 text-sm">Especialistas em Cadeia</div>
-              </div>
-              <div>
-                <div className="text-3xl font-bold text-amber-500 mb-1">SINAPI/PINI</div>
-                <div className="text-slate-400 text-sm">Bases de Preços Oficiais</div>
-              </div>
+          {/* Stats */}
+          <div className="mt-20 grid grid-cols-3 gap-8 max-w-3xl mx-auto">
+            <div className="text-center">
+              <div className="text-4xl font-light text-white mb-2">100%</div>
+              <div className="text-slate-500 text-sm">Automático</div>
+            </div>
+            <div className="text-center border-x border-slate-800">
+              <div className="text-4xl font-light text-white mb-2">SINAPI</div>
+              <div className="text-slate-500 text-sm">Base de Preços</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl font-light text-white mb-2">NBR</div>
+              <div className="text-slate-500 text-sm">Conformidade</div>
             </div>
           </div>
         </div>
@@ -328,42 +280,46 @@ export default function Home() {
 
       {/* CTA Section */}
       <section className="container py-16">
-        <Card className="bg-gradient-to-r from-amber-600 to-amber-700 border-0">
-          <CardContent className="p-12 text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-600 to-amber-700 p-12 text-center">
+          {/* Decorative elements */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-800/30 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
+          
+          <div className="relative">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
               Pronto para Automatizar seus Orçamentos?
             </h2>
-            <p className="text-amber-100 mb-8 max-w-2xl mx-auto">
+            <p className="text-amber-100/80 mb-8 max-w-2xl mx-auto text-lg">
               Reduza o tempo de elaboração de propostas de dias para minutos, 
               com precisão técnica e conformidade garantida.
             </p>
             {isAuthenticated ? (
               <Link href="/projects/new">
-                <Button size="lg" variant="secondary" className="text-lg px-8">
+                <Button size="lg" variant="secondary" className="text-lg px-8 bg-white text-amber-700 hover:bg-amber-50">
                   Criar Primeiro Orçamento
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
             ) : (
               <a href={getLoginUrl()}>
-                <Button size="lg" variant="secondary" className="text-lg px-8">
+                <Button size="lg" variant="secondary" className="text-lg px-8 bg-white text-amber-700 hover:bg-amber-50">
                   Começar Gratuitamente
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </a>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-700/50 py-8">
+      <footer className="border-t border-slate-800/50 py-8">
         <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Building2 className="h-6 w-6 text-amber-500" />
             <span className="font-semibold text-white">RR Engenharia</span>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-600">
             © 2026 RR Engenharia. Todos os direitos reservados.
           </p>
         </div>
