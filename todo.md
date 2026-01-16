@@ -159,3 +159,6 @@
 - [x] Modal de confirmação do Board - exibir alertas quando status é "pending_confirmation" e pedir confirmação do usuário
 - [x] Popup de itens opcionais da Logística - modal durante execução do agente para selecionar itens opcionais (placa de obra, tapume, etc.)
 - [x] Exportação de cronograma em PDF - botão para gerar PDF do cronograma dia a dia com visualização Gantt
+
+## Bug v1.18.1
+- [x] Erro de JavaScript no frontend publicado - "An unexpected error occurred" ao acessar página de projeto (hooks movidos para antes dos early returns)

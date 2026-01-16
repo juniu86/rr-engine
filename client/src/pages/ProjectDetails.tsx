@@ -204,6 +204,44 @@ export default function ProjectDetails() {
     },
   });
 
+  // Extrair dados se disponíveis (para uso nos useEffects)
+  const project = details?.project;
+  const agentExecutions = details?.agentExecutions || [];
+  const budgetItems = details?.budgetItems || [];
+  const cashFlowItems = details?.cashFlowItems || [];
+  const documents = details?.documents || [];
+  
+  const completedAgents = agentExecutions.filter(e => e.status === "completed").length;
+  const progress = (completedAgents / 9) * 100;
+
+  // Verificar se há itens opcionais da Logística
+  const logisticaExec = agentExecutions.find(e => e.agentType === "logistica");
+  const logisticaOutput = logisticaExec?.output as any;
+  const hasOptionalItems = logisticaOutput?.optionalItems?.length > 0;
+  const hasSelectedOptionalItems = logisticaOutput?.selectedOptionalItems?.length > 0;
+
+  // Verificar status de confirmação pendente
+  useEffect(() => {
+    if (project?.status === "pending_confirmation") {
+      // Parsear warnings do projeto
+      try {
+        const warnings = project.warningMessages ? JSON.parse(project.warningMessages as string) : [];
+        setBoardWarnings(warnings);
+        setShowBoardConfirmDialog(true);
+      } catch {
+        setBoardWarnings([]);
+      }
+    }
+  }, [project?.status, project?.warningMessages]);
+
+  // Verificar itens opcionais após execução da logística
+  useEffect(() => {
+    if (hasOptionalItems && !hasSelectedOptionalItems && logisticaExec?.status === "completed") {
+      setOptionalItems(logisticaOutput?.optionalItems || []);
+      // Só mostrar automaticamente se acabou de completar
+    }
+  }, [hasOptionalItems, hasSelectedOptionalItems, logisticaExec?.status, logisticaOutput?.optionalItems]);
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -231,39 +269,6 @@ export default function ProjectDetails() {
     );
   }
 
-  const { project, agentExecutions, budgetItems, cashFlowItems, documents } = details;
-  
-  const completedAgents = agentExecutions.filter(e => e.status === "completed").length;
-  const progress = (completedAgents / 9) * 100;
-
-  // Verificar se há itens opcionais da Logística
-  const logisticaExec = agentExecutions.find(e => e.agentType === "logistica");
-  const logisticaOutput = logisticaExec?.output as any;
-  const hasOptionalItems = logisticaOutput?.optionalItems?.length > 0;
-  const hasSelectedOptionalItems = logisticaOutput?.selectedOptionalItems?.length > 0;
-
-  // Verificar status de confirmação pendente
-  useEffect(() => {
-    if (project.status === "pending_confirmation") {
-      // Parsear warnings do projeto
-      try {
-        const warnings = project.warningMessages ? JSON.parse(project.warningMessages as string) : [];
-        setBoardWarnings(warnings);
-        setShowBoardConfirmDialog(true);
-      } catch {
-        setBoardWarnings([]);
-      }
-    }
-  }, [project.status, project.warningMessages]);
-
-  // Verificar itens opcionais após execução da logística
-  useEffect(() => {
-    if (hasOptionalItems && !hasSelectedOptionalItems && logisticaExec?.status === "completed") {
-      setOptionalItems(logisticaOutput.optionalItems || []);
-      // Só mostrar automaticamente se acabou de completar
-    }
-  }, [hasOptionalItems, hasSelectedOptionalItems, logisticaExec?.status]);
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -276,16 +281,16 @@ export default function ProjectDetails() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-2xl font-bold">{project.name}</h1>
-              <p className="text-muted-foreground">{project.description}</p>
+              <h1 className="text-2xl font-bold">{project?.name}</h1>
+              <p className="text-muted-foreground">{project?.description}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline">
-              {project.contractType === "obra" ? "Obra" : "Manutenção"}
+              {project?.contractType === "obra" ? "Obra" : "Manutenção"}
             </Badge>
-            <Badge className={statusConfig[project.status as keyof typeof statusConfig]?.color || "bg-slate-500"}>
-              {statusConfig[project.status as keyof typeof statusConfig]?.label || project.status}
+            <Badge className={statusConfig[project?.status as keyof typeof statusConfig]?.color || "bg-slate-500"}>
+              {statusConfig[project?.status as keyof typeof statusConfig]?.label || project?.status}
             </Badge>
           </div>
         </div>
@@ -315,7 +320,7 @@ export default function ProjectDetails() {
             <div className="flex gap-2 pt-4">
               <Button 
                 onClick={() => executeAll.mutate({ projectId })}
-                disabled={executeAll.isPending || project.status === "approved"}
+                disabled={executeAll.isPending || project?.status === "approved"}
                 className="bg-amber-600 hover:bg-amber-700"
               >
                 {executeAll.isPending ? (
@@ -364,7 +369,7 @@ export default function ProjectDetails() {
                         variant="outline" 
                         size="sm"
                         onClick={() => {
-                          setEditedMemorial(project.memorialDescritivo || "");
+                          setEditedMemorial(project?.memorialDescritivo || "");
                           setIsEditingMemorial(true);
                         }}
                       >
@@ -388,7 +393,7 @@ export default function ProjectDetails() {
                           size="sm"
                           className="bg-amber-600 hover:bg-amber-700"
                           onClick={() => {
-                            if (editedMemorial !== project.memorialDescritivo) {
+                            if (editedMemorial !== project?.memorialDescritivo) {
                               setShowRevisionDialog(true);
                             } else {
                               toast.info("Nenhuma alteração detectada.");
@@ -403,10 +408,10 @@ export default function ProjectDetails() {
                     )}
                   </div>
                   <CardDescription>
-                    {project.revisionNumber && project.revisionNumber > 0 ? (
+                    {project?.revisionNumber && project?.revisionNumber > 0 ? (
                       <span className="flex items-center gap-1">
                         <GitBranch className="h-3 w-3" />
-                        Revisão {String(project.revisionNumber).padStart(2, '0')} do projeto original
+                        Revisão {String(project?.revisionNumber).padStart(2, '0')} do projeto original
                       </span>
                     ) : (
                       "Documento base para geração do orçamento"
@@ -423,9 +428,9 @@ export default function ProjectDetails() {
                     />
                   ) : (
                     <ScrollArea className="h-[400px] rounded-md border p-4">
-                      {project.memorialDescritivo ? (
+                      {project?.memorialDescritivo ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <Streamdown>{project.memorialDescritivo}</Streamdown>
+                          <Streamdown>{project?.memorialDescritivo}</Streamdown>
                         </div>
                       ) : (
                         <p className="text-muted-foreground text-center py-8">
@@ -869,7 +874,7 @@ export default function ProjectDetails() {
         </Tabs>
 
         {/* Summary Cards */}
-        {project.totalPrice && (
+        {project?.totalPrice && (
           <div className="grid gap-4 md:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
@@ -877,7 +882,7 @@ export default function ProjectDetails() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
-                  R$ {Number(project.totalCostDirect || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {Number(project?.totalCostDirect || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </p>
               </CardContent>
             </Card>
@@ -887,7 +892,7 @@ export default function ProjectDetails() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
-                  R$ {Number(project.totalCostIndirect || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {Number(project?.totalCostIndirect || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </p>
               </CardContent>
             </Card>
@@ -897,7 +902,7 @@ export default function ProjectDetails() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
-                  R$ {Number(project.totalTaxes || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {Number(project?.totalTaxes || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </p>
               </CardContent>
             </Card>
@@ -907,7 +912,7 @@ export default function ProjectDetails() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold text-amber-600">
-                  R$ {Number(project.totalPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {Number(project?.totalPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </p>
               </CardContent>
             </Card>
