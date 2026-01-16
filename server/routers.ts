@@ -440,7 +440,222 @@ export const appRouter = router({
         
         // Lógica crítica do Board
         if (boardResult?.blockProposal) {
-          // Proposta BLOQUEADA - não pode ser gerada
+          // Verificar se é rejeição exclusivamente financeira e se pode solicitar revisão
+          const isFinancialOnly = boardResult.isFinancialOnlyRejection === true;
+          const wantsRevision = boardResult.requestFinancialRevision === true;
+          const currentRevisionCycle = project.financialRevisionCycle || 0;
+          const canRequestRevision = currentRevisionCycle === 0; // Só pode revisar uma vez
+          
+          if (isFinancialOnly && wantsRevision && canRequestRevision) {
+            // CICLO DE REVISÃO FINANCEIRA AUTOMÁTICO
+            console.log('[Board] Iniciando ciclo de revisão financeira automático...');
+            
+            // Salvar instruções de revisão no projeto
+            await db.updateProject(input.projectId, {
+              financialRevisionCycle: 1,
+              financialRevisionReason: boardResult.financialRevisionReason || 'Margem abaixo do mínimo',
+              financialRevisionInstructions: boardResult.financialRevisionInstructions || {},
+              status: "processing" // Voltar para processamento
+            });
+            
+            // Resetar agentes financeiros para re-execução
+            const financialAgents: AgentType[] = ['orcamentista', 'logistica', 'tributario', 'comercial', 'gestao_projetos', 'financeiro', 'juridico', 'board'];
+            const executions = await db.getAgentExecutionsByProjectId(input.projectId);
+            
+            for (const agentType of financialAgents) {
+              const exec = executions.find(e => e.agentType === agentType);
+              if (exec) {
+                await db.updateAgentExecution(exec.id, { 
+                  status: 'pending', 
+                  output: null,
+                  errors: null,
+                  startedAt: null,
+                  completedAt: null
+                });
+              }
+            }
+            
+            // Limpar dados antigos de orçamento, logística, fluxo de caixa
+            await db.deleteBudgetItemsByProjectId(input.projectId);
+            await db.deleteLogisticsCostsByProjectId(input.projectId);
+            await db.deleteCashFlowItemsByProjectId(input.projectId);
+            await db.deleteScheduleItemsByProjectId(input.projectId);
+            
+            // Re-executar agentes financeiros com instruções de correção
+            console.log('[Board] Re-executando agentes com instruções de correção...');
+            
+            const revisionInstructions = boardResult.financialRevisionInstructions || {};
+            const revisedResults: Record<string, any> = { ...results };
+            
+            // Manter resultado do engenheiro técnico
+            const engenheiroOutput = results.engenheiro_tecnico;
+            
+            for (const agentType of financialAgents) {
+              const exec = executions.find(e => e.agentType === agentType);
+              if (!exec) continue;
+              
+              await db.updateAgentExecution(exec.id, { status: 'running', startedAt: new Date() });
+              
+              try {
+                // Recarregar projeto com instruções de revisão
+                const updatedProject = await db.getProjectById(input.projectId);
+                const updatedExecutions = await db.getAgentExecutionsByProjectId(input.projectId);
+                
+                // Construir input com instruções de correção
+                let agentInput = await buildAgentInput(agentType, updatedProject!, updatedExecutions, ctx.user.id);
+                
+                // Adicionar instruções de correção ao input
+                const instruction = revisionInstructions[agentType as keyof typeof revisionInstructions];
+                if (instruction) {
+                  (agentInput as any).revisionInstruction = instruction;
+                  (agentInput as any).isFinancialRevision = true;
+                  (agentInput as any).targetMargin = 15; // Margem alvo mínima
+                }
+                
+                const agent = agents[agentType];
+                const output = await agent.execute(agentInput);
+                
+                revisedResults[agentType] = output;
+                
+                // Salvar dados (mesma lógica de antes)
+                if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
+                  const rawItems = (output as any).budgetItems;
+                  const budgetItemsToSave = rawItems.map((item: any) => {
+                    const quantity = Number(item.quantity) || 0;
+                    const unitCostTotal = Number(item.unitCostTotal) || 0;
+                    const totalCost = quantity * unitCostTotal;
+                    const bdiPercent = 0.55;
+                    const bdiAmount = totalCost * bdiPercent;
+                    const finalPrice = totalCost + bdiAmount;
+                    
+                    return {
+                      projectId: input.projectId,
+                      category: item.category || 'Geral',
+                      code: item.code || '',
+                      description: item.description,
+                      unit: item.unit,
+                      quantity: String(quantity),
+                      unitCostMaterial: String(item.unitCostMaterial || 0),
+                      unitCostLabor: String(item.unitCostLabor || 0),
+                      unitCostLogistics: String(item.unitCostLogistics || 0),
+                      unitCostTotal: String(unitCostTotal),
+                      totalCost: String(totalCost),
+                      bdiAmount: String(bdiAmount),
+                      finalPrice: String(finalPrice),
+                      source: item.source || 'Estimativa',
+                      sourceCode: item.sourceCode || null,
+                      sourceDate: item.sourceDate || null,
+                    };
+                  });
+                  await db.createBudgetItems(budgetItemsToSave);
+                }
+                
+                if (agentType === 'logistica' && output && (output as any).costs) {
+                  try {
+                    const rawCosts = (output as any).costs;
+                    const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
+                    const costsToSave = rawCosts.map((cost: any) => {
+                      let category: typeof validCategories[number] = 'outros';
+                      const rawCategory = (cost.category || '').toLowerCase();
+                      if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
+                      else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
+                      else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
+                      else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
+                      else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
+                      else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
+                      
+                      return {
+                        projectId: input.projectId,
+                        category,
+                        description: String(cost.description || 'Custo logístico').substring(0, 1000),
+                        quantity: String(Number(cost.quantity) || 1),
+                        unit: String(cost.unit || 'un').substring(0, 20),
+                        unitCost: String(Number(cost.unitCost) || 0),
+                        totalCost: String(Number(cost.totalCost) || 0),
+                      };
+                    });
+                    await db.createLogisticsCosts(costsToSave);
+                  } catch (logisticsError) {
+                    console.error('[Logistica Revision] Error saving costs:', logisticsError);
+                  }
+                }
+                
+                if (agentType === 'financeiro' && output && (output as any).cashFlow) {
+                  const rawCashFlow = (output as any).cashFlow;
+                  let cumulativeBalance = 0;
+                  const cashFlowToSave = rawCashFlow.map((item: any) => {
+                    const expense = Number(item.expense || item.outflow || 0);
+                    const income = Number(item.income || item.inflow || 0);
+                    cumulativeBalance += income - expense;
+                    return {
+                      projectId: input.projectId,
+                      weekNumber: item.week,
+                      plannedExpense: String(expense),
+                      plannedIncome: String(income),
+                      actualExpense: null,
+                      actualIncome: null,
+                      cashBalance: String(cumulativeBalance),
+                      hasAlert: cumulativeBalance < 0,
+                    };
+                  });
+                  await db.createCashFlowItems(cashFlowToSave);
+                }
+                
+                await db.updateAgentExecution(exec.id, {
+                  status: 'completed',
+                  output: output as any,
+                  completedAt: new Date(),
+                });
+                
+              } catch (error) {
+                console.error(`[Revision] Agent ${agentType} failed:`, error);
+                await db.updateAgentExecution(exec.id, {
+                  status: 'failed',
+                  errors: { message: error instanceof Error ? error.message : 'Unknown error' } as any,
+                });
+                // Continuar com próximo agente em caso de erro
+              }
+            }
+            
+            // Verificar resultado do Board após revisão
+            const revisedBoardResult = revisedResults.board as any;
+            
+            if (revisedBoardResult?.approved) {
+              await db.updateProject(input.projectId, { status: 'approved' });
+              return { 
+                success: true, 
+                revisedAfterFinancialCorrection: true,
+                results: revisedResults 
+              };
+            } else if (revisedBoardResult?.requiresUserConfirmation) {
+              await db.updateProject(input.projectId, { 
+                status: 'pending_confirmation',
+                warningMessages: JSON.stringify(revisedBoardResult.warningMessages || [])
+              });
+              return { 
+                success: true, 
+                requiresConfirmation: true,
+                revisedAfterFinancialCorrection: true,
+                warningMessages: revisedBoardResult.warningMessages,
+                results: revisedResults 
+              };
+            } else {
+              // Ainda bloqueado após revisão - não tentar novamente
+              await db.updateProject(input.projectId, { 
+                status: 'blocked',
+                blockReason: revisedBoardResult?.blockReason || 'Proposta bloqueada mesmo após revisão financeira'
+              });
+              return { 
+                success: false, 
+                blocked: true,
+                revisedAfterFinancialCorrection: true,
+                blockReason: revisedBoardResult?.blockReason || 'Proposta não atingiu margem mínima mesmo após revisão',
+                results: revisedResults 
+              };
+            }
+          }
+          
+          // Proposta BLOQUEADA - não pode ser gerada (sem revisão automática)
           await db.updateProject(input.projectId, { 
             status: "blocked",
             blockReason: boardResult.blockReason || "Proposta bloqueada pelo Board"

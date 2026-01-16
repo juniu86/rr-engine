@@ -292,8 +292,56 @@ export default function ProjectDetails() {
             <Badge className={statusConfig[project?.status as keyof typeof statusConfig]?.color || "bg-slate-500"}>
               {statusConfig[project?.status as keyof typeof statusConfig]?.label || project?.status}
             </Badge>
+            {project?.financialRevisionCycle && project.financialRevisionCycle > 0 && (
+              <Badge className="bg-purple-600 text-white">
+                <RefreshCw className="mr-1 h-3 w-3" />
+                Revisão Financeira #{project.financialRevisionCycle}
+              </Badge>
+            )}
           </div>
         </div>
+
+        {/* Card de Revisão Financeira (se aplicável) */}
+        {project?.financialRevisionCycle && project.financialRevisionCycle > 0 && (
+          <Card className="border-purple-500/50 bg-purple-950/20">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 text-purple-400" />
+                <CardTitle className="text-lg text-purple-300">Ciclo de Revisão Financeira Automático</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-purple-200">
+                O Board identificou que este projeto foi rejeitado exclusivamente por motivos financeiros e solicitou uma revisão automática dos agentes de orçamentação.
+              </p>
+              {project.financialRevisionReason && (
+                <div className="p-3 rounded-lg bg-purple-900/30 border border-purple-500/30">
+                  <p className="text-xs text-purple-400 font-medium mb-1">Motivo da Revisão:</p>
+                  <p className="text-sm text-purple-100">{project.financialRevisionReason}</p>
+                </div>
+              )}
+              {(() => {
+                const instructions = project.financialRevisionInstructions;
+                if (!instructions || typeof instructions !== 'object') return null;
+                const entries = Object.entries(instructions as Record<string, string>);
+                if (entries.length === 0) return null;
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs text-purple-400 font-medium">Instruções de Correção:</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {entries.map(([agent, instruction]) => (
+                        <div key={agent} className="p-2 rounded bg-slate-800/50 border border-slate-700">
+                          <p className="text-xs text-amber-500 font-medium capitalize">{agent.replace('_', ' ')}</p>
+                          <p className="text-xs text-slate-300">{String(instruction)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Progress Card with Visual Pipeline */}
         <Card>

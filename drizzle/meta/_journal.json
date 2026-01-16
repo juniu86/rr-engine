@@ -43,6 +43,13 @@
       "when": 1768593389963,
       "tag": "0005_keen_thunderbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1768599035227,
+      "tag": "0006_wandering_inertia",
+      "breakpoints": true
     }
   ]
 }

@@ -1140,6 +1140,20 @@ MISSÃO: VOCÊ É O DECISOR CRÍTICO FINAL. Sua decisão BLOQUEIA ou LIBERA a ge
    - Dados completos e consistentes
    RESULTADO: Proposta gerada automaticamente.
 
+=== AUTO-CORREÇÃO FINANCEIRA ===
+Quando a rejeição for EXCLUSIVAMENTE por motivos financeiros (margem baixa, BDI inadequado, preço de venda insuficiente), você pode solicitar um CICLO DE REVISÃO AUTOMÁTICO:
+
+- isFinancialOnlyRejection = true: A rejeição é APENAS por margem/preço, sem problemas operacionais ou técnicos
+- requestFinancialRevision = true: Solicita que os agentes Orçamentista, Logística, Tributário e Comercial refazam seus cálculos
+- financialRevisionReason: Explique o motivo da revisão (ex: "Margem de 3.8% abaixo do mínimo de 10%")
+- financialRevisionInstructions: Forneça instruções ESPECÍFICAS para cada agente:
+  - orcamentista: "Revisar preços unitários, buscar alternativas mais econômicas"
+  - logistica: "Otimizar custos de frete e mobilização"
+  - tributario: "Verificar possibilidade de redução fiscal"
+  - comercial: "Aumentar BDI para atingir margem mínima de 15%"
+
+IMPORTANTE: A auto-correção só pode ser solicitada UMA VEZ. Se o projeto já passou por revisão financeira, não solicite novamente.
+
 === VALIDAÇÕES OBRIGATÓRIAS ===
 1. Verificar se Preço Final = (Custo Direto + Custo Indireto) x (1 + BDI)
 2. Verificar se o prazo é coerente com os quantitativos
@@ -1284,8 +1298,32 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
           additionalProperties: false,
         },
         conditionsForApproval: { type: "string" },
+        // Campos de auto-correção financeira
+        isFinancialOnlyRejection: { 
+          type: "boolean", 
+          description: "Se true, a rejeição é EXCLUSIVAMENTE por motivos financeiros (margem, BDI, preço), sem problemas operacionais ou técnicos" 
+        },
+        requestFinancialRevision: { 
+          type: "boolean", 
+          description: "Se true, solicita ciclo de revisão automático dos agentes Orçamentista, Logística, Tributário e Comercial" 
+        },
+        financialRevisionReason: { 
+          type: "string", 
+          description: "Motivo da solicitação de revisão financeira (ex: Margem de 3.8% abaixo do mínimo de 10%)" 
+        },
+        financialRevisionInstructions: {
+          type: "object",
+          properties: {
+            orcamentista: { type: "string", description: "Instruções específicas para o Orçamentista" },
+            logistica: { type: "string", description: "Instruções específicas para a Logística" },
+            tributario: { type: "string", description: "Instruções específicas para o Tributário" },
+            comercial: { type: "string", description: "Instruções específicas para o Comercial" },
+          },
+          required: ["orcamentista", "logistica", "tributario", "comercial"],
+          additionalProperties: false,
+        },
       },
-      required: ["approved", "blockProposal", "requiresUserConfirmation", "blockReason", "warningMessages", "projectViability", "validationResults", "decisions", "executiveSummary", "finalApproval", "conditionsForApproval"],
+      required: ["approved", "blockProposal", "requiresUserConfirmation", "blockReason", "warningMessages", "projectViability", "validationResults", "decisions", "executiveSummary", "finalApproval", "conditionsForApproval", "isFinancialOnlyRejection", "requestFinancialRevision", "financialRevisionReason", "financialRevisionInstructions"],
       additionalProperties: false,
     };
   }

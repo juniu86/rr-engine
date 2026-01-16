@@ -308,4 +308,27 @@ export interface BoardOutput {
     cooNotes: string;
   };
   conditionsForApproval: string;
+  // Campos de auto-correção financeira
+  requestFinancialRevision: boolean; // Se true, solicita ciclo de revisão automático
+  financialRevisionReason: string; // Motivo da solicitação de revisão
+  financialRevisionInstructions: {
+    orcamentista: string; // Instruções para o Orçamentista
+    logistica: string; // Instruções para a Logística
+    tributario: string; // Instruções para o Tributário
+    comercial: string; // Instruções para o Comercial
+  };
+  isFinancialOnlyRejection: boolean; // Se a rejeição é exclusivamente por motivos financeiros
+}
+
+// Tipo para instruções de revisão financeira armazenadas no projeto
+export interface FinancialRevisionInstructions {
+  reason: string;
+  targetMargin: number;
+  instructions: {
+    orcamentista: string;
+    logistica: string;
+    tributario: string;
+    comercial: string;
+  };
+  originalBoardOutput: BoardOutput;
 }

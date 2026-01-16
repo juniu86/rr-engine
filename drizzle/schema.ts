@@ -41,6 +41,10 @@ export const projects = mysqlTable("projects", {
   parentProjectId: int("parentProjectId"), // ID do projeto original (null se for o original)
   revisionNumber: int("revisionNumber").default(0), // 0 = original, 1 = REV_01, 2 = REV_02, etc.
   originalName: varchar("originalName", { length: 255 }), // Nome original antes das revisões
+  // Campos de auto-correção financeira do Board
+  financialRevisionCycle: int("financialRevisionCycle").default(0), // 0 = sem revisão, 1 = em revisão financeira
+  financialRevisionReason: text("financialRevisionReason"), // Motivo da revisão financeira (instruções do Board)
+  financialRevisionInstructions: json("financialRevisionInstructions"), // Instruções detalhadas para cada agente
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

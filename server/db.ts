@@ -193,6 +193,13 @@ export async function getLogisticsCostsByProjectId(projectId: number) {
   return db.select().from(logisticsCosts).where(eq(logisticsCosts.projectId, projectId));
 }
 
+export async function deleteLogisticsCostsByProjectId(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(logisticsCosts).where(eq(logisticsCosts.projectId, projectId));
+}
+
 // ==================== SCHEDULE ITEM QUERIES ====================
 export async function createScheduleItems(items: InsertScheduleItem[]): Promise<void> {
   const db = await getDb();
@@ -210,6 +217,13 @@ export async function getScheduleItemsByProjectId(projectId: number) {
   return db.select().from(scheduleItems).where(eq(scheduleItems.projectId, projectId));
 }
 
+export async function deleteScheduleItemsByProjectId(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(scheduleItems).where(eq(scheduleItems.projectId, projectId));
+}
+
 // ==================== CASH FLOW QUERIES ====================
 export async function createCashFlowItems(items: InsertCashFlowItem[]): Promise<void> {
   const db = await getDb();
@@ -225,6 +239,13 @@ export async function getCashFlowItemsByProjectId(projectId: number) {
   if (!db) return [];
   
   return db.select().from(cashFlowItems).where(eq(cashFlowItems.projectId, projectId)).orderBy(cashFlowItems.weekNumber);
+}
+
+export async function deleteCashFlowItemsByProjectId(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(cashFlowItems).where(eq(cashFlowItems.projectId, projectId));
 }
 
 // ==================== GENERATED DOCUMENTS QUERIES ====================

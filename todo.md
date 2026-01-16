@@ -162,3 +162,12 @@
 
 ## Bug v1.18.1
 - [x] Erro de JavaScript no frontend publicado - "An unexpected error occurred" ao acessar página de projeto (hooks movidos para antes dos early returns)
+
+## v1.19 - Auto-correção Financeira do Board
+- [x] Implementar ciclo de revisão automático quando Board rejeitar por motivos financeiros
+- [x] Adicionar campo revisionCycle no schema do projeto para controlar número de revisões
+- [x] Atualizar agente Board para identificar rejeições exclusivamente financeiras
+- [x] Criar lógica de re-execução dos agentes Orçamentista, Logística, Tributário e Comercial
+- [x] Adicionar instruções de correção específicas para cada agente no ciclo de revisão
+- [x] Limitar a uma única tentativa de auto-correção
+- [x] Exibir status de revisão no frontend
