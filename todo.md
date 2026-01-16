@@ -129,3 +129,8 @@
 ## Redesign v1.14 - Seção de Agentes
 - [x] Redesenhar seção de agentes com design sofisticado e profissional
 - [x] Remover cores excessivas e criar visual elegante
+
+## Feature v1.15 - Animações e Indicador de Progresso
+- [x] Animação fade-in sequencial nos agentes ao rolar a página
+- [x] Tooltips interativos com detalhes dos agentes
+- [x] Indicador de progresso real na página de detalhes do projeto (Pipeline visual)
