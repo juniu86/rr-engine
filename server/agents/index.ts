@@ -786,23 +786,73 @@ IMPORTANTE:
   }
   
   getUserPrompt(input: GestaoProjInput): string {
-    return `Crie o cronograma físico para o projeto:
+    return `Crie o cronograma físico DETALHADO DIA A DIA para o projeto:
 
 ITENS DO ORÇAMENTO:
-${JSON.stringify(input.budgetItems.slice(0, 20), null, 2)}
+${JSON.stringify(input.budgetItems.slice(0, 30), null, 2)}
 
 CUSTOS LOGÍSTICOS:
 ${JSON.stringify(input.logisticsCosts, null, 2)}
 
 RESTRIÇÕES: ${input.restrictions}
 
-Defina as fases, durações e dependências.`;
+=== INSTRUÇÕES OBRIGATÓRIAS ===
+1. Crie um cronograma DIA A DIA (não apenas semanas)
+2. Para cada dia, liste as atividades específicas que serão executadas
+3. Inclua detalhes como:
+   - Equipe necessária para cada atividade
+   - Materiais que serão utilizados
+   - Entregas esperadas ao final do dia
+4. Identifique dependências entre atividades
+5. Marque dias de folga/cura (ex: cura do concreto)
+6. O cronograma deve ser um RELATÓRIO COMPLETO que o cliente possa acompanhar
+
+EXEMPLO DE FORMATO:
+Dia 1: Mobilização e preparo
+- Chegada da equipe (2 pedreiros + 1 servente)
+- Instalação do canteiro de obras
+- Recebimento de materiais: cimento, areia, brita
+- Entrega: Canteiro pronto para início
+
+Dia 2: Demolição
+- Demolição de alvenaria (15m²)
+- Remoção de entulho para caçamba
+- Entrega: Área limpa para nova construção`;
   }
   
   getOutputSchema(): object {
     return {
       type: "object",
       properties: {
+        dailySchedule: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              day: { type: "number" },
+              date: { type: "string" },
+              phase: { type: "string" },
+              activities: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    description: { type: "string" },
+                    team: { type: "string" },
+                    materials: { type: "string" },
+                    deliverable: { type: "string" },
+                  },
+                  required: ["description", "team", "materials", "deliverable"],
+                  additionalProperties: false,
+                },
+              },
+              isWorkDay: { type: "boolean" },
+              notes: { type: "string" },
+            },
+            required: ["day", "date", "phase", "activities", "isWorkDay", "notes"],
+            additionalProperties: false,
+          },
+        },
         scheduleItems: {
           type: "array",
           items: {
@@ -810,30 +860,33 @@ Defina as fases, durações e dependências.`;
             properties: {
               phase: { type: "string" },
               description: { type: "string" },
-              startWeek: { type: "number" },
-              endWeek: { type: "number" },
+              startDay: { type: "number" },
+              endDay: { type: "number" },
               duration: { type: "number" },
             },
-            required: ["phase", "description", "startWeek", "endWeek", "duration"],
+            required: ["phase", "description", "startDay", "endDay", "duration"],
             additionalProperties: false,
           },
         },
         totalDuration: { type: "number" },
+        totalDays: { type: "number" },
         criticalPath: { type: "array", items: { type: "string" } },
         milestones: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              week: { type: "number" },
+              day: { type: "number" },
               description: { type: "string" },
             },
-            required: ["week", "description"],
+            required: ["day", "description"],
             additionalProperties: false,
           },
         },
+        teamSummary: { type: "string" },
+        materialsSummary: { type: "string" },
       },
-      required: ["scheduleItems", "totalDuration", "criticalPath", "milestones"],
+      required: ["dailySchedule", "scheduleItems", "totalDuration", "totalDays", "criticalPath", "milestones", "teamSummary", "materialsSummary"],
       additionalProperties: false,
     };
   }
@@ -1032,32 +1085,39 @@ export class BoardAgent extends BaseAgent<BoardInput, BoardOutput> {
 - CFO (Chief Financial Officer): Viabilidade financeira e risco de caixa
 - COO (Chief Operating Officer): Capacidade operacional e execução
 
-MISSÃO: VOCÊ NÃO É APENAS UM ANALISTA - VOCÊ É UM DECISOR.
+MISSÃO: VOCÊ É O DECISOR CRÍTICO FINAL. Sua decisão BLOQUEIA ou LIBERA a geração da proposta.
 
-SUA FUNÇÃO:
-1. Analisar TODAS as divergências e incoerências encontradas pelos agentes
-2. TOMAR DECISÕES EXECUTIVAS baseadas na continuidade do negócio
-3. Resolver conflitos entre laudos de diferentes agentes
-4. Emitir RELATÓRIO DE DECISÕES TOMADAS (não apenas observações)
-5. Definir ações corretivas com responsáveis e prazos
+=== REGRAS CRÍTICAS DE APROVAÇÃO ===
 
-CRITÉRIOS DE DECISÃO:
-- VIABILIDADE: O projeto gera lucro líquido para a empresa?
-- RISCO: O fluxo de caixa é sustentável com ou sem adiantamento?
-- ESTRATÉGIA: O projeto contribui para o posicionamento da empresa?
-- OPERAÇÃO: Temos capacidade técnica e recursos para executar?
+1. REPROVAÇÃO (blockProposal = true):
+   - Margem de lucro < 10%
+   - Risco de caixa crítico sem adiantamento viável
+   - Incoerências graves entre agentes (diferença > 30% nos valores)
+   - Falta de dados essenciais para precificação
+   - Prazo inviável para a capacidade operacional
+   RESULTADO: Proposta NÃO será gerada. Usuário deve corrigir.
 
-FORMATO DA DECISÃO:
-Para cada problema identificado, você DEVE:
-1. Descrever o problema encontrado
-2. Analisar o impacto no negócio
-3. DECIDIR a ação a ser tomada
-4. Justificar a decisão com base em critérios de negócio
+2. ATENÇÃO (requiresUserConfirmation = true):
+   - Margem de lucro entre 10-15%
+   - Risco médio que pode ser mitigado
+   - Pequenas incoerências que não invalidam a proposta
+   - Alertas de compliance que precisam de ciência
+   RESULTADO: Proposta será gerada, mas usuário DEVE confirmar ciência.
 
-SE O PROJETO NÃO FOR VIÁVEL:
-- Indique claramente: "PROJETO NÃO RECOMENDADO"
-- Explique os motivos de negócio
-- Sugira condições para viabilização (ex: aumento de preço, redução de escopo)`;
+3. APROVAÇÃO (approved = true, sem bloqueios):
+   - Margem de lucro > 15%
+   - Risco baixo ou controlado
+   - Todos os agentes em consenso
+   - Dados completos e consistentes
+   RESULTADO: Proposta gerada automaticamente.
+
+=== VALIDAÇÕES OBRIGATÓRIAS ===
+1. Verificar se Preço Final = (Custo Direto + Custo Indireto) x (1 + BDI)
+2. Verificar se o prazo é coerente com os quantitativos
+3. Verificar se o fluxo de caixa é sustentável
+4. Verificar se há itens sem preço ou com valores zerados
+
+SEJA CRÍTICO E RIGOROSO. Sua função é proteger a empresa de propostas inviáveis.`;
   }
   
   getUserPrompt(input: BoardInput): string {
@@ -1128,15 +1188,39 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
       type: "object",
       properties: {
         approved: { type: "boolean" },
+        blockProposal: { type: "boolean", description: "Se true, a proposta NÃO será gerada. Usuário deve corrigir problemas." },
+        requiresUserConfirmation: { type: "boolean", description: "Se true, proposta será gerada mas usuário deve confirmar ciência dos alertas." },
+        blockReason: { type: "string", description: "Motivo do bloqueio (se blockProposal = true)" },
+        warningMessages: { 
+          type: "array", 
+          items: { type: "string" },
+          description: "Lista de alertas que o usuário deve estar ciente (se requiresUserConfirmation = true)" 
+        },
         projectViability: {
           type: "object",
           properties: {
             isViable: { type: "boolean" },
             profitMargin: { type: "string" },
+            calculatedMargin: { type: "number", description: "Margem calculada em percentual" },
             riskLevel: { type: "string", enum: ["baixo", "medio", "alto", "critico"] },
             recommendation: { type: "string", enum: ["aprovar", "aprovar_com_ressalvas", "revisar", "rejeitar"] },
           },
-          required: ["isViable", "profitMargin", "riskLevel", "recommendation"],
+          required: ["isViable", "profitMargin", "calculatedMargin", "riskLevel", "recommendation"],
+          additionalProperties: false,
+        },
+        validationResults: {
+          type: "object",
+          properties: {
+            priceCalculationCorrect: { type: "boolean" },
+            priceCalculationDetails: { type: "string" },
+            scheduleCoherent: { type: "boolean" },
+            scheduleDetails: { type: "string" },
+            cashFlowSustainable: { type: "boolean" },
+            cashFlowDetails: { type: "string" },
+            allItemsPriced: { type: "boolean" },
+            unpricedItems: { type: "array", items: { type: "string" } },
+          },
+          required: ["priceCalculationCorrect", "priceCalculationDetails", "scheduleCoherent", "scheduleDetails", "cashFlowSustainable", "cashFlowDetails", "allItemsPriced", "unpricedItems"],
           additionalProperties: false,
         },
         decisions: {
@@ -1172,7 +1256,7 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
         },
         conditionsForApproval: { type: "string" },
       },
-      required: ["approved", "projectViability", "decisions", "executiveSummary", "finalApproval", "conditionsForApproval"],
+      required: ["approved", "blockProposal", "requiresUserConfirmation", "blockReason", "warningMessages", "projectViability", "validationResults", "decisions", "executiveSummary", "finalApproval", "conditionsForApproval"],
       additionalProperties: false,
     };
   }

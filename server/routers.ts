@@ -437,13 +437,41 @@ export const appRouter = router({
         }
         
         const boardResult = results.board as any;
-        if (boardResult?.approved) {
-          await db.updateProject(input.projectId, { status: "approved" });
-        } else {
-          await db.updateProject(input.projectId, { status: "review" });
-        }
         
-        return { success: true, results };
+        // Lógica crítica do Board
+        if (boardResult?.blockProposal) {
+          // Proposta BLOQUEADA - não pode ser gerada
+          await db.updateProject(input.projectId, { 
+            status: "blocked",
+            blockReason: boardResult.blockReason || "Proposta bloqueada pelo Board"
+          });
+          return { 
+            success: false, 
+            blocked: true,
+            blockReason: boardResult.blockReason,
+            results 
+          };
+        } else if (boardResult?.requiresUserConfirmation) {
+          // Proposta com ATENÇÃO - precisa confirmação do usuário
+          await db.updateProject(input.projectId, { 
+            status: "pending_confirmation",
+            warningMessages: JSON.stringify(boardResult.warningMessages || [])
+          });
+          return { 
+            success: true, 
+            requiresConfirmation: true,
+            warningMessages: boardResult.warningMessages,
+            results 
+          };
+        } else if (boardResult?.approved) {
+          // Proposta APROVADA
+          await db.updateProject(input.projectId, { status: "approved" });
+          return { success: true, results };
+        } else {
+          // Proposta em REVISÃO
+          await db.updateProject(input.projectId, { status: "review" });
+          return { success: true, results };
+        }
       }),
   }),
 
@@ -704,10 +732,12 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
       const orcOutput = getOutput("orcamentista");
       const tribOutput = getOutput("tributario");
       const logOutput = getOutput("logistica");
+      // IMPORTANTE: totalIndirectCost vem da Logística, não do Orçamentista
+      const totalIndirectFromLogistics = logOutput.totalLogisticsCost || 0;
       return {
         budgetItems: orcOutput.budgetItems || [],
         totalDirectCost: orcOutput.totalDirectCost || 0,
-        totalIndirectCost: orcOutput.totalIndirectCost || 0,
+        totalIndirectCost: totalIndirectFromLogistics,
         totalTaxes: tribOutput.totalTaxes || 0,
         contractType: project.contractType,
         logisticsComplexity: logOutput.totalLogisticsCost > 50000 ? "high" : logOutput.totalLogisticsCost > 20000 ? "medium" : "low",

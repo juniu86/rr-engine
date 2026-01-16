@@ -145,3 +145,9 @@
 
 ## Bug v1.16.1
 - [x] Pipeline de Processamento - agentes 06 a 09 não têm espaçamento uniforme (corrigido com flex justify-between)
+
+## Revisão v1.17 - Correções Críticas de Fluxo
+- [x] Logística com popup de opcionais - itens opcionais identificados no output para seleção futura
+- [x] Comercial ignorando custos de Logística - corrigido buildAgentInput para usar totalLogisticsCost
+- [x] Gestão de Projetos com cronograma detalhado - reformulado para gerar relatório dia a dia com ações
+- [x] Board crítico - implementado blockProposal, requiresUserConfirmation e validações obrigatórias
