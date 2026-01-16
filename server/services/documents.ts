@@ -685,3 +685,436 @@ function generateMemoriaXLSX(
 export function formatCurrency(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
+
+// Generate schedule PDF with Gantt chart
+export async function generateSchedulePDF(
+  project: Project,
+  dailySchedule: any[],
+  scheduleItems: any[],
+  milestones: any[],
+  totalDays: number,
+  teamSummary: string,
+  materialsSummary: string
+): Promise<{ url: string; fileKey: string }> {
+  const htmlContent = generateScheduleHTML(
+    project,
+    dailySchedule,
+    scheduleItems,
+    milestones,
+    totalDays,
+    teamSummary,
+    materialsSummary
+  );
+  
+  const pdfBuffer = Buffer.from(htmlContent, "utf-8");
+  
+  const timestamp = Date.now();
+  const fileName = `cronograma_${project.name.replace(/\s+/g, "_")}_${timestamp}.html`;
+  const fileKey = `schedules/${project.id}/${fileName}`;
+  
+  const { url } = await storagePut(fileKey, pdfBuffer, "text/html");
+  
+  // Save document reference
+  await createGeneratedDocument({
+    projectId: project.id,
+    documentType: "cronograma",
+    fileName,
+    fileUrl: url,
+    fileKey,
+    version: 1,
+  });
+  
+  return { url, fileKey };
+}
+
+// Generate HTML content for schedule with Gantt chart
+function generateScheduleHTML(
+  project: Project,
+  dailySchedule: any[],
+  scheduleItems: any[],
+  milestones: any[],
+  totalDays: number,
+  teamSummary: string,
+  materialsSummary: string
+): string {
+  // Generate Gantt chart bars
+  const ganttBars = scheduleItems.map((item, index) => {
+    const colors = ['#d97706', '#0ea5e9', '#10b981', '#8b5cf6', '#f43f5e', '#06b6d4', '#84cc16', '#f59e0b'];
+    const color = colors[index % colors.length];
+    const startPercent = ((item.startDay - 1) / totalDays) * 100;
+    const widthPercent = (item.duration / totalDays) * 100;
+    
+    return `
+      <div class="gantt-row">
+        <div class="gantt-label">${item.phase}</div>
+        <div class="gantt-bar-container">
+          <div class="gantt-bar" style="left: ${startPercent}%; width: ${widthPercent}%; background-color: ${color};">
+            <span class="gantt-bar-text">${item.duration}d</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Generate milestone markers
+  const milestoneMarkers = milestones.map(m => {
+    const position = ((m.day - 1) / totalDays) * 100;
+    return `<div class="milestone-marker" style="left: ${position}%;" title="Dia ${m.day}: ${m.description}">◆</div>`;
+  }).join('');
+  
+  // Generate daily schedule rows
+  const dailyRows = dailySchedule.map(day => {
+    const activitiesList = day.activities.map((act: any) => `
+      <div class="activity-item">
+        <strong>${act.description}</strong>
+        <div class="activity-details">
+          <span>👷 ${act.team}</span>
+          <span>📦 ${act.materials}</span>
+          <span>✅ ${act.deliverable}</span>
+        </div>
+      </div>
+    `).join('');
+    
+    const dayClass = day.isWorkDay ? 'work-day' : 'rest-day';
+    
+    return `
+      <tr class="${dayClass}">
+        <td class="day-number">Dia ${day.day}</td>
+        <td class="day-phase">${day.phase}</td>
+        <td class="day-activities">${activitiesList}</td>
+        <td class="day-notes">${day.notes || '-'}</td>
+      </tr>
+    `;
+  }).join('');
+  
+  // Generate day headers for Gantt
+  const dayHeaders = [];
+  for (let i = 1; i <= totalDays; i += Math.ceil(totalDays / 10)) {
+    const position = ((i - 1) / totalDays) * 100;
+    dayHeaders.push(`<span class="day-marker" style="left: ${position}%;">D${i}</span>`);
+  }
+  
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cronograma - ${project.name}</title>
+  <style>
+    @media print {
+      body { margin: 0; padding: 15px; font-size: 11px; }
+      .no-print { display: none; }
+      .page-break { page-break-before: always; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.5;
+      color: #1e293b;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 30px;
+      background: #fff;
+    }
+    .header {
+      text-align: center;
+      border-bottom: 3px solid #d97706;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    .header h1 {
+      color: #1e293b;
+      margin-bottom: 5px;
+      font-size: 24px;
+    }
+    .header .subtitle {
+      color: #64748b;
+      font-size: 14px;
+    }
+    .header .logo {
+      font-size: 20px;
+      font-weight: bold;
+      color: #d97706;
+      margin-bottom: 10px;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+    .section h2 {
+      color: #d97706;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 10px;
+      font-size: 18px;
+      margin-bottom: 15px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .summary-card {
+      background: #f8fafc;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 4px solid #d97706;
+    }
+    .summary-card h4 {
+      margin: 0 0 5px 0;
+      color: #64748b;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .summary-card .value {
+      font-size: 20px;
+      font-weight: bold;
+      color: #1e293b;
+    }
+    
+    /* Gantt Chart Styles */
+    .gantt-container {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 20px;
+      overflow-x: auto;
+    }
+    .gantt-header {
+      position: relative;
+      height: 30px;
+      border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 10px;
+    }
+    .day-marker {
+      position: absolute;
+      font-size: 10px;
+      color: #64748b;
+      transform: translateX(-50%);
+    }
+    .milestone-markers {
+      position: relative;
+      height: 20px;
+      margin-bottom: 10px;
+    }
+    .milestone-marker {
+      position: absolute;
+      color: #f43f5e;
+      font-size: 14px;
+      transform: translateX(-50%);
+      cursor: pointer;
+    }
+    .gantt-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .gantt-label {
+      width: 150px;
+      font-size: 12px;
+      font-weight: 500;
+      padding-right: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .gantt-bar-container {
+      flex: 1;
+      height: 24px;
+      background: #e2e8f0;
+      border-radius: 4px;
+      position: relative;
+    }
+    .gantt-bar {
+      position: absolute;
+      height: 100%;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 30px;
+    }
+    .gantt-bar-text {
+      color: white;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    
+    /* Daily Schedule Table */
+    .schedule-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .schedule-table th {
+      background: #1e293b;
+      color: white;
+      padding: 12px 8px;
+      text-align: left;
+      font-weight: 600;
+    }
+    .schedule-table td {
+      padding: 10px 8px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    .schedule-table .work-day {
+      background: #fff;
+    }
+    .schedule-table .rest-day {
+      background: #fef3c7;
+    }
+    .day-number {
+      font-weight: bold;
+      color: #d97706;
+      width: 70px;
+    }
+    .day-phase {
+      width: 120px;
+      font-weight: 500;
+    }
+    .day-activities {
+      min-width: 300px;
+    }
+    .day-notes {
+      color: #64748b;
+      font-style: italic;
+    }
+    .activity-item {
+      margin-bottom: 8px;
+      padding: 8px;
+      background: #f8fafc;
+      border-radius: 4px;
+    }
+    .activity-details {
+      display: flex;
+      gap: 15px;
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 11px;
+      color: #64748b;
+      text-align: center;
+    }
+    
+    .download-btn {
+      background: #d97706;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 10px 5px;
+    }
+    .download-btn:hover {
+      background: #b45309;
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+    <button class="download-btn" onclick="window.print()">Imprimir / Salvar PDF</button>
+  </div>
+
+  <div class="header">
+    <div class="logo">RR ENGENHARIA</div>
+    <h1>CRONOGRAMA FÍSICO DE EXECUÇÃO</h1>
+    <div class="subtitle">${project.name}</div>
+  </div>
+
+  <div class="section">
+    <div class="summary-grid">
+      <div class="summary-card">
+        <h4>Duração Total</h4>
+        <div class="value">${totalDays} dias</div>
+      </div>
+      <div class="summary-card">
+        <h4>Semanas</h4>
+        <div class="value">${Math.ceil(totalDays / 5)} semanas</div>
+      </div>
+      <div class="summary-card">
+        <h4>Fases</h4>
+        <div class="value">${scheduleItems.length} etapas</div>
+      </div>
+      <div class="summary-card">
+        <h4>Marcos</h4>
+        <div class="value">${milestones.length} entregas</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>📊 Gráfico de Gantt</h2>
+    <div class="gantt-container">
+      <div class="gantt-header">
+        ${dayHeaders.join('')}
+      </div>
+      <div class="milestone-markers">
+        ${milestoneMarkers}
+      </div>
+      ${ganttBars}
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>👷 Equipe</h2>
+    <p>${teamSummary}</p>
+  </div>
+
+  <div class="section">
+    <h2>📦 Materiais Principais</h2>
+    <p>${materialsSummary}</p>
+  </div>
+
+  <div class="section page-break">
+    <h2>📅 Cronograma Dia a Dia</h2>
+    <table class="schedule-table">
+      <thead>
+        <tr>
+          <th>Dia</th>
+          <th>Fase</th>
+          <th>Atividades</th>
+          <th>Observações</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dailyRows}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>🎯 Marcos de Entrega</h2>
+    <table class="schedule-table">
+      <thead>
+        <tr>
+          <th>Dia</th>
+          <th>Marco</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${milestones.map(m => `
+          <tr>
+            <td class="day-number">Dia ${m.day}</td>
+            <td>${m.description}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <p>Documento gerado automaticamente pelo sistema RR-Engine</p>
+    <p>Data de geração: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+  </div>
+</body>
+</html>
+  `;
+}

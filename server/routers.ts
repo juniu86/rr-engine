@@ -10,7 +10,7 @@ import { AGENT_ORDER, AGENT_NAMES, AGENT_DESCRIPTIONS } from "../shared/agents";
 import type { AgentType } from "../shared/agents";
 import { searchSinapi, getSinapiComposition } from "./services/sinapi";
 import { searchPini, getPiniComposition, comparePrices } from "./services/pini";
-import { generateProposalPDF, generateMemoriaCalculo } from "./services/documents";
+import { generateProposalPDF, generateMemoriaCalculo, generateSchedulePDF } from "./services/documents";
 
 export const appRouter = router({
   system: systemRouter,
@@ -473,6 +473,129 @@ export const appRouter = router({
           return { success: true, results };
         }
       }),
+
+    // Confirmar proposta após alertas do Board
+    confirmProposal: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        if (project.status !== "pending_confirmation") {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "Projeto não está aguardando confirmação" 
+          });
+        }
+        
+        // Marcar como aprovado após confirmação do usuário
+        await db.updateProject(input.projectId, { 
+          status: "approved",
+          warningMessages: null // Limpar warnings após confirmação
+        });
+        
+        return { success: true, message: "Proposta confirmada com sucesso!" };
+      }),
+
+    // Obter alertas pendentes do Board
+    getBoardWarnings: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        let warnings: string[] = [];
+        if (project.warningMessages) {
+          try {
+            warnings = JSON.parse(project.warningMessages as string);
+          } catch {
+            warnings = [];
+          }
+        }
+        
+        return {
+          status: project.status,
+          blockReason: project.blockReason,
+          warnings,
+        };
+      }),
+
+    // Selecionar itens opcionais da logística
+    selectOptionalItems: protectedProcedure
+      .input(z.object({ 
+        projectId: z.number(),
+        selectedItems: z.array(z.number()) // Índices dos itens opcionais selecionados
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Buscar execução do agente de logística
+        const executions = await db.getAgentExecutionsByProjectId(input.projectId);
+        const logisticaExec = executions.find(e => e.agentType === "logistica");
+        
+        if (!logisticaExec || !logisticaExec.output) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "Agente de logística ainda não foi executado" 
+          });
+        }
+        
+        const output = logisticaExec.output as any;
+        const optionalItems = output.optionalItems || [];
+        
+        // Calcular custo adicional dos itens selecionados
+        let additionalCost = 0;
+        const selectedOptionalItems = input.selectedItems.map(idx => {
+          if (idx >= 0 && idx < optionalItems.length) {
+            additionalCost += optionalItems[idx].totalCost;
+            return optionalItems[idx];
+          }
+          return null;
+        }).filter(Boolean);
+        
+        // Atualizar output do agente com itens selecionados
+        const updatedOutput = {
+          ...output,
+          selectedOptionalItems,
+          totalLogisticsCost: output.totalLogisticsCost + additionalCost,
+        };
+        
+        await db.updateAgentExecution(logisticaExec.id, { output: updatedOutput });
+        
+        // Salvar custos opcionais selecionados no banco
+        if (selectedOptionalItems.length > 0) {
+          const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
+          const costsToSave = selectedOptionalItems.map((item: any) => {
+            let category: typeof validCategories[number] = 'outros';
+            const rawCategory = (item.category || '').toLowerCase();
+            if (rawCategory.includes('placa')) category = 'outros';
+            else if (rawCategory.includes('tapume')) category = 'outros';
+            else if (rawCategory.includes('seguro')) category = 'outros';
+            
+            return {
+              projectId: input.projectId,
+              category,
+              description: String(item.description || 'Item opcional').substring(0, 1000),
+              quantity: String(Number(item.quantity) || 1),
+              unit: String(item.unit || 'un').substring(0, 20),
+              unitCost: String(Number(item.unitCost) || 0),
+              totalCost: String(Number(item.totalCost) || 0),
+            };
+          });
+          await db.createLogisticsCosts(costsToSave);
+        }
+        
+        return { 
+          success: true, 
+          additionalCost,
+          newTotalLogisticsCost: output.totalLogisticsCost + additionalCost,
+          selectedCount: selectedOptionalItems.length
+        };
+      }),
   }),
 
   // Budget Router
@@ -666,6 +789,37 @@ export const appRouter = router({
         ]);
         
         const result = await generateMemoriaCalculo(project, budgetItems, logisticsCosts, cashFlowItems);
+        return result;
+      }),
+
+    generateSchedule: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        const executions = await db.getAgentExecutionsByProjectId(input.projectId);
+        const gestaoExec = executions.find(e => e.agentType === "gestao_projetos");
+        
+        if (!gestaoExec || !gestaoExec.output) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "Agente de Gestão de Projetos ainda não foi executado" 
+          });
+        }
+        
+        const gestaoOutput = gestaoExec.output as any;
+        
+        const result = await generateSchedulePDF(
+          project,
+          gestaoOutput.dailySchedule || [],
+          gestaoOutput.scheduleItems || [],
+          gestaoOutput.milestones || [],
+          gestaoOutput.totalDays || gestaoOutput.totalDuration * 5 || 30,
+          gestaoOutput.teamSummary || "Equipe a ser definida conforme cronograma",
+          gestaoOutput.materialsSummary || "Materiais conforme memorial descritivo"
+        );
         return result;
       }),
   }),

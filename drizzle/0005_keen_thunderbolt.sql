@@ -1,0 +1,1 @@
+ALTER TABLE `generated_documents` MODIFY COLUMN `documentType` enum('proposta_comercial','memoria_calculo','cronograma') NOT NULL;

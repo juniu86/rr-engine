@@ -165,7 +165,7 @@ export type InsertCashFlowItem = typeof cashFlowItems.$inferInsert;
 export const generatedDocuments = mysqlTable("generated_documents", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
-  documentType: mysqlEnum("documentType", ["proposta_comercial", "memoria_calculo"]).notNull(),
+  documentType: mysqlEnum("documentType", ["proposta_comercial", "memoria_calculo", "cronograma"]).notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileUrl: varchar("fileUrl", { length: 1000 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }).notNull(),

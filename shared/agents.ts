@@ -134,8 +134,19 @@ export interface LogisticaOutput {
     unit: string;
     unitCost: number;
     totalCost: number;
+    isOptional?: boolean;
+  }[];
+  optionalItems: {
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    unitCost: number;
+    totalCost: number;
+    reason: string;
   }[];
   totalLogisticsCost: number;
+  totalOptionalCost: number;
   restrictions: string[];
 }
 
@@ -268,6 +279,10 @@ export interface BoardInput {
 
 export interface BoardOutput {
   approved: boolean;
+  blockProposal: boolean;
+  requiresUserConfirmation: boolean;
+  blockReason: string;
+  warningMessages: string[];
   projectViability: {
     isViable: boolean;
     profitMargin: string;

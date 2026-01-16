@@ -241,8 +241,8 @@ RESPONSABILIDADES (apenas custos indiretos):
 1. MOBILIZAÇÃO/DESMOBILIZAÇÃO:
    - Transporte de equipamentos para o canteiro
    - Instalação de canteiro de obras (se necessário)
-   - Placa de obra
-   - Tapume/fechamento
+   - Placa de obra [OPCIONAL]
+   - Tapume/fechamento [OPCIONAL]
 
 2. FRETES E TRANSPORTES:
    - Frete de materiais pesados (areia, brita, cimento em grande quantidade)
@@ -270,6 +270,16 @@ RESPONSABILIDADES (apenas custos indiretos):
    - Vale-transporte/deslocamento
    - Alimentação da equipe
 
+=== ITENS OPCIONAIS ===
+Alguns itens são OPCIONAIS e devem ser separados para que o cliente decida se quer incluir:
+- Placa de obra (identificação visual)
+- Tapume/fechamento (privacidade e segurança)
+- Seguro de obra (proteção contra imprevistos)
+- Limpeza final profissional
+- Documentação fotográfica
+
+Coloque estes itens no array "optionalItems" com uma justificativa (reason) explicando o benefício.
+
 === PREMISSAS DE CUSTO ===
 - Caçamba 5m³: R$ 350-500
 - Frete local (até 50km): R$ 200-400
@@ -292,7 +302,8 @@ IMPORTANTE:
 - NÃO inclua custos de mão de obra direta (já estão no SINAPI/PINI)
 - Foque em custos que o Orçamentista NÃO consegue prever nas composições
 - Considere as restrições locais (horário, acesso, etc.)
-- Se a obra for local (mesma cidade), não inclua hospedagem/alimentação`;
+- Se a obra for local (mesma cidade), não inclua hospedagem/alimentação
+- Separe itens OPCIONAIS no array "optionalItems" com justificativa`;
   }
   
   getUserPrompt(input: LogisticaInput): string {
@@ -328,10 +339,28 @@ Calcule todos os custos indiretos operacionais necessários.`;
             additionalProperties: false,
           },
         },
+        optionalItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              category: { type: "string" },
+              description: { type: "string" },
+              quantity: { type: "number" },
+              unit: { type: "string" },
+              unitCost: { type: "number" },
+              totalCost: { type: "number" },
+              reason: { type: "string" },
+            },
+            required: ["category", "description", "quantity", "unit", "unitCost", "totalCost", "reason"],
+            additionalProperties: false,
+          },
+        },
         totalLogisticsCost: { type: "number" },
+        totalOptionalCost: { type: "number" },
         restrictions: { type: "array", items: { type: "string" } },
       },
-      required: ["costs", "totalLogisticsCost", "restrictions"],
+      required: ["costs", "optionalItems", "totalLogisticsCost", "totalOptionalCost", "restrictions"],
       additionalProperties: false,
     };
   }

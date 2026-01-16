@@ -154,3 +154,8 @@
 
 ## Bug v1.17.1
 - [x] Erro de JavaScript no frontend publicado - statusConfig não tinha os novos status (blocked, pending_confirmation)
+
+## v1.18 - Novas Funcionalidades
+- [x] Modal de confirmação do Board - exibir alertas quando status é "pending_confirmation" e pedir confirmação do usuário
+- [x] Popup de itens opcionais da Logística - modal durante execução do agente para selecionar itens opcionais (placa de obra, tapume, etc.)
+- [x] Exportação de cronograma em PDF - botão para gerar PDF do cronograma dia a dia com visualização Gantt

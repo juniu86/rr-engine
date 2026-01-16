@@ -42,8 +42,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Streamdown } from "streamdown";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const agentIcons: Record<string, any> = {
   engenheiro_tecnico: FileText,
@@ -82,6 +83,15 @@ export default function ProjectDetails() {
   const [isEditingMemorial, setIsEditingMemorial] = useState(false);
   const [editedMemorial, setEditedMemorial] = useState("");
   const [showRevisionDialog, setShowRevisionDialog] = useState(false);
+  
+  // Estados para modal de confirmação do Board
+  const [showBoardConfirmDialog, setShowBoardConfirmDialog] = useState(false);
+  const [boardWarnings, setBoardWarnings] = useState<string[]>([]);
+  
+  // Estados para modal de itens opcionais da Logística
+  const [showOptionalItemsDialog, setShowOptionalItemsDialog] = useState(false);
+  const [optionalItems, setOptionalItems] = useState<any[]>([]);
+  const [selectedOptionalItems, setSelectedOptionalItems] = useState<number[]>([]);
   
   const { data: details, isLoading, refetch } = trpc.project.getDetails.useQuery(
     { id: projectId },
@@ -158,6 +168,42 @@ export default function ProjectDetails() {
     },
   });
 
+  const generateSchedule = trpc.document.generateSchedule.useMutation({
+    onSuccess: (data) => {
+      toast.success("Cronograma gerado com sucesso!");
+      if (data.url) window.open(data.url, '_blank');
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao gerar cronograma: " + error.message);
+    },
+  });
+
+  // Mutation para confirmar proposta do Board
+  const confirmProposal = trpc.agent.confirmProposal.useMutation({
+    onSuccess: () => {
+      toast.success("Proposta confirmada com sucesso!");
+      setShowBoardConfirmDialog(false);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao confirmar proposta: " + error.message);
+    },
+  });
+
+  // Mutation para selecionar itens opcionais
+  const selectOptionalItems = trpc.agent.selectOptionalItems.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.selectedCount} itens opcionais adicionados! Custo adicional: R$ ${data.additionalCost.toFixed(2)}`);
+      setShowOptionalItemsDialog(false);
+      setSelectedOptionalItems([]);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao selecionar itens: " + error.message);
+    },
+  });
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -189,6 +235,34 @@ export default function ProjectDetails() {
   
   const completedAgents = agentExecutions.filter(e => e.status === "completed").length;
   const progress = (completedAgents / 9) * 100;
+
+  // Verificar se há itens opcionais da Logística
+  const logisticaExec = agentExecutions.find(e => e.agentType === "logistica");
+  const logisticaOutput = logisticaExec?.output as any;
+  const hasOptionalItems = logisticaOutput?.optionalItems?.length > 0;
+  const hasSelectedOptionalItems = logisticaOutput?.selectedOptionalItems?.length > 0;
+
+  // Verificar status de confirmação pendente
+  useEffect(() => {
+    if (project.status === "pending_confirmation") {
+      // Parsear warnings do projeto
+      try {
+        const warnings = project.warningMessages ? JSON.parse(project.warningMessages as string) : [];
+        setBoardWarnings(warnings);
+        setShowBoardConfirmDialog(true);
+      } catch {
+        setBoardWarnings([]);
+      }
+    }
+  }, [project.status, project.warningMessages]);
+
+  // Verificar itens opcionais após execução da logística
+  useEffect(() => {
+    if (hasOptionalItems && !hasSelectedOptionalItems && logisticaExec?.status === "completed") {
+      setOptionalItems(logisticaOutput.optionalItems || []);
+      // Só mostrar automaticamente se acabou de completar
+    }
+  }, [hasOptionalItems, hasSelectedOptionalItems, logisticaExec?.status]);
 
   return (
     <DashboardLayout>
@@ -708,7 +782,7 @@ export default function ProjectDetails() {
                           <div>
                             <p className="font-medium">{doc.fileName}</p>
                             <p className="text-xs text-muted-foreground">
-                              {doc.documentType === "proposta_comercial" ? "Proposta Comercial" : "Memória de Cálculo"}
+                              {doc.documentType === "proposta_comercial" ? "Proposta Comercial" : doc.documentType === "cronograma" ? "Cronograma" : "Memória de Cálculo"}
                             </p>
                           </div>
                         </div>
@@ -772,6 +846,18 @@ export default function ProjectDetails() {
                       )}
                       Apenas Planilha (Excel)
                     </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => generateSchedule.mutate({ projectId })}
+                      disabled={generateSchedule.isPending}
+                    >
+                      {generateSchedule.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Calendar className="mr-2 h-4 w-4" />
+                      )}
+                      Cronograma (PDF)
+                    </Button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     A proposta comercial mostra os valores de venda (sem custos abertos). A planilha contém o detalhamento completo de custos.
@@ -827,7 +913,186 @@ export default function ProjectDetails() {
             </Card>
           </div>
         )}
+
+        {/* Botão para selecionar itens opcionais da Logística */}
+        {hasOptionalItems && !hasSelectedOptionalItems && (
+          <Card className="border-amber-500/50 bg-amber-500/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Truck className="h-4 w-4 text-amber-500" />
+                Itens Opcionais Disponíveis
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-3">
+                O agente de Logística identificou {optionalItems.length || logisticaOutput?.optionalItems?.length || 0} itens opcionais que podem ser adicionados ao orçamento.
+              </p>
+              <Button 
+                onClick={() => {
+                  setOptionalItems(logisticaOutput?.optionalItems || []);
+                  setShowOptionalItemsDialog(true);
+                }}
+                className="bg-amber-500 hover:bg-amber-600"
+              >
+                <Truck className="mr-2 h-4 w-4" />
+                Selecionar Itens Opcionais
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Modal de Confirmação do Board */}
+      <Dialog open={showBoardConfirmDialog} onOpenChange={setShowBoardConfirmDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-500">
+              <AlertCircle className="h-5 w-5" />
+              Confirmação Necessária
+            </DialogTitle>
+            <DialogDescription>
+              O Board de Aprovação identificou alertas que requerem sua confirmação antes de gerar a proposta.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-amber-500/10 p-4 rounded-lg">
+              <h4 className="font-semibold mb-2 text-amber-500">Alertas Identificados:</h4>
+              <ul className="space-y-2">
+                {boardWarnings.map((warning, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <span>{warning}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            <p className="text-sm text-muted-foreground">
+              Ao confirmar, você reconhece os alertas acima e autoriza a geração da proposta comercial mesmo com essas ressalvas.
+            </p>
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowBoardConfirmDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => confirmProposal.mutate({ projectId })}
+              disabled={confirmProposal.isPending}
+              className="bg-amber-500 hover:bg-amber-600"
+            >
+              {confirmProposal.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+              )}
+              Confirmar e Aprovar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Itens Opcionais da Logística */}
+      <Dialog open={showOptionalItemsDialog} onOpenChange={setShowOptionalItemsDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="h-5 w-5 text-amber-500" />
+              Selecionar Itens Opcionais
+            </DialogTitle>
+            <DialogDescription>
+              Selecione os itens opcionais que deseja incluir no orçamento. Estes itens não são obrigatórios, mas podem agregar valor ao projeto.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {optionalItems.map((item, index) => (
+              <div 
+                key={index} 
+                className={`p-4 rounded-lg border transition-colors cursor-pointer ${
+                  selectedOptionalItems.includes(index) 
+                    ? 'border-amber-500 bg-amber-500/10' 
+                    : 'border-slate-700 hover:border-slate-600'
+                }`}
+                onClick={() => {
+                  setSelectedOptionalItems(prev => 
+                    prev.includes(index) 
+                      ? prev.filter(i => i !== index)
+                      : [...prev, index]
+                  );
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <Checkbox 
+                    checked={selectedOptionalItems.includes(index)}
+                    onCheckedChange={(checked) => {
+                      setSelectedOptionalItems(prev => 
+                        checked 
+                          ? [...prev, index]
+                          : prev.filter(i => i !== index)
+                      );
+                    }}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">{item.description}</h4>
+                      <span className="font-bold text-amber-500">
+                        R$ {Number(item.totalCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {item.quantity} {item.unit} x R$ {Number(item.unitCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2 italic">
+                      "{item.reason}"
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {selectedOptionalItems.length > 0 && (
+              <div className="p-4 bg-amber-500/10 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Total dos itens selecionados:</span>
+                  <span className="text-xl font-bold text-amber-500">
+                    R$ {selectedOptionalItems.reduce((sum, idx) => sum + Number(optionalItems[idx]?.totalCost || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowOptionalItemsDialog(false);
+                setSelectedOptionalItems([]);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => selectOptionalItems.mutate({ projectId, selectedItems: selectedOptionalItems })}
+              disabled={selectOptionalItems.isPending || selectedOptionalItems.length === 0}
+              className="bg-amber-500 hover:bg-amber-600"
+            >
+              {selectOptionalItems.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+              )}
+              Adicionar {selectedOptionalItems.length} Item(ns)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
