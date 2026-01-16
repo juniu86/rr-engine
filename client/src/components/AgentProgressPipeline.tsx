@@ -279,10 +279,15 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
             <div className="absolute right-[8%] top-1/2 w-6 h-6 border-r border-b border-slate-700 -translate-y-1/2 translate-x-3" />
           </div>
 
-          {/* Bottom row - agents 6-9 (in order from left to right) */}
-          <div className="flex justify-end items-start gap-6 pr-[8%]">
-            {agentConfig.slice(5).map((agent, idx) => {
-              const actualIdx = idx + 6; // 6, 7, 8, 9
+          {/* Bottom row - agents 6-9 (using same flex layout as top row for consistency) */}
+          <div className="flex justify-between items-start">
+            {/* First 4 agents in bottom row, aligned with positions 2-5 of top row */}
+            {[null, ...agentConfig.slice(5)].map((agent, idx) => {
+              if (!agent) {
+                // Empty spacer to align with first agent position
+                return <div key="spacer" className="w-36" />;
+              }
+              const actualIdx = idx + 5; // 6, 7, 8, 9
               const execution = executionMap.get(agent.type);
               const status = execution?.status || "pending";
               const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
@@ -359,6 +364,43 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
                 </Tooltip>
               );
             })}
+          </div>
+          
+          {/* Connection line for bottom row */}
+          <div className="relative h-8 mt-4 mx-[8%]">
+            {/* Background line */}
+            <div className="absolute top-1/2 left-0 right-0 h-px bg-slate-800" />
+            
+            {/* Progress line */}
+            <div 
+              className="absolute top-1/2 left-0 h-px bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-500"
+              style={{ 
+                width: `${(executions.filter(e => e.status === "completed" && agentConfig.slice(5).some(a => a.type === e.agentType)).length / 4) * 100}%`
+              }}
+            />
+            
+            {/* Dots on the line */}
+            <div className="absolute top-1/2 left-0 right-0 flex justify-between -translate-y-1/2">
+              {agentConfig.slice(5).map((agent, i) => {
+                const execution = executionMap.get(agent.type);
+                const status = execution?.status || "pending";
+                const isCompleted = status === "completed";
+                const isRunning = status === "running";
+                
+                return (
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "w-3 h-3 rounded-full transition-all duration-300 border-2",
+                      isCompleted && "bg-green-500 border-green-500",
+                      isRunning && "bg-blue-500 border-blue-500 animate-pulse",
+                      status === "pending" && "bg-slate-900 border-slate-700",
+                      status === "failed" && "bg-red-500 border-red-500"
+                    )}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
 

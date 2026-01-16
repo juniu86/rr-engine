@@ -142,3 +142,6 @@
 - [x] Presets de Regime Tributário (Simples Nacional, Lucro Presumido, Lucro Real)
 - [x] Dashboard Administrativo com métricas de usuários e projetos (/admin)
 - [x] Comparativo de Revisões lado a lado com diferenças destacadas (/projects/:id/compare)
+
+## Bug v1.16.1
+- [x] Pipeline de Processamento - agentes 06 a 09 não têm espaçamento uniforme (corrigido com flex justify-between)
