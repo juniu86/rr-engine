@@ -63,6 +63,14 @@ const statusConfig = {
   completed: { label: "Concluído", color: "bg-green-500", icon: CheckCircle2 },
   failed: { label: "Falhou", color: "bg-red-500", icon: XCircle },
   needs_review: { label: "Revisão", color: "bg-amber-500", icon: AlertCircle },
+  // Status de projeto
+  draft: { label: "Rascunho", color: "bg-slate-500", icon: Clock },
+  processing: { label: "Processando", color: "bg-blue-500", icon: Loader2 },
+  review: { label: "Em Revisão", color: "bg-amber-500", icon: AlertCircle },
+  approved: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
+  rejected: { label: "Rejeitado", color: "bg-red-500", icon: XCircle },
+  blocked: { label: "Bloqueado", color: "bg-red-600", icon: XCircle },
+  pending_confirmation: { label: "Aguardando Confirmação", color: "bg-orange-500", icon: AlertCircle },
 };
 
 export default function ProjectDetails() {

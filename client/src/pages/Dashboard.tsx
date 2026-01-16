@@ -24,6 +24,8 @@ const statusConfig = {
   review: { label: "Em Revisão", color: "bg-amber-500", icon: AlertCircle },
   approved: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
   rejected: { label: "Rejeitado", color: "bg-red-500", icon: AlertCircle },
+  blocked: { label: "Bloqueado", color: "bg-red-600", icon: AlertCircle },
+  pending_confirmation: { label: "Aguardando Confirmação", color: "bg-orange-500", icon: AlertCircle },
 };
 
 export default function Dashboard() {

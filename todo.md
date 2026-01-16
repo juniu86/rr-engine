@@ -151,3 +151,6 @@
 - [x] Comercial ignorando custos de Logística - corrigido buildAgentInput para usar totalLogisticsCost
 - [x] Gestão de Projetos com cronograma detalhado - reformulado para gerar relatório dia a dia com ações
 - [x] Board crítico - implementado blockProposal, requiresUserConfirmation e validações obrigatórias
+
+## Bug v1.17.1
+- [x] Erro de JavaScript no frontend publicado - statusConfig não tinha os novos status (blocked, pending_confirmation)

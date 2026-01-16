@@ -80,17 +80,20 @@ export default function AdminDashboard() {
   };
 
   const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode }> = {
-      approved: { variant: "default", icon: <CheckCircle2 className="h-3 w-3" /> },
-      review: { variant: "secondary", icon: <Clock className="h-3 w-3" /> },
-      rejected: { variant: "destructive", icon: <XCircle className="h-3 w-3" /> },
-      draft: { variant: "outline", icon: <AlertCircle className="h-3 w-3" /> },
+    const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode; label: string }> = {
+      approved: { variant: "default", icon: <CheckCircle2 className="h-3 w-3" />, label: "Aprovado" },
+      review: { variant: "secondary", icon: <Clock className="h-3 w-3" />, label: "Em Revisão" },
+      rejected: { variant: "destructive", icon: <XCircle className="h-3 w-3" />, label: "Rejeitado" },
+      draft: { variant: "outline", icon: <AlertCircle className="h-3 w-3" />, label: "Rascunho" },
+      processing: { variant: "secondary", icon: <Clock className="h-3 w-3" />, label: "Processando" },
+      blocked: { variant: "destructive", icon: <XCircle className="h-3 w-3" />, label: "Bloqueado" },
+      pending_confirmation: { variant: "secondary", icon: <AlertCircle className="h-3 w-3" />, label: "Aguardando Confirmação" },
     };
     const config = statusConfig[status] || statusConfig.draft;
     return (
       <Badge variant={config.variant} className="flex items-center gap-1">
         {config.icon}
-        {status === "approved" ? "Aprovado" : status === "review" ? "Em Revisão" : status === "rejected" ? "Rejeitado" : "Rascunho"}
+        {config.label}
       </Badge>
     );
   };
