@@ -387,6 +387,42 @@ export const appRouter = router({
                 };
               });
               await db.createCashFlowItems(cashFlowToSave);
+              
+              // === CÁLCULO PROGRAMÁTICO DE MARGEM LÍQUIDA ===
+              // Buscar dados dos agentes anteriores para cálculo correto
+              const comercialOut = results.comercial as any;
+              const tributarioOut = results.tributario as any;
+              const logisticaOut = results.logistica as any;
+              const orcamentistaOut = results.orcamentista as any;
+              
+              if (comercialOut && tributarioOut) {
+                const totalPrice = Number(comercialOut.finalPrice) || 0;
+                const totalDirectCost = Number(orcamentistaOut?.totalDirectCost) || 0;
+                const totalLogisticsCost = Number(logisticaOut?.totalCost) || 0;
+                const totalTaxes = Number(tributarioOut?.totalTaxes) || 0;
+                const totalBaseCost = totalDirectCost + totalLogisticsCost;
+                
+                // Margem bruta: Preço - Custo base (sem impostos)
+                const grossMargin = totalPrice - totalBaseCost;
+                const grossMarginPercent = totalPrice > 0 ? (grossMargin / totalPrice) * 100 : 0;
+                
+                // Margem líquida: Preço - Custo base - Impostos
+                const netMargin = totalPrice - totalBaseCost - totalTaxes;
+                const netMarginPercent = totalPrice > 0 ? (netMargin / totalPrice) * 100 : 0;
+                
+                // Adicionar campos calculados ao output do financeiro
+                (output as any).grossMargin = Math.round(grossMargin * 100) / 100;
+                (output as any).grossMarginPercent = Math.round(grossMarginPercent * 100) / 100;
+                (output as any).netMargin = Math.round(netMargin * 100) / 100;
+                (output as any).netMarginPercent = Math.round(netMarginPercent * 100) / 100;
+                
+                console.log(`[Financeiro] Margens calculadas programaticamente:`);
+                console.log(`  - Preço de Venda: R$ ${totalPrice.toFixed(2)}`);
+                console.log(`  - Custo Base: R$ ${totalBaseCost.toFixed(2)}`);
+                console.log(`  - Impostos: R$ ${totalTaxes.toFixed(2)}`);
+                console.log(`  - Margem Bruta: R$ ${grossMargin.toFixed(2)} (${grossMarginPercent.toFixed(2)}%)`);
+                console.log(`  - Margem Líquida: R$ ${netMargin.toFixed(2)} (${netMarginPercent.toFixed(2)}%)`);
+              }
             }
             
             await db.updateAgentExecution(execution.id, {
@@ -410,6 +446,20 @@ export const appRouter = router({
         }
         
         const boardResult = results.board as any;
+        
+        // === VALIDAÇÃO CRUZADA ENTRE AGENTES ===
+        const coherenceValidation = validateAgentCoherence(results);
+        console.log(`[Validação Cruzada] ${coherenceValidation.summary}`);
+        
+        if (!coherenceValidation.isValid) {
+          console.warn('[Validação Cruzada] Inconsistências encontradas:');
+          coherenceValidation.inconsistencies.forEach(inc => {
+            console.warn(`  - ${inc.field}: esperado ${inc.expected}, encontrado ${inc.found} (erro: ${inc.percentError}%)`);
+          });
+          
+          // Adicionar inconsistências ao resultado para visibilidade
+          (results as any)._coherenceValidation = coherenceValidation;
+        }
         
         // Lógica crítica do Board
         if (boardResult?.blockProposal) {
@@ -572,6 +622,32 @@ export const appRouter = router({
                     };
                   });
                   await db.createCashFlowItems(cashFlowToSave);
+                  
+                  // === CÁLCULO PROGRAMÁTICO DE MARGEM LÍQUIDA (REVISÃO) ===
+                  const comercialRevOut = revisedResults.comercial as any;
+                  const tributarioRevOut = revisedResults.tributario as any;
+                  const logisticaRevOut = revisedResults.logistica as any;
+                  const orcamentistaRevOut = revisedResults.orcamentista as any;
+                  
+                  if (comercialRevOut && tributarioRevOut) {
+                    const totalPrice = Number(comercialRevOut.finalPrice) || 0;
+                    const totalDirectCost = Number(orcamentistaRevOut?.totalDirectCost) || 0;
+                    const totalLogisticsCost = Number(logisticaRevOut?.totalCost) || 0;
+                    const totalTaxes = Number(tributarioRevOut?.totalTaxes) || 0;
+                    const totalBaseCost = totalDirectCost + totalLogisticsCost;
+                    
+                    const grossMargin = totalPrice - totalBaseCost;
+                    const grossMarginPercent = totalPrice > 0 ? (grossMargin / totalPrice) * 100 : 0;
+                    const netMargin = totalPrice - totalBaseCost - totalTaxes;
+                    const netMarginPercent = totalPrice > 0 ? (netMargin / totalPrice) * 100 : 0;
+                    
+                    (output as any).grossMargin = Math.round(grossMargin * 100) / 100;
+                    (output as any).grossMarginPercent = Math.round(grossMarginPercent * 100) / 100;
+                    (output as any).netMargin = Math.round(netMargin * 100) / 100;
+                    (output as any).netMarginPercent = Math.round(netMarginPercent * 100) / 100;
+                    
+                    console.log(`[Financeiro Revisão] Margens calculadas: Bruta ${grossMarginPercent.toFixed(2)}%, Líquida ${netMarginPercent.toFixed(2)}%`);
+                  }
                 }
                 
                 await db.updateAgentExecution(exec.id, {
@@ -1153,6 +1229,150 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
     default:
       return {};
   }
+}
+
+/**
+ * Validação cruzada entre outputs dos agentes.
+ * Verifica consistência matemática dos valores calculados.
+ * 
+ * @param results - Objeto com outputs de todos os agentes
+ * @returns Objeto com resultado da validação e lista de inconsistências
+ */
+export function validateAgentCoherence(results: Record<string, any>): {
+  isValid: boolean;
+  inconsistencies: Array<{
+    field: string;
+    expected: number;
+    found: number;
+    difference: number;
+    percentError: number;
+    severity: 'warning' | 'error';
+  }>;
+  summary: string;
+} {
+  const inconsistencies: Array<{
+    field: string;
+    expected: number;
+    found: number;
+    difference: number;
+    percentError: number;
+    severity: 'warning' | 'error';
+  }> = [];
+  
+  const TOLERANCE_PERCENT = 1; // Tolerância de 1% para arredondamentos
+  
+  // Extrair valores dos agentes
+  const orcamentista = results.orcamentista || {};
+  const logistica = results.logistica || {};
+  const tributario = results.tributario || {};
+  const comercial = results.comercial || {};
+  const financeiro = results.financeiro || {};
+  
+  // Valores base
+  const totalDirectCost = Number(orcamentista.totalDirectCost) || 0;
+  const totalLogisticsCost = Number(logistica.totalCost) || 0;
+  const totalTaxes = Number(tributario.totalTaxes) || 0;
+  const bdi = Number(comercial.adjustedBdi) || 0;
+  const finalPrice = Number(comercial.finalPrice) || 0;
+  
+  // Validação 1: Preço Final = (Custo Direto + Logística) * (1 + BDI)
+  const expectedPrice = (totalDirectCost + totalLogisticsCost) * (1 + bdi);
+  if (finalPrice > 0 && expectedPrice > 0) {
+    const priceDiff = Math.abs(finalPrice - expectedPrice);
+    const priceError = (priceDiff / expectedPrice) * 100;
+    
+    if (priceError > TOLERANCE_PERCENT) {
+      inconsistencies.push({
+        field: 'Preço Final',
+        expected: Math.round(expectedPrice * 100) / 100,
+        found: Math.round(finalPrice * 100) / 100,
+        difference: Math.round(priceDiff * 100) / 100,
+        percentError: Math.round(priceError * 100) / 100,
+        severity: priceError > 5 ? 'error' : 'warning',
+      });
+    }
+  }
+  
+  // Validação 2: Margem Líquida = Preço - Custo Base - Impostos
+  const expectedNetMargin = finalPrice - totalDirectCost - totalLogisticsCost - totalTaxes;
+  const foundNetMargin = Number(financeiro.netMargin) || 0;
+  
+  if (foundNetMargin !== 0 && expectedNetMargin !== 0) {
+    const marginDiff = Math.abs(foundNetMargin - expectedNetMargin);
+    const marginError = (marginDiff / Math.abs(expectedNetMargin)) * 100;
+    
+    if (marginError > TOLERANCE_PERCENT) {
+      inconsistencies.push({
+        field: 'Margem Líquida',
+        expected: Math.round(expectedNetMargin * 100) / 100,
+        found: Math.round(foundNetMargin * 100) / 100,
+        difference: Math.round(marginDiff * 100) / 100,
+        percentError: Math.round(marginError * 100) / 100,
+        severity: marginError > 10 ? 'error' : 'warning',
+      });
+    }
+  }
+  
+  // Validação 3: Soma dos itens do orçamento = Total Direto
+  const budgetItems = orcamentista.budgetItems || [];
+  const sumBudgetItems = budgetItems.reduce((sum: number, item: any) => {
+    return sum + (Number(item.quantity) || 0) * (Number(item.unitCostTotal) || 0);
+  }, 0);
+  
+  if (totalDirectCost > 0 && sumBudgetItems > 0) {
+    const budgetDiff = Math.abs(totalDirectCost - sumBudgetItems);
+    const budgetError = (budgetDiff / totalDirectCost) * 100;
+    
+    if (budgetError > TOLERANCE_PERCENT) {
+      inconsistencies.push({
+        field: 'Total Custo Direto',
+        expected: Math.round(sumBudgetItems * 100) / 100,
+        found: Math.round(totalDirectCost * 100) / 100,
+        difference: Math.round(budgetDiff * 100) / 100,
+        percentError: Math.round(budgetError * 100) / 100,
+        severity: budgetError > 5 ? 'error' : 'warning',
+      });
+    }
+  }
+  
+  // Validação 4: Soma dos custos logísticos = Total Logística
+  const logisticsCosts = logistica.costs || [];
+  const sumLogistics = logisticsCosts.reduce((sum: number, cost: any) => {
+    return sum + (Number(cost.totalCost) || 0);
+  }, 0);
+  
+  if (totalLogisticsCost > 0 && sumLogistics > 0) {
+    const logDiff = Math.abs(totalLogisticsCost - sumLogistics);
+    const logError = (logDiff / totalLogisticsCost) * 100;
+    
+    if (logError > TOLERANCE_PERCENT) {
+      inconsistencies.push({
+        field: 'Total Logística',
+        expected: Math.round(sumLogistics * 100) / 100,
+        found: Math.round(totalLogisticsCost * 100) / 100,
+        difference: Math.round(logDiff * 100) / 100,
+        percentError: Math.round(logError * 100) / 100,
+        severity: logError > 5 ? 'error' : 'warning',
+      });
+    }
+  }
+  
+  // Gerar resumo
+  const errors = inconsistencies.filter(i => i.severity === 'error');
+  const warnings = inconsistencies.filter(i => i.severity === 'warning');
+  
+  let summary = '';
+  if (inconsistencies.length === 0) {
+    summary = 'Validação OK: Todos os valores estão consistentes entre os agentes.';
+  } else {
+    summary = `Validação encontrou ${errors.length} erro(s) e ${warnings.length} aviso(s) de inconsistência.`;
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    inconsistencies,
+    summary,
+  };
 }
 
 export type AppRouter = typeof appRouter;

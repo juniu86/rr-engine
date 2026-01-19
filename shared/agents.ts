@@ -236,6 +236,11 @@ export interface FinanceiroOutput {
   needsAdvance: boolean;
   suggestedAdvance: number;
   alerts: string[];
+  // Campos de margem líquida calculados programaticamente (não pela LLM)
+  netMargin?: number; // Preço de venda - Custo base - Impostos
+  netMarginPercent?: number; // (netMargin / Preço de venda) * 100
+  grossMargin?: number; // Preço de venda - Custo base
+  grossMarginPercent?: number; // (grossMargin / Preço de venda) * 100
 }
 
 export interface JuridicoInput {

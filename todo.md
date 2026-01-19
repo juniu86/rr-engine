@@ -185,3 +185,15 @@
 - [x] Refatorar método execute() da BaseAgent - extrair lógica de parsing para _processLLMResponse()
 - [x] Eliminar duplicação de código (DRY) - criar função initializeAgentExecutions() reutilizável
 - [x] Usar Promise.all() para processamento concorrente na inicialização de agentes
+
+
+## Auditoria v1.22 - Análise de Inconsistências Críticas
+- [x] Fase 1: Analisar relatório de auditoria e validar inconsistências (5 identificadas, 2 confirmadas, 3 refutadas)
+- [x] Fase 2: PIS/COFINS - REFUTADA (base de cálculo da auditoria estava incorreta)
+- [x] Fase 2: INSS - REFUTADA (valor encontrado inclui encargos adicionais RAT/terceiros)
+- [x] Fase 2: Corrigir cálculo de margem líquida - IMPLEMENTADO (netMargin, grossMargin programáticos)
+- [x] Fase 2: Fluxo de caixa - REFUTADA (formato cumulativo está correto, auditoria interpretou errado)
+- [x] Fase 2: Implementar validação cruzada entre agentes - IMPLEMENTADO (validateAgentCoherence)
+- [x] Fase 3: Criar testes unitários para validação cruzada (11 testes)
+- [x] Fase 3: Criar testes de integração para coerência entre agentes
+- [x] Fase 4: Documentar mudanças - 104 testes passando, relatório técnico gerado
