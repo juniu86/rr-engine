@@ -332,6 +332,9 @@ export async function getGeneratedDocumentsByProjectId(projectId: number) {
   return db.select().from(generatedDocuments).where(eq(generatedDocuments.projectId, projectId)).orderBy(desc(generatedDocuments.createdAt));
 }
 
+// Alias para compatibilidade
+export const getDocumentsByProjectId = getGeneratedDocumentsByProjectId;
+
 // ==================== PRICE CACHE QUERIES ====================
 export async function getCachedPrice(source: "sinapi" | "pini" | "mercado", code: string) {
   const db = await getDb();

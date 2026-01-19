@@ -202,3 +202,7 @@
 - [x] Proposta comercial PDF mostra valor menor que planilha Excel - CORRIGIDO
 - [x] Identificar fonte da discrepância - calculateProportionalPrices usava totalBaseCost em vez de totalDirectCost
 - [x] Corrigir geração de documentos - Markup agora calculado sobre custo direto, garantindo soma = preço de venda
+
+## v1.23 - Melhorias de UX e Exportação
+- [x] Card de Resumo Financeiro - Exibir Custo Direto, Logística, BDI e Preço Final com barra de composição visual
+- [x] Exportação em ZIP - Botão para baixar todos os documentos em arquivo compactado (usando archiver)

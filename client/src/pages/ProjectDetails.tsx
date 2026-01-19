@@ -36,7 +36,8 @@ import {
   GitBranch,
   History,
   Save,
-  X
+  X,
+  Archive
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Streamdown } from "streamdown";
@@ -176,6 +177,17 @@ export default function ProjectDetails() {
     },
     onError: (error) => {
       toast.error("Erro ao gerar cronograma: " + error.message);
+    },
+  });
+
+  // Mutation para exportar todos os documentos em ZIP
+  const exportAllDocuments = trpc.document.exportAllDocuments.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.documentCount} documentos exportados com sucesso!`);
+      if (data.url) window.open(data.url, '_blank');
+    },
+    onError: (error) => {
+      toast.error("Erro ao exportar documentos: " + error.message);
     },
   });
 
@@ -342,6 +354,123 @@ export default function ProjectDetails() {
             </CardContent>
           </Card>
         )}
+
+        {/* Financial Summary Card */}
+        {(() => {
+          // Extrair dados financeiros dos agentes
+          const orcamentistaExec = agentExecutions.find(e => e.agentType === "orcamentista");
+          const logisticaExec = agentExecutions.find(e => e.agentType === "logistica");
+          const comercialExec = agentExecutions.find(e => e.agentType === "comercial");
+          
+          const orcamentistaOutput = orcamentistaExec?.output as any;
+          const logisticaOutput = logisticaExec?.output as any;
+          const comercialOutput = comercialExec?.output as any;
+          
+          const custoDirecto = (orcamentistaOutput?.totalDirectCost || 0) + (orcamentistaOutput?.totalIndirectCost || 0);
+          const custoLogistica = logisticaOutput?.totalCost || 0;
+          const custoBase = custoDirecto + custoLogistica;
+          const bdiPercentual = comercialOutput?.adjustedBdi ? (comercialOutput.adjustedBdi * 100) : 0;
+          const precoFinal = comercialOutput?.finalPrice || 0;
+          const bdiValor = precoFinal - custoBase;
+          
+          // Só mostrar se houver dados financeiros
+          if (custoDirecto === 0 && precoFinal === 0) return null;
+          
+          return (
+            <Card className="border-amber-500/30 bg-gradient-to-br from-slate-900 to-slate-800">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-amber-500" />
+                    Resumo Financeiro
+                  </CardTitle>
+                  <Badge variant="outline" className="text-amber-500 border-amber-500/50">
+                    BDI: {bdiPercentual.toFixed(1)}%
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Custo Direto */}
+                  <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-xs text-muted-foreground mb-1">Custo Direto</div>
+                    <div className="text-lg font-bold text-slate-200">
+                      R$ {custoDirecto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">Materiais + M.O.</div>
+                  </div>
+                  
+                  {/* Logística */}
+                  <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-xs text-muted-foreground mb-1">Logística</div>
+                    <div className="text-lg font-bold text-blue-400">
+                      R$ {custoLogistica.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">Mobilização + Transp.</div>
+                  </div>
+                  
+                  {/* BDI */}
+                  <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-xs text-muted-foreground mb-1">BDI ({bdiPercentual.toFixed(1)}%)</div>
+                    <div className="text-lg font-bold text-purple-400">
+                      R$ {bdiValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">Lucro + Admin.</div>
+                  </div>
+                  
+                  {/* Preço Final */}
+                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                    <div className="text-xs text-amber-500/80 mb-1">Preço Final</div>
+                    <div className="text-xl font-bold text-amber-500">
+                      R$ {precoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-amber-500/60 mt-1">Valor de Venda</div>
+                  </div>
+                </div>
+                
+                {/* Barra de composição visual */}
+                <div className="mt-4 pt-4 border-t border-slate-700">
+                  <div className="text-xs text-muted-foreground mb-2">Composição do Preço</div>
+                  <div className="h-3 rounded-full overflow-hidden flex bg-slate-700">
+                    {precoFinal > 0 && (
+                      <>
+                        <div 
+                          className="bg-slate-400 h-full" 
+                          style={{ width: `${(custoDirecto / precoFinal) * 100}%` }}
+                          title={`Custo Direto: ${((custoDirecto / precoFinal) * 100).toFixed(1)}%`}
+                        />
+                        <div 
+                          className="bg-blue-500 h-full" 
+                          style={{ width: `${(custoLogistica / precoFinal) * 100}%` }}
+                          title={`Logística: ${((custoLogistica / precoFinal) * 100).toFixed(1)}%`}
+                        />
+                        <div 
+                          className="bg-purple-500 h-full" 
+                          style={{ width: `${(bdiValor / precoFinal) * 100}%` }}
+                          title={`BDI: ${((bdiValor / precoFinal) * 100).toFixed(1)}%`}
+                        />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      Direto ({precoFinal > 0 ? ((custoDirecto / precoFinal) * 100).toFixed(0) : 0}%)
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      Logística ({precoFinal > 0 ? ((custoLogistica / precoFinal) * 100).toFixed(0) : 0}%)
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                      BDI ({precoFinal > 0 ? ((bdiValor / precoFinal) * 100).toFixed(0) : 0}%)
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Progress Card with Visual Pipeline */}
         <Card>
@@ -916,6 +1045,32 @@ export default function ProjectDetails() {
                     A proposta comercial mostra os valores de venda (sem custos abertos). A planilha contém o detalhamento completo de custos.
                   </p>
                 </div>
+
+                {/* Botão de Exportação em ZIP */}
+                {documents.length > 0 && (
+                  <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold text-amber-500">Exportar Todos os Documentos</h4>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Baixe todos os {documents.length} documentos em um único arquivo ZIP
+                        </p>
+                      </div>
+                      <Button 
+                        onClick={() => exportAllDocuments.mutate({ projectId })}
+                        disabled={exportAllDocuments.isPending}
+                        className="bg-amber-600 hover:bg-amber-700"
+                      >
+                        {exportAllDocuments.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Archive className="mr-2 h-4 w-4" />
+                        )}
+                        Baixar ZIP
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

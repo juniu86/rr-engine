@@ -1092,6 +1092,73 @@ export const appRouter = router({
         );
         return result;
       }),
+
+    // Exportar todos os documentos em ZIP
+    exportAllDocuments: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Buscar documentos existentes
+        const documents = await db.getDocumentsByProjectId(input.projectId);
+        
+        // Verificar se há documentos para exportar
+        if (documents.length === 0) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "Nenhum documento gerado. Execute os agentes e gere os documentos primeiro." 
+          });
+        }
+        
+        // Importar bibliotecas necessárias
+        const archiver = await import("archiver");
+        const { storagePut, storageGet } = await import("./storage");
+        
+        // Criar buffer para o ZIP
+        const chunks: Buffer[] = [];
+        const archive = archiver.default("zip", { zlib: { level: 9 } });
+        
+        archive.on("data", (chunk: Buffer) => chunks.push(chunk));
+        
+        // Baixar e adicionar cada documento ao ZIP
+        for (const doc of documents) {
+          try {
+            // Buscar o conteúdo do arquivo do S3
+            const response = await fetch(doc.fileUrl);
+            if (response.ok) {
+              const buffer = Buffer.from(await response.arrayBuffer());
+              const extension = doc.fileUrl.split(".").pop() || "html";
+              const fileName = `${doc.documentType}_${project.name.replace(/\s+/g, "_")}.${extension}`;
+              archive.append(buffer, { name: fileName });
+            }
+          } catch (error) {
+            console.error(`Erro ao baixar documento ${doc.documentType}:`, error);
+          }
+        }
+        
+        // Finalizar o arquivo ZIP
+        await archive.finalize();
+        
+        // Aguardar todos os chunks serem coletados
+        await new Promise<void>((resolve) => archive.on("end", resolve));
+        
+        const zipBuffer = Buffer.concat(chunks);
+        
+        // Upload do ZIP para S3
+        const timestamp = Date.now();
+        const zipFileName = `documentos_${project.name.replace(/\s+/g, "_")}_${timestamp}.zip`;
+        const zipFileKey = `exports/${project.id}/${zipFileName}`;
+        
+        const { url } = await storagePut(zipFileKey, zipBuffer, "application/zip");
+        
+        return {
+          url,
+          fileName: zipFileName,
+          documentCount: documents.length,
+        };
+      }),
   }),
 });
 
