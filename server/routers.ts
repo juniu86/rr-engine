@@ -1036,7 +1036,11 @@ export const appRouter = router({
         const comercialExec = executions.find(e => e.agentType === "comercial");
         const comercialOutput = comercialExec?.output;
         
-        const result = await generateProposalPDF(project, budgetItems, logisticsCosts, juridicaOutput, comercialOutput, companySettings);
+        // Get gestao output to get the correct duration from schedule
+        const gestaoExec = executions.find(e => e.agentType === "gestao_projetos");
+        const gestaoOutput = gestaoExec?.output;
+        
+        const result = await generateProposalPDF(project, budgetItems, logisticsCosts, juridicaOutput, comercialOutput, companySettings, gestaoOutput);
         return result;
       }),
 

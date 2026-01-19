@@ -67,7 +67,8 @@ export async function generateProposalPDF(
   logisticsCosts: any[],
   juridicaOutput: any,
   comercialOutput?: any,
-  companySettings?: CompanySettings
+  companySettings?: CompanySettings,
+  gestaoOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
   // Calcular custo direto total (materiais + mão de obra)
   const totalDirectCost = budgetItems.reduce((sum, item) => {
@@ -135,7 +136,7 @@ export async function generateProposalPDF(
   const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice, totalBaseCost);
   
   // Generate HTML content for the proposal
-  const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput, companySettings);
+  const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput, companySettings, gestaoOutput);
   
   // Convert to PDF bytes
   const pdfBuffer = Buffer.from(htmlContent, "utf-8");
@@ -197,10 +198,16 @@ function generateProposalHTML(
   items: ProportionalItem[], 
   totalSalePrice: number,
   juridicaOutput: any,
-  companySettings?: CompanySettings
+  companySettings?: CompanySettings,
+  gestaoOutput?: any
 ): string {
   const companyName = companySettings?.companyName || 'RR Engenharia';
   const companyCnpj = companySettings?.cnpj || '';
+  
+  // Calcular prazo correto a partir do cronograma (em dias úteis)
+  const totalDays = gestaoOutput?.totalDays || gestaoOutput?.totalDuration * 5 || 0;
+  const totalWeeks = totalDays > 0 ? Math.ceil(totalDays / 5) : null;
+  const prazoExecucao = totalWeeks ? `${totalWeeks} semanas (${totalDays} dias úteis)` : (project.estimatedDuration ? `${project.estimatedDuration} semanas` : "A definir");
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -342,7 +349,7 @@ function generateProposalHTML(
       </tr>
       <tr>
         <th>Prazo de Execução</th>
-        <td>${project.estimatedDuration || "A definir"} semanas</td>
+        <td>${prazoExecucao}</td>
       </tr>
     </table>
   </div>
@@ -484,6 +491,24 @@ function generateMemoriaXLSX(
     totalFinal = custoBase + totalBdi;
   }
   
+  // Calcular preços proporcionais para cada item (mesma lógica da proposta comercial)
+  // O markup é calculado sobre o custo DIRETO para distribuir o preço de venda total
+  const markupFactor = totalDirect > 0 ? totalFinal / totalDirect : 1;
+  const itemsWithProportionalPrices = budgetItems.map(item => {
+    const quantity = Number(item.quantity || 0);
+    const unitCost = Number(item.unitCostTotal || 0);
+    const itemTotalCost = quantity * unitCost;
+    // Preço proporcional = custo * markup (inclui logística + BDI distribuídos)
+    const proportionalPrice = itemTotalCost * markupFactor;
+    // BDI proporcional = preço proporcional - custo
+    const proportionalBdi = proportionalPrice - itemTotalCost;
+    return {
+      ...item,
+      proportionalPrice,
+      proportionalBdi,
+    };
+  });
+  
   console.log('[Memória de Cálculo] Valores calculados:');
   console.log(`  - Custo Direto: R$ ${totalDirect.toFixed(2)}`);
   console.log(`  - Custo Logística: R$ ${totalLogistics.toFixed(2)}`);
@@ -492,6 +517,8 @@ function generateMemoriaXLSX(
   console.log(`  - Preço Final: R$ ${totalFinal.toFixed(2)}`);
   console.log(`  - Preço Comercial: R$ ${comercialFinalPrice.toFixed(2)}`);
   console.log(`  - BDI Comercial: ${(comercialBdi * 100).toFixed(1)}%`);
+  console.log(`  - Markup Factor: ${markupFactor.toFixed(4)}`);
+  console.log(`  - Soma Preços Proporcionais: R$ ${itemsWithProportionalPrices.reduce((s, i) => s + i.proportionalPrice, 0).toFixed(2)}`);
   
   return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -564,7 +591,7 @@ function generateMemoriaXLSX(
       </Row>
       
       <!-- Dados -->
-      ${budgetItems.map((item, index) => `
+      ${itemsWithProportionalPrices.map((item, index) => `
       <Row>
         <Cell><Data ss:Type="Number">${index + 1}</Data></Cell>
         <Cell><Data ss:Type="String">${escapeXml(item.code || "")}</Data></Cell>
@@ -576,8 +603,8 @@ function generateMemoriaXLSX(
         <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostLogistics || 0)}</Data></Cell>
         <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.totalCost || 0)}</Data></Cell>
         <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.taxAmount || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.bdiAmount || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.finalPrice || 0)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${item.proportionalBdi.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${item.proportionalPrice.toFixed(2)}</Data></Cell>
         <Cell><Data ss:Type="String">${escapeXml(item.source || "")}</Data></Cell>
         <Cell><Data ss:Type="String">${escapeXml(item.sourceCode || "")}</Data></Cell>
       </Row>

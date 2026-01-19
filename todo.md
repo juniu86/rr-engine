@@ -206,3 +206,17 @@
 ## v1.23 - Melhorias de UX e Exportação
 - [x] Card de Resumo Financeiro - Exibir Custo Direto, Logística, BDI e Preço Final com barra de composição visual
 - [x] Exportação em ZIP - Botão para baixar todos os documentos em arquivo compactado (usando archiver)
+
+## Auditoria v1.24 - Prompt de Validação de Processos para Gemini
+- [x] Mapear fluxo completo de processos do RR-Engine (9 agentes)
+- [x] Documentar entradas, saídas e dependências de cada agente
+- [x] Criar prompt estruturado para auditoria via API Gemini
+- [x] Incluir critérios de avaliação baseados em práticas de engenharia
+- [x] Entregar prompt e documentação de suporte
+
+## Bug Crítico v1.25 - Auditoria Gemini (Reforma Vania REV09)
+- [x] CRÍTICO #1: Preços unitários na proposta 15,57% maiores que na memória de cálculo - CORRIGIDO: Memória agora usa preços proporcionais (mesma lógica da proposta)
+- [x] CRÍTICO #2: Prazo na proposta (9 semanas) diferente do cronograma (9 dias) - CORRIGIDO: Proposta agora usa gestãoOutput.totalDays
+- [x] ALTA #3: Valor total na planilha de preços diferente da cláusula - CORRIGIDO: Ambos documentos usam comercialOutput.finalPrice como fonte única
+- [x] Implementar testes de auditoria de consistência (7 testes)
+- [x] Garantir que Jurídico use preço e prazo do Comercial/Gestão como fonte única
