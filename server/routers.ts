@@ -36,7 +36,8 @@ export const appRouter = router({
         memorialDescritivo: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const projectId = await db.createProject({
+        // Usar transação atômica: se qualquer operação falhar, tudo é revertido
+        const projectId = await db.createProjectWithAgents({
           userId: ctx.user.id,
           name: input.name,
           description: input.description || null,
@@ -47,20 +48,6 @@ export const appRouter = router({
           status: "draft",
           currentAgentId: 1,
         });
-        
-        const agentTypes: AgentType[] = [
-          "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
-          "comercial", "gestao_projetos", "financeiro", "juridico", "board"
-        ];
-        
-        for (const agentType of agentTypes) {
-          await db.createAgentExecution({
-            projectId,
-            agentType,
-            agentOrder: AGENT_ORDER[agentType],
-            status: "pending",
-          });
-        }
         
         return { projectId };
       }),
@@ -110,6 +97,7 @@ export const appRouter = router({
       }),
 
     // Criar revisão do projeto com memorial editado
+    // Usa transação atômica: projeto + agentes criados juntos ou nenhum
     createRevision: protectedProcedure
       .input(z.object({
         projectId: z.number(),
@@ -120,27 +108,12 @@ export const appRouter = router({
         if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
         if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         
-        // Criar nova revisão do projeto
+        // Criar nova revisão com transação atômica (projeto + agentes)
         const newProjectId = await db.createProjectRevision(
           input.projectId,
           input.newMemorialDescritivo,
           ctx.user.id
         );
-        
-        // Criar execuções de agentes para o novo projeto
-        const agentTypes: AgentType[] = [
-          "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
-          "comercial", "gestao_projetos", "financeiro", "juridico", "board"
-        ];
-        
-        for (const agentType of agentTypes) {
-          await db.createAgentExecution({
-            projectId: newProjectId,
-            agentType,
-            agentOrder: AGENT_ORDER[agentType],
-            status: "pending",
-          });
-        }
         
         return { 
           success: true, 

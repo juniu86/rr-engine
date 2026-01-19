@@ -179,3 +179,9 @@
 - [x] Aba Resumo da planilha soma incorretamente - CORRIGIDO: Mostra Custo Base (Direto + Logística) + BDI = Preço Final
 - [x] Proposta Comercial mostra valor diferente - CORRIGIDO: Já usava comercialOutput.finalPrice
 - [x] Garantir consistência de valores - CORRIGIDO: Fonte única de verdade é o agente Comercial
+
+## Refatoração v1.21 - Melhorias Críticas (Análise Gemini)
+- [x] Implementar transações atômicas no banco de dados (project.create e project.createRevision)
+- [x] Refatorar método execute() da BaseAgent - extrair lógica de parsing para _processLLMResponse()
+- [x] Eliminar duplicação de código (DRY) - criar função initializeAgentExecutions() reutilizável
+- [x] Usar Promise.all() para processamento concorrente na inicialização de agentes

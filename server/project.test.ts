@@ -5,11 +5,13 @@ import type { TrpcContext } from "./_core/context";
 // Mock database functions
 vi.mock("./db", () => ({
   createProject: vi.fn().mockResolvedValue(1),
+  createProjectWithAgents: vi.fn().mockResolvedValue(1), // Nova função com transação
   getProjectById: vi.fn(),
   getProjectsByUserId: vi.fn().mockResolvedValue([]),
   updateProject: vi.fn().mockResolvedValue(undefined),
   deleteProject: vi.fn().mockResolvedValue(undefined),
   createAgentExecution: vi.fn().mockResolvedValue(1),
+  initializeAgentExecutions: vi.fn().mockResolvedValue(undefined), // Nova função DRY
   getAgentExecutionsByProjectId: vi.fn().mockResolvedValue([]),
   getBudgetItemsByProjectId: vi.fn().mockResolvedValue([]),
   getLogisticsCostsByProjectId: vi.fn().mockResolvedValue([]),
@@ -79,7 +81,8 @@ describe("project.create", () => {
     });
 
     expect(result).toEqual({ projectId: 1 });
-    expect(db.createProject).toHaveBeenCalledWith(
+    // Agora usa createProjectWithAgents com transação atômica
+    expect(db.createProjectWithAgents).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 1,
         name: "Reforma Posto Shell",
@@ -87,8 +90,6 @@ describe("project.create", () => {
         status: "draft",
       })
     );
-    // Should create 9 agent executions
-    expect(db.createAgentExecution).toHaveBeenCalledTimes(9);
   });
 
   it("creates project with minimal required fields", async () => {
@@ -101,7 +102,8 @@ describe("project.create", () => {
     });
 
     expect(result).toEqual({ projectId: 1 });
-    expect(db.createProject).toHaveBeenCalledWith(
+    // Agora usa createProjectWithAgents com transação atômica
+    expect(db.createProjectWithAgents).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Projeto Simples",
         contractType: "manutencao",

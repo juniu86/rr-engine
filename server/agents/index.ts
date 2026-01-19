@@ -32,9 +32,77 @@ abstract class BaseAgent<TInput, TOutput> {
   abstract getUserPrompt(input: TInput): string;
   abstract getOutputSchema(): object;
   
+  /**
+   * Processa a resposta da LLM e extrai o conteúdo JSON.
+   * Lida com múltiplos formatos de resposta:
+   * - Conteúdo string direto
+   * - Array multimodal (extrai parte de texto)
+   * - Fallback para reasoning_content
+   * 
+   * @param response - Resposta bruta da LLM
+   * @returns Conteúdo string extraído para parsing
+   * @throws Error se a resposta for inválida ou vazia
+   */
+  private _processLLMResponse(response: unknown): string {
+    // Validação da estrutura da resposta
+    const typedResponse = response as { choices?: Array<{ message?: { content?: unknown } }> };
+    
+    if (!typedResponse?.choices || !Array.isArray(typedResponse.choices) || typedResponse.choices.length === 0) {
+      console.error(`[Agent ${this.name}] Invalid response structure:`, JSON.stringify(response).substring(0, 500));
+      throw new Error(`Agent ${this.name} returned invalid response structure`);
+    }
+    
+    const choice = typedResponse.choices[0];
+    
+    if (!choice?.message) {
+      console.error(`[Agent ${this.name}] Empty choice:`, JSON.stringify(choice));
+      throw new Error(`Agent ${this.name} returned empty choice`);
+    }
+    
+    // Extrai conteúdo da mensagem
+    let content = choice.message.content;
+    const messageAny = choice.message as Record<string, unknown>;
+    
+    console.log(`[Agent ${this.name}] Message keys:`, Object.keys(choice.message));
+    
+    // Cenário 1: Conteúdo é array multimodal
+    if (Array.isArray(content)) {
+      console.log(`[Agent ${this.name}] Content is array, extracting text part...`);
+      const textPart = content.find((part) => part.type === 'text') as { type: 'text'; text: string } | undefined;
+      content = textPart?.text || '';
+    }
+    
+    // Cenário 2: Conteúdo vazio, tentar reasoning_content
+    if ((!content || content === '') && messageAny.reasoning_content) {
+      console.log(`[Agent ${this.name}] Content empty, checking reasoning_content...`);
+      const reasoningContent = messageAny.reasoning_content as string;
+      const jsonMatch = reasoningContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        content = jsonMatch[0];
+      }
+    }
+    
+    // Validação final do conteúdo
+    if (!content || typeof content !== 'string') {
+      console.error(`[Agent ${this.name}] Invalid content:`, content);
+      console.error(`[Agent ${this.name}] Full message:`, JSON.stringify(choice.message).substring(0, 1000));
+      throw new Error(`Agent ${this.name} returned empty or invalid content`);
+    }
+    
+    return content;
+  }
+  
+  /**
+   * Executa o agente com o input fornecido.
+   * Responsável por:
+   * 1. Chamar a LLM com os prompts configurados
+   * 2. Processar a resposta via _processLLMResponse()
+   * 3. Fazer parse do JSON e retornar o output tipado
+   */
   async execute(input: TInput): Promise<TOutput> {
     console.log(`[Agent ${this.name}] Starting execution...`);
     
+    // Etapa 1: Chamar a LLM
     let response;
     try {
       response = await invokeLLM({
@@ -56,53 +124,11 @@ abstract class BaseAgent<TInput, TOutput> {
       throw llmError;
     }
     
-    // Handle response safely
-    if (!response || !response.choices || !Array.isArray(response.choices) || response.choices.length === 0) {
-      console.error(`[Agent ${this.name}] Invalid response structure:`, JSON.stringify(response).substring(0, 500));
-      throw new Error(`Agent ${this.name} returned invalid response structure`);
-    }
-    
-    const choice = response.choices[0];
-    
-    if (!choice || !choice.message) {
-      console.error(`[Agent ${this.name}] Empty choice:`, JSON.stringify(choice));
-      throw new Error(`Agent ${this.name} returned empty choice`);
-    }
-    
-    // Get content - handle both string and object with reasoning_content
-    let content = choice.message.content;
-    const messageAny = choice.message as any;
-    
-    // If content is empty but reasoning_content exists, the model might have put JSON in reasoning
-    // But typically content should have the JSON output
-    console.log(`[Agent ${this.name}] Message keys:`, Object.keys(choice.message));
-    
-    // Handle array content (multimodal response)
-    if (Array.isArray(content)) {
-      console.log(`[Agent ${this.name}] Content is array, extracting text part...`);
-      const textPart = content.find((part) => part.type === 'text') as { type: 'text'; text: string } | undefined;
-      content = textPart?.text || '';
-    }
-    
-    // If content is still empty, check if there's reasoning_content with JSON
-    if ((!content || content === '') && messageAny.reasoning_content) {
-      console.log(`[Agent ${this.name}] Content empty, checking reasoning_content...`);
-      // Try to extract JSON from reasoning_content
-      const reasoningContent = messageAny.reasoning_content;
-      const jsonMatch = reasoningContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        content = jsonMatch[0];
-      }
-    }
-    
-    if (!content || typeof content !== 'string') {
-      console.error(`[Agent ${this.name}] Invalid content:`, content);
-      console.error(`[Agent ${this.name}] Full message:`, JSON.stringify(choice.message).substring(0, 1000));
-      throw new Error(`Agent ${this.name} returned empty or invalid content`);
-    }
-    
+    // Etapa 2: Processar resposta (lógica extraída para método privado)
+    const content = this._processLLMResponse(response);
     console.log(`[Agent ${this.name}] Content preview:`, content.substring(0, 200));
     
+    // Etapa 3: Parse do JSON
     try {
       const parsed = JSON.parse(content) as TOutput;
       console.log(`[Agent ${this.name}] Successfully parsed output`);

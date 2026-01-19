@@ -1,5 +1,9 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TransactionClient = any;
+import { AGENT_ORDER } from "../shared/agents";
+import type { AgentType } from "../shared/agents";
 import { 
   InsertUser, users, 
   projects, InsertProject, Project,
@@ -136,6 +140,70 @@ export async function createAgentExecution(data: InsertAgentExecution): Promise<
   
   const result = await db.insert(agentExecutions).values(data);
   return Number(result[0].insertId);
+}
+
+/**
+ * Executa uma função dentro de uma transação atômica.
+ * Se qualquer operação falhar, todas são revertidas.
+ */
+export async function runTransaction<T>(
+  callback: (trx: TransactionClient) => Promise<T>
+): Promise<T> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return db.transaction(callback);
+}
+
+/**
+ * Lista ordenada de tipos de agentes para inicialização.
+ * Centralizada para evitar duplicação (DRY).
+ */
+const AGENT_TYPES_ORDERED: AgentType[] = [
+  "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
+  "comercial", "gestao_projetos", "financeiro", "juridico", "board"
+];
+
+/**
+ * Inicializa as execuções de agentes para um projeto.
+ * Pode ser executada dentro ou fora de uma transação.
+ * Usa Promise.all para processamento concorrente.
+ */
+export async function initializeAgentExecutions(
+  projectId: number,
+  trx?: TransactionClient
+): Promise<void> {
+  const database = trx || await getDb();
+  if (!database) throw new Error("Database not available");
+  
+  // Processamento concorrente com Promise.all
+  const executionPromises = AGENT_TYPES_ORDERED.map((agentType, index) =>
+    database.insert(agentExecutions).values({
+      projectId,
+      agentType,
+      agentOrder: index + 1,
+      status: "pending",
+    })
+  );
+  
+  await Promise.all(executionPromises);
+}
+
+/**
+ * Cria um projeto com suas execuções de agentes em uma transação atômica.
+ * Se qualquer operação falhar, tudo é revertido.
+ */
+export async function createProjectWithAgents(data: InsertProject): Promise<number> {
+  return runTransaction(async (trx) => {
+    // Criar projeto
+    const result = await trx.insert(projects).values(data);
+    const projectId = Number(result[0].insertId);
+    
+    // Inicializar agentes (se falhar, projeto também é revertido)
+    await initializeAgentExecutions(projectId, trx);
+    
+    return projectId;
+  });
 }
 
 export async function getAgentExecutionsByProjectId(projectId: number) {
@@ -319,15 +387,16 @@ export async function getNextRevisionNumber(projectId: number): Promise<number> 
   return revisions.length + 1;
 }
 
+/**
+ * Cria uma revisão do projeto com transação atômica.
+ * Inclui criação do projeto e inicialização dos agentes.
+ */
 export async function createProjectRevision(
   originalProjectId: number, 
   newMemorial: string,
   userId: number
 ): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  // Buscar projeto original
+  // Buscar projeto original (fora da transação para validação)
   const originalProject = await getProjectById(originalProjectId);
   if (!originalProject) throw new Error("Projeto original não encontrado");
   
@@ -348,26 +417,32 @@ export async function createProjectRevision(
   // Criar nome da revisão: "Nome Original_REV_01"
   const revisionName = `${originalName}_REV_${String(nextRevision).padStart(2, '0')}`;
   
-  // Criar novo projeto como revisão
-  const newProjectData: InsertProject = {
-    userId,
-    name: revisionName,
-    description: originalProject.description,
-    contractType: originalProject.contractType,
-    location: originalProject.location,
-    restrictions: originalProject.restrictions,
-    memorialDescritivo: newMemorial,
-    memorialFileUrl: originalProject.memorialFileUrl,
-    status: "draft",
-    currentAgentId: 1,
-    parentProjectId: parentId,
-    revisionNumber: nextRevision,
-    originalName: originalName,
-  };
-  
-  const newProjectId = await createProject(newProjectData);
-  
-  return newProjectId;
+  // Usar transação atômica para criar projeto + agentes
+  return runTransaction(async (trx) => {
+    // Criar novo projeto como revisão
+    const result = await trx.insert(projects).values({
+      userId,
+      name: revisionName,
+      description: originalProject.description,
+      contractType: originalProject.contractType,
+      location: originalProject.location,
+      restrictions: originalProject.restrictions,
+      memorialDescritivo: newMemorial,
+      memorialFileUrl: originalProject.memorialFileUrl,
+      status: "draft",
+      currentAgentId: 1,
+      parentProjectId: parentId,
+      revisionNumber: nextRevision,
+      originalName: originalName,
+    });
+    
+    const newProjectId = Number(result[0].insertId);
+    
+    // Inicializar agentes (se falhar, projeto também é revertido)
+    await initializeAgentExecutions(newProjectId, trx);
+    
+    return newProjectId;
+  });
 }
 
 export async function getAllProjectsWithRevisions(userId: number): Promise<Project[]> {
