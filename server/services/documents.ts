@@ -12,21 +12,32 @@ interface ProportionalItem {
 }
 
 // Calcular preços proporcionais para proposta (esconde custos, mostra apenas preços de venda)
-function calculateProportionalPrices(budgetItems: BudgetItem[], totalSalePrice: number): ProportionalItem[] {
-  // Calcular custo total de todos os itens
-  const totalCost = budgetItems.reduce((sum, item) => {
+// O preço de venda total é distribuído proporcionalmente entre os itens com base no custo de cada um
+// A logística é embutida proporcionalmente em cada item
+function calculateProportionalPrices(
+  budgetItems: BudgetItem[], 
+  totalSalePrice: number,
+  totalBaseCost: number // Custo base total (direto + logística) - usado apenas para validação
+): ProportionalItem[] {
+  // Calcular custo direto total de todos os itens
+  const totalDirectCost = budgetItems.reduce((sum, item) => {
     return sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0));
   }, 0);
   
-  if (totalCost === 0) return [];
+  if (totalDirectCost === 0) return [];
   
-  // Fator de markup para distribuir o preço de venda proporcionalmente
-  const markupFactor = totalSalePrice / totalCost;
+  // O markup é calculado sobre o custo DIRETO para distribuir o preço de venda total
+  // Isso garante que a soma dos preços dos itens = totalSalePrice
+  // A logística e BDI são embutidos proporcionalmente em cada item
+  const markupFactor = totalSalePrice / totalDirectCost;
   
   return budgetItems.map(item => {
     const quantity = Number(item.quantity || 0);
     const unitCost = Number(item.unitCostTotal || 0);
-    const unitPrice = unitCost * markupFactor; // Preço unitário de venda
+    
+    // Preço unitário de venda = custo unitário * fator de markup
+    // O fator de markup já inclui logística + BDI distribuídos proporcionalmente
+    const unitPrice = unitCost * markupFactor;
     const totalPrice = quantity * unitPrice;
     
     return {
@@ -53,14 +64,21 @@ interface CompanySettings {
 export async function generateProposalPDF(
   project: Project,
   budgetItems: BudgetItem[],
+  logisticsCosts: any[],
   juridicaOutput: any,
   comercialOutput?: any,
   companySettings?: CompanySettings
 ): Promise<{ url: string; fileKey: string }> {
-  // Calcular custo base total (sem BDI)
-  const totalBaseCost = budgetItems.reduce((sum, item) => {
+  // Calcular custo direto total (materiais + mão de obra)
+  const totalDirectCost = budgetItems.reduce((sum, item) => {
     return sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0));
   }, 0);
+  
+  // Calcular custo logístico total
+  const totalLogisticsCost = logisticsCosts.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  
+  // Custo base total (direto + logística)
+  const totalBaseCost = totalDirectCost + totalLogisticsCost;
   
   // Calcular preço de venda já salvo nos items (com BDI de 55%)
   const totalFromItems = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
@@ -113,7 +131,8 @@ export async function generateProposalPDF(
   }
   
   // Calculate proportional prices (hides cost breakdown)
-  const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice);
+  // Passa o totalBaseCost para que a distribuição proporcional inclua logística
+  const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice, totalBaseCost);
   
   // Generate HTML content for the proposal
   const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput, companySettings);

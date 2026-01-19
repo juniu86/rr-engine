@@ -197,3 +197,8 @@
 - [x] Fase 3: Criar testes unitários para validação cruzada (11 testes)
 - [x] Fase 3: Criar testes de integração para coerência entre agentes
 - [x] Fase 4: Documentar mudanças - 104 testes passando, relatório técnico gerado
+
+## Bug v1.22.1 - Discrepância de Valores entre Proposta e Planilha
+- [x] Proposta comercial PDF mostra valor menor que planilha Excel - CORRIGIDO
+- [x] Identificar fonte da discrepância - calculateProportionalPrices usava totalBaseCost em vez de totalDirectCost
+- [x] Corrigir geração de documentos - Markup agora calculado sobre custo direto, garantindo soma = preço de venda

@@ -1022,8 +1022,9 @@ export const appRouter = router({
         if (!project) throw new TRPCError({ code: "NOT_FOUND" });
         if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         
-        const [budgetItems, executions, companySettings] = await Promise.all([
+        const [budgetItems, logisticsCosts, executions, companySettings] = await Promise.all([
           db.getBudgetItemsByProjectId(input.projectId),
+          db.getLogisticsCostsByProjectId(input.projectId),
           db.getAgentExecutionsByProjectId(input.projectId),
           db.getCompanySettingsOrDefault(ctx.user.id),
         ]);
@@ -1035,7 +1036,7 @@ export const appRouter = router({
         const comercialExec = executions.find(e => e.agentType === "comercial");
         const comercialOutput = comercialExec?.output;
         
-        const result = await generateProposalPDF(project, budgetItems, juridicaOutput, comercialOutput, companySettings);
+        const result = await generateProposalPDF(project, budgetItems, logisticsCosts, juridicaOutput, comercialOutput, companySettings);
         return result;
       }),
 
