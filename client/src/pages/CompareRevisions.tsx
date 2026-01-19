@@ -123,7 +123,7 @@ export default function CompareRevisions() {
   if (authLoading || projectLoading || revisionsLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
@@ -216,7 +216,7 @@ export default function CompareRevisions() {
             </Button>
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2">
-                <GitCompare className="h-5 w-5 text-amber-500" />
+                <GitCompare className="h-5 w-5 text-primary" />
                 Comparativo de Revisões
               </h1>
               <p className="text-sm text-muted-foreground">{project?.name}</p>

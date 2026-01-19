@@ -51,7 +51,7 @@ export default function AdminDashboard() {
   if (authLoading || statsLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
@@ -200,7 +200,7 @@ export default function AdminDashboard() {
               <CardContent>
                 {usersLoading ? (
                   <div className="flex justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-amber-500" />
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
                   </div>
                 ) : (
                   <Table>
@@ -255,7 +255,7 @@ export default function AdminDashboard() {
               <CardContent>
                 {projectsLoading ? (
                   <div className="flex justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-amber-500" />
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
                   </div>
                 ) : (
                   <Table>
@@ -327,7 +327,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-2">
                           <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
                             <div 
-                              className="h-full bg-amber-500 rounded-full"
+                              className="h-full bg-primary rounded-full"
                               style={{ width: `${((stats?.reviewProjects || 0) / (stats?.totalProjects || 1)) * 100}%` }}
                             />
                           </div>
@@ -375,8 +375,8 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                        <div className="p-2 bg-amber-500/10 rounded-full">
-                          <FileText className="h-4 w-4 text-amber-500" />
+                        <div className="p-2 bg-primary/10 rounded-full">
+                          <FileText className="h-4 w-4 text-primary" />
                         </div>
                         <div>
                           <p className="text-sm font-medium">Documentos gerados</p>

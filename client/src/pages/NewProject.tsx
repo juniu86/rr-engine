@@ -66,7 +66,7 @@ export default function NewProject() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-amber-500" />
+                <FileText className="h-5 w-5 text-primary" />
                 Informações Básicas
               </CardTitle>
               <CardDescription>
@@ -101,7 +101,7 @@ export default function NewProject() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5 text-amber-500" />
+                <MapPin className="h-5 w-5 text-primary" />
                 Localização e Contexto
               </CardTitle>
               <CardDescription>
@@ -120,7 +120,7 @@ export default function NewProject() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="restrictions" className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <AlertTriangle className="h-4 w-4 text-primary" />
                   Restrições e Condições Especiais
                 </Label>
                 <Textarea
@@ -138,7 +138,7 @@ export default function NewProject() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Percent className="h-5 w-5 text-amber-500" />
+                <Percent className="h-5 w-5 text-primary" />
                 Configuração de BDI
               </CardTitle>
               <CardDescription>
@@ -223,7 +223,7 @@ export default function NewProject() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-amber-500" />
+                <FileText className="h-5 w-5 text-primary" />
                 Memorial Descritivo
               </CardTitle>
               <CardDescription>
@@ -273,7 +273,7 @@ export default function NewProject() {
             </Button>
             <Button 
               type="submit" 
-              className="bg-amber-600 hover:bg-amber-700"
+              className="bg-primary hover:bg-primary/90"
               disabled={createProject.isPending}
             >
               {createProject.isPending ? (

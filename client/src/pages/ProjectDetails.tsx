@@ -65,11 +65,11 @@ const statusConfig = {
   running: { label: "Executando", color: "bg-blue-500", icon: Loader2 },
   completed: { label: "Concluído", color: "bg-green-500", icon: CheckCircle2 },
   failed: { label: "Falhou", color: "bg-red-500", icon: XCircle },
-  needs_review: { label: "Revisão", color: "bg-amber-500", icon: AlertCircle },
+  needs_review: { label: "Revisão", color: "bg-primary", icon: AlertCircle },
   // Status de projeto
   draft: { label: "Rascunho", color: "bg-slate-500", icon: Clock },
   processing: { label: "Processando", color: "bg-blue-500", icon: Loader2 },
-  review: { label: "Em Revisão", color: "bg-amber-500", icon: AlertCircle },
+  review: { label: "Em Revisão", color: "bg-primary", icon: AlertCircle },
   approved: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
   rejected: { label: "Rejeitado", color: "bg-red-500", icon: XCircle },
   blocked: { label: "Bloqueado", color: "bg-red-600", icon: XCircle },
@@ -345,7 +345,7 @@ export default function ProjectDetails() {
                     <div className="grid gap-2 sm:grid-cols-2">
                       {entries.map(([agent, instruction]) => (
                         <div key={agent} className="p-2 rounded bg-slate-800/50 border border-slate-700">
-                          <p className="text-xs text-amber-500 font-medium capitalize">{agent.replace('_', ' ')}</p>
+                          <p className="text-xs text-primary font-medium capitalize">{agent.replace('_', ' ')}</p>
                           <p className="text-xs text-slate-300">{String(instruction)}</p>
                         </div>
                       ))}
@@ -387,11 +387,11 @@ export default function ProjectDetails() {
           if (custoDirecto === 0 && precoFinal === 0) return null;
           
           return (
-            <Card className="border-amber-500/30 bg-gradient-to-br from-slate-900 to-slate-800">
+            <Card className="border-primary/30 bg-gradient-to-br from-slate-900 to-slate-800">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <DollarSign className="h-5 w-5 text-amber-500" />
+                    <DollarSign className="h-5 w-5 text-primary" />
                     Resumo Financeiro
                   </CardTitle>
                   <div className="flex items-center gap-2">
@@ -411,7 +411,7 @@ export default function ProjectDetails() {
                         {auditSeal === 'rejected' && `Rejeitado (${criticalErrors} erros)`}
                       </Badge>
                     )}
-                    <Badge variant="outline" className="text-amber-500 border-amber-500/50">
+                    <Badge variant="outline" className="text-primary border-primary/50">
                       BDI: {bdiPercentual.toFixed(1)}%
                     </Badge>
                   </div>
@@ -447,12 +447,12 @@ export default function ProjectDetails() {
                   </div>
                   
                   {/* Preço Final */}
-                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                    <div className="text-xs text-amber-500/80 mb-1">Preço Final</div>
-                    <div className="text-xl font-bold text-amber-500">
+                  <div className="p-4 rounded-lg bg-primary/10 border border-primary/30">
+                    <div className="text-xs text-primary/80 mb-1">Preço Final</div>
+                    <div className="text-xl font-bold text-primary">
                       R$ {precoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </div>
-                    <div className="text-xs text-amber-500/60 mt-1">Valor de Venda</div>
+                    <div className="text-xs text-primary/60 mt-1">Valor de Venda</div>
                   </div>
                 </div>
                 
@@ -516,7 +516,7 @@ export default function ProjectDetails() {
             <div className="pt-4 border-t border-slate-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground">Progresso geral</span>
-                <span className="text-xs font-medium text-amber-500">{Math.round(progress)}%</span>
+                <span className="text-xs font-medium text-primary">{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-2" />
             </div>
@@ -526,7 +526,7 @@ export default function ProjectDetails() {
               <Button 
                 onClick={() => executeAll.mutate({ projectId })}
                 disabled={executeAll.isPending || project?.status === "approved"}
-                className="bg-amber-600 hover:bg-amber-700"
+                className="bg-primary hover:bg-primary/90"
               >
                 {executeAll.isPending ? (
                   <>
@@ -566,7 +566,7 @@ export default function ProjectDetails() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-amber-500" />
+                      <FileText className="h-5 w-5 text-primary" />
                       <CardTitle>Memorial Descritivo</CardTitle>
                     </div>
                     {!isEditingMemorial ? (
@@ -596,7 +596,7 @@ export default function ProjectDetails() {
                         </Button>
                         <Button 
                           size="sm"
-                          className="bg-amber-600 hover:bg-amber-700"
+                          className="bg-primary hover:bg-primary/90"
                           onClick={() => {
                             if (editedMemorial !== project?.memorialDescritivo) {
                               setShowRevisionDialog(true);
@@ -652,7 +652,7 @@ export default function ProjectDetails() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <History className="h-5 w-5 text-amber-500" />
+                      <History className="h-5 w-5 text-primary" />
                       <CardTitle>Histórico de Revisões</CardTitle>
                     </div>
                     {revisionsData && (revisionsData.revisions.length > 0 || revisionsData.original) && (
@@ -678,7 +678,7 @@ export default function ProjectDetails() {
                         <div 
                           className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                             revisionsData.original.id === projectId 
-                              ? 'border-amber-500 bg-amber-500/10' 
+                              ? 'border-primary bg-primary/10' 
                               : 'hover:bg-muted'
                           }`}
                           onClick={() => navigate(`/projects/${revisionsData.original!.id}`)}
@@ -693,7 +693,7 @@ export default function ProjectDetails() {
                             Criado em {new Date(revisionsData.original.createdAt).toLocaleDateString('pt-BR')}
                           </p>
                           {revisionsData.original.totalPrice && (
-                            <p className="text-xs text-amber-500 mt-1">
+                            <p className="text-xs text-primary mt-1">
                               R$ {Number(revisionsData.original.totalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             </p>
                           )}
@@ -705,7 +705,7 @@ export default function ProjectDetails() {
                             key={rev.id}
                             className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                               rev.id === projectId 
-                                ? 'border-amber-500 bg-amber-500/10' 
+                                ? 'border-primary bg-primary/10' 
                                 : 'hover:bg-muted'
                             }`}
                             onClick={() => navigate(`/projects/${rev.id}`)}
@@ -729,7 +729,7 @@ export default function ProjectDetails() {
                               Criado em {new Date(rev.createdAt).toLocaleDateString('pt-BR')}
                             </p>
                             {rev.totalPrice && (
-                              <p className="text-xs text-amber-500 mt-1">
+                              <p className="text-xs text-primary mt-1">
                                 R$ {Number(rev.totalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                             )}
@@ -753,7 +753,7 @@ export default function ProjectDetails() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
-                    <GitBranch className="h-5 w-5 text-amber-500" />
+                    <GitBranch className="h-5 w-5 text-primary" />
                     Criar Nova Revisão
                   </DialogTitle>
                   <DialogDescription>
@@ -764,7 +764,7 @@ export default function ProjectDetails() {
                 <div className="py-4">
                   <div className="rounded-lg bg-muted p-4">
                     <p className="text-sm font-medium">Nova revisão:</p>
-                    <p className="text-lg font-bold text-amber-500">
+                    <p className="text-lg font-bold text-primary">
                       {revisionInfo?.nextRevisionName || 'Carregando...'}
                     </p>
                   </div>
@@ -781,7 +781,7 @@ export default function ProjectDetails() {
                     Cancelar
                   </Button>
                   <Button 
-                    className="bg-amber-600 hover:bg-amber-700"
+                    className="bg-primary hover:bg-primary/90"
                     onClick={() => createRevision.mutate({
                       projectId,
                       newMemorialDescritivo: editedMemorial,
@@ -820,7 +820,7 @@ export default function ProjectDetails() {
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Icon className="h-5 w-5 text-amber-500" />
+                          <Icon className="h-5 w-5 text-primary" />
                           <CardTitle className="text-sm font-medium">
                             {execution.agentOrder}. {getAgentName(execution.agentType)}
                           </CardTitle>
@@ -837,7 +837,7 @@ export default function ProjectDetails() {
                           {renderAgentSummary(execution.agentType, output)}
                           <Dialog>
                             <DialogTrigger asChild>
-                              <Button size="sm" variant="ghost" className="mt-2 w-full text-amber-500 hover:text-amber-400">
+                              <Button size="sm" variant="ghost" className="mt-2 w-full text-primary hover:text-primary/80">
                                 <Eye className="mr-1 h-3 w-3" />
                                 Ver Detalhes
                               </Button>
@@ -845,7 +845,7 @@ export default function ProjectDetails() {
                             <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
                               <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2">
-                                  <Icon className="h-5 w-5 text-amber-500" />
+                                  <Icon className="h-5 w-5 text-primary" />
                                   {execution.agentOrder}. {getAgentName(execution.agentType)}
                                 </DialogTitle>
                               </DialogHeader>
@@ -955,7 +955,7 @@ export default function ProjectDetails() {
                               = R$ {Number(item.cashBalance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             </div>
                             {item.hasAlert && (
-                              <AlertCircle className="h-4 w-4 text-amber-500" />
+                              <AlertCircle className="h-4 w-4 text-primary" />
                             )}
                           </div>
                         </div>
@@ -988,7 +988,7 @@ export default function ProjectDetails() {
                     {documents.map((doc) => (
                       <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center gap-3">
-                          <FileText className="h-8 w-8 text-amber-500" />
+                          <FileText className="h-8 w-8 text-primary" />
                           <div>
                             <p className="font-medium">{doc.fileName}</p>
                             <p className="text-xs text-muted-foreground">
@@ -1023,7 +1023,7 @@ export default function ProjectDetails() {
                         generateMemoria.mutate({ projectId });
                       }}
                       disabled={generateProposal.isPending || generateMemoria.isPending}
-                      className="bg-amber-500 hover:bg-amber-600"
+                      className="bg-primary hover:bg-primary"
                     >
                       {(generateProposal.isPending || generateMemoria.isPending) ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1076,10 +1076,10 @@ export default function ProjectDetails() {
 
                 {/* Botão de Exportação em ZIP */}
                 {documents.length > 0 && (
-                  <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <div className="mt-4 p-4 bg-primary/10 border border-primary/30 rounded-lg">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h4 className="font-semibold text-amber-500">Exportar Todos os Documentos</h4>
+                        <h4 className="font-semibold text-primary">Exportar Todos os Documentos</h4>
                         <p className="text-xs text-muted-foreground mt-1">
                           Baixe todos os {documents.length} documentos em um único arquivo ZIP
                         </p>
@@ -1087,7 +1087,7 @@ export default function ProjectDetails() {
                       <Button 
                         onClick={() => exportAllDocuments.mutate({ projectId })}
                         disabled={exportAllDocuments.isPending}
-                        className="bg-amber-600 hover:bg-amber-700"
+                        className="bg-primary hover:bg-primary/90"
                       >
                         {exportAllDocuments.isPending ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1137,12 +1137,12 @@ export default function ProjectDetails() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="bg-amber-500/10 border-amber-500/50">
+            <Card className="bg-primary/10 border-primary/50">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">Preço Final</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-amber-600">
+                <p className="text-2xl font-bold text-primary">
                   R$ {Number(project?.totalPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </p>
               </CardContent>
@@ -1152,10 +1152,10 @@ export default function ProjectDetails() {
 
         {/* Botão para selecionar itens opcionais da Logística */}
         {hasOptionalItems && !hasSelectedOptionalItems && (
-          <Card className="border-amber-500/50 bg-amber-500/5">
+          <Card className="border-primary/50 bg-primary/5">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Truck className="h-4 w-4 text-amber-500" />
+                <Truck className="h-4 w-4 text-primary" />
                 Itens Opcionais Disponíveis
               </CardTitle>
             </CardHeader>
@@ -1168,7 +1168,7 @@ export default function ProjectDetails() {
                   setOptionalItems(logisticaOutput?.optionalItems || []);
                   setShowOptionalItemsDialog(true);
                 }}
-                className="bg-amber-500 hover:bg-amber-600"
+                className="bg-primary hover:bg-primary"
               >
                 <Truck className="mr-2 h-4 w-4" />
                 Selecionar Itens Opcionais
@@ -1182,7 +1182,7 @@ export default function ProjectDetails() {
       <Dialog open={showBoardConfirmDialog} onOpenChange={setShowBoardConfirmDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-500">
+            <DialogTitle className="flex items-center gap-2 text-primary">
               <AlertCircle className="h-5 w-5" />
               Confirmação Necessária
             </DialogTitle>
@@ -1192,12 +1192,12 @@ export default function ProjectDetails() {
           </DialogHeader>
           
           <div className="space-y-4">
-            <div className="bg-amber-500/10 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2 text-amber-500">Alertas Identificados:</h4>
+            <div className="bg-primary/10 p-4 rounded-lg">
+              <h4 className="font-semibold mb-2 text-primary">Alertas Identificados:</h4>
               <ul className="space-y-2">
                 {boardWarnings.map((warning, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm">
-                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                     <span>{warning}</span>
                   </li>
                 ))}
@@ -1219,7 +1219,7 @@ export default function ProjectDetails() {
             <Button 
               onClick={() => confirmProposal.mutate({ projectId })}
               disabled={confirmProposal.isPending}
-              className="bg-amber-500 hover:bg-amber-600"
+              className="bg-primary hover:bg-primary"
             >
               {confirmProposal.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1237,7 +1237,7 @@ export default function ProjectDetails() {
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Truck className="h-5 w-5 text-amber-500" />
+              <Truck className="h-5 w-5 text-primary" />
               Selecionar Itens Opcionais
             </DialogTitle>
             <DialogDescription>
@@ -1251,7 +1251,7 @@ export default function ProjectDetails() {
                 key={index} 
                 className={`p-4 rounded-lg border transition-colors cursor-pointer ${
                   selectedOptionalItems.includes(index) 
-                    ? 'border-amber-500 bg-amber-500/10' 
+                    ? 'border-primary bg-primary/10' 
                     : 'border-slate-700 hover:border-slate-600'
                 }`}
                 onClick={() => {
@@ -1277,7 +1277,7 @@ export default function ProjectDetails() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <h4 className="font-medium">{item.description}</h4>
-                      <span className="font-bold text-amber-500">
+                      <span className="font-bold text-primary">
                         R$ {Number(item.totalCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
@@ -1293,10 +1293,10 @@ export default function ProjectDetails() {
             ))}
             
             {selectedOptionalItems.length > 0 && (
-              <div className="p-4 bg-amber-500/10 rounded-lg">
+              <div className="p-4 bg-primary/10 rounded-lg">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">Total dos itens selecionados:</span>
-                  <span className="text-xl font-bold text-amber-500">
+                  <span className="text-xl font-bold text-primary">
                     R$ {selectedOptionalItems.reduce((sum, idx) => sum + Number(optionalItems[idx]?.totalCost || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -1317,7 +1317,7 @@ export default function ProjectDetails() {
             <Button 
               onClick={() => selectOptionalItems.mutate({ projectId, selectedItems: selectedOptionalItems })}
               disabled={selectOptionalItems.isPending || selectedOptionalItems.length === 0}
-              className="bg-amber-500 hover:bg-amber-600"
+              className="bg-primary hover:bg-primary"
             >
               {selectOptionalItems.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1414,7 +1414,7 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
       return (
         <>
           <p>Exposição máx: <strong>R$ {(output.maxExposure || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
-          {output.needsAdvance && <p className="text-amber-500">Requer adiantamento</p>}
+          {output.needsAdvance && <p className="text-primary">Requer adiantamento</p>}
         </>
       );
     case "juridico":
@@ -1428,8 +1428,8 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
       const recommendation = output.projectViability?.recommendation || 'revisar';
       const recommendationColors: Record<string, string> = {
         aprovar: 'text-green-500',
-        aprovar_com_ressalvas: 'text-amber-500',
-        revisar: 'text-amber-500',
+        aprovar_com_ressalvas: 'text-primary',
+        revisar: 'text-primary',
         rejeitar: 'text-red-500'
       };
       const recommendationLabels: Record<string, string> = {
@@ -1440,7 +1440,7 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
       };
       return (
         <>
-          <p>Parecer: <strong className={recommendationColors[recommendation] || 'text-amber-500'}>
+          <p>Parecer: <strong className={recommendationColors[recommendation] || 'text-primary'}>
             {recommendationLabels[recommendation] || 'Em Revisão'}
           </strong></p>
           <p><strong>{output.decisions?.length || 0}</strong> decisões tomadas</p>
@@ -1466,14 +1466,14 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
                   <p className="text-sm text-muted-foreground">
                     Unidade: {item.unit} | Quantidade: {item.quantity} | Complexidade: {item.complexity}
                   </p>
-                  {item.nbr && <p className="text-xs text-amber-500">NBR: {item.nbr}</p>}
+                  {item.nbr && <p className="text-xs text-primary">NBR: {item.nbr}</p>}
                 </div>
               ))}
             </div>
           </div>
           {output.pendingItems?.length > 0 && (
             <div>
-              <h4 className="font-semibold mb-2 text-amber-500">Pendentes de Vistoria ({output.pendingItems?.length})</h4>
+              <h4 className="font-semibold mb-2 text-primary">Pendentes de Vistoria ({output.pendingItems?.length})</h4>
               <ul className="list-disc list-inside space-y-1">
                 {output.pendingItems?.map((item: string, i: number) => (
                   <li key={i} className="text-sm">{item}</li>
@@ -1507,7 +1507,7 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
               ))}
             </div>
           </div>
-          <div className="p-4 bg-amber-500/10 rounded-lg">
+          <div className="p-4 bg-primary/10 rounded-lg">
             <p className="text-lg font-bold">Total Logística: R$ {(output.totalLogisticsCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
           </div>
           {output.mobilizationDays && (
@@ -1570,12 +1570,12 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
               ))}
             </div>
           </div>
-          <div className="p-4 bg-amber-500/10 rounded-lg">
+          <div className="p-4 bg-primary/10 rounded-lg">
             <p className="text-lg font-bold">Total Impostos: R$ {(output.totalTaxes || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
           </div>
           {output.alerts?.length > 0 && (
             <div>
-              <h4 className="font-semibold mb-2 text-amber-500">Alertas Fiscais ({output.alerts?.length})</h4>
+              <h4 className="font-semibold mb-2 text-primary">Alertas Fiscais ({output.alerts?.length})</h4>
               <ul className="list-disc list-inside space-y-1">
                 {output.alerts?.map((alert: string, i: number) => (
                   <li key={i} className="text-sm">{alert}</li>
@@ -1596,9 +1596,9 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
               <p className="text-sm text-muted-foreground">BDI Base</p>
               <p className="text-xl font-bold">{((output.baseBdi || 0) > 1 ? output.baseBdi : (output.baseBdi || 0) * 100).toFixed(1)}%</p>
             </div>
-            <div className="p-4 bg-amber-500/10 rounded-lg">
+            <div className="p-4 bg-primary/10 rounded-lg">
               <p className="text-sm text-muted-foreground">BDI Ajustado</p>
-              <p className="text-xl font-bold text-amber-500">{bdiPercent.toFixed(1)}%</p>
+              <p className="text-xl font-bold text-primary">{bdiPercent.toFixed(1)}%</p>
             </div>
           </div>
           {output.bdiJustification && (
@@ -1664,9 +1664,9 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
               <p className="text-sm text-muted-foreground">Exposição Máxima</p>
               <p className="text-xl font-bold">R$ {(output.maxExposure || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
-            <div className={`p-4 rounded-lg ${output.needsAdvance ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
+            <div className={`p-4 rounded-lg ${output.needsAdvance ? 'bg-primary/10' : 'bg-green-500/10'}`}>
               <p className="text-sm text-muted-foreground">Adiantamento</p>
-              <p className={`text-xl font-bold ${output.needsAdvance ? 'text-amber-500' : 'text-green-500'}`}>
+              <p className={`text-xl font-bold ${output.needsAdvance ? 'text-primary' : 'text-green-500'}`}>
                 {output.needsAdvance ? `R$ ${(output.suggestedAdvance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Não necessário'}
               </p>
             </div>
@@ -1692,7 +1692,7 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
           )}
           {output.alerts?.length > 0 && (
             <div>
-              <h4 className="font-semibold mb-2 text-amber-500">Alertas Financeiros</h4>
+              <h4 className="font-semibold mb-2 text-primary">Alertas Financeiros</h4>
               <ul className="list-disc list-inside space-y-1">
                 {output.alerts?.map((alert: string, i: number) => (
                   <li key={i} className="text-sm">{alert}</li>
@@ -1722,7 +1722,7 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
               <div className="space-y-3">
                 {output.clauses?.map((clause: any, i: number) => (
                   <div key={i} className="p-3 bg-muted rounded-lg">
-                    <p className="font-medium text-amber-500">{clause.title}</p>
+                    <p className="font-medium text-primary">{clause.title}</p>
                     <p className="text-sm text-muted-foreground mt-1">{clause.content}</p>
                   </div>
                 ))}
@@ -1746,8 +1746,8 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
       const viability = output.projectViability || {};
       const recColors: Record<string, string> = {
         aprovar: 'bg-green-500/10 text-green-500',
-        aprovar_com_ressalvas: 'bg-amber-500/10 text-amber-500',
-        revisar: 'bg-amber-500/10 text-amber-500',
+        aprovar_com_ressalvas: 'bg-primary/10 text-primary',
+        revisar: 'bg-primary/10 text-primary',
         rejeitar: 'bg-red-500/10 text-red-500'
       };
       const recLabels: Record<string, string> = {
@@ -1758,14 +1758,14 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
       };
       const riskColors: Record<string, string> = {
         baixo: 'text-green-500',
-        medio: 'text-amber-500',
+        medio: 'text-primary',
         alto: 'text-orange-500',
         critico: 'text-red-500'
       };
       return (
         <div className="space-y-4">
           {/* Parecer Executivo */}
-          <div className={`p-4 rounded-lg ${recColors[viability.recommendation] || 'bg-amber-500/10'}`}>
+          <div className={`p-4 rounded-lg ${recColors[viability.recommendation] || 'bg-primary/10'}`}>
             <p className="text-sm text-muted-foreground">Parecer do Board Executivo</p>
             <p className={`text-2xl font-bold`}>
               {recLabels[viability.recommendation] || 'EM ANÁLISE'}
@@ -1803,17 +1803,17 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
           {/* Decisões Tomadas */}
           {output.decisions?.length > 0 && (
             <div>
-              <h4 className="font-semibold mb-2 text-amber-500">Decisões Executivas ({output.decisions?.length})</h4>
+              <h4 className="font-semibold mb-2 text-primary">Decisões Executivas ({output.decisions?.length})</h4>
               <div className="space-y-3">
                 {output.decisions?.map((decision: any, i: number) => (
-                  <div key={i} className="p-4 bg-muted rounded-lg border-l-4 border-amber-500">
-                    <p className="font-medium text-amber-500">{decision.issue}</p>
+                  <div key={i} className="p-4 bg-muted rounded-lg border-l-4 border-primary">
+                    <p className="font-medium text-primary">{decision.issue}</p>
                     <p className="text-xs text-muted-foreground mt-1">Agentes: {decision.agentsInvolved}</p>
                     <div className="mt-2 space-y-1">
                       <p className="text-sm"><strong>Impacto:</strong> {decision.businessImpact}</p>
                       <p className="text-sm"><strong>Decisão:</strong> {decision.decision}</p>
                       <p className="text-sm"><strong>Justificativa:</strong> {decision.justification}</p>
-                      <p className="text-sm text-amber-500"><strong>Ação Requerida:</strong> {decision.actionRequired}</p>
+                      <p className="text-sm text-primary"><strong>Ação Requerida:</strong> {decision.actionRequired}</p>
                       <p className="text-xs text-muted-foreground">Responsável: {decision.responsible}</p>
                     </div>
                   </div>
@@ -1858,8 +1858,8 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
 
           {/* Condições para Aprovação */}
           {output.conditionsForApproval && (
-            <div className="p-4 bg-amber-500/10 rounded-lg">
-              <h4 className="font-semibold mb-2 text-amber-500">Condições para Aprovação</h4>
+            <div className="p-4 bg-primary/10 rounded-lg">
+              <h4 className="font-semibold mb-2 text-primary">Condições para Aprovação</h4>
               <p className="text-sm">{output.conditionsForApproval}</p>
             </div>
           )}

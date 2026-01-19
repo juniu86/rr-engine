@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const statusConfig = {
   draft: { label: "Rascunho", color: "bg-slate-500", icon: FileText },
   processing: { label: "Processando", color: "bg-blue-500", icon: Clock },
-  review: { label: "Em Revisão", color: "bg-amber-500", icon: AlertCircle },
+  review: { label: "Em Revisão", color: "bg-primary", icon: AlertCircle },
   approved: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
   rejected: { label: "Rejeitado", color: "bg-red-500", icon: AlertCircle },
   blocked: { label: "Bloqueado", color: "bg-red-600", icon: AlertCircle },
@@ -51,7 +51,7 @@ export default function Dashboard() {
             </p>
           </div>
           <Link href="/projects/new">
-            <Button className="bg-amber-600 hover:bg-amber-700">
+            <Button className="bg-primary hover:bg-primary/90">
               <Plus className="mr-2 h-4 w-4" />
               Novo Orçamento
             </Button>
@@ -171,7 +171,7 @@ export default function Dashboard() {
                   Crie seu primeiro orçamento para começar
                 </p>
                 <Link href="/projects/new">
-                  <Button className="bg-amber-600 hover:bg-amber-700">
+                  <Button className="bg-primary hover:bg-primary/90">
                     <Plus className="mr-2 h-4 w-4" />
                     Criar Primeiro Orçamento
                   </Button>

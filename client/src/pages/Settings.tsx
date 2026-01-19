@@ -211,7 +211,7 @@ export default function Settings() {
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
@@ -347,7 +347,7 @@ export default function Settings() {
                     variant="outline"
                     size="sm"
                     onClick={() => applyPreset('lucro_presumido')}
-                    className={formData.regimeTributario === 'lucro_presumido' ? 'border-amber-500 bg-amber-500/10' : ''}
+                    className={formData.regimeTributario === 'lucro_presumido' ? 'border-primary bg-primary/10' : ''}
                   >
                     <RefreshCw className="h-3 w-3 mr-1" />
                     Lucro Presumido
@@ -450,7 +450,7 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
                   <p className="text-sm text-amber-200">
                     <strong>Importante:</strong> Os tributos configurados aqui são utilizados no cálculo do BDI e na 
                     precificação das propostas. Certifique-se de que os valores estão corretos para o regime tributário 

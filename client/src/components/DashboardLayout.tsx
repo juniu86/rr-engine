@@ -172,7 +172,7 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <Building2 className="h-5 w-5 text-amber-500" />
+                  <Building2 className="h-5 w-5 text-primary" />
                   <span className="font-semibold tracking-tight truncate">
                     RR-Engine
                   </span>

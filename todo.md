@@ -252,3 +252,17 @@
 - [x] Adicionar auditor ao AgentProgressPipeline no frontend
 - [x] Adicionar selo de auditoria no card de Resumo Financeiro
 - [x] Executar migração do banco de dados (pnpm db:push)
+
+## v1.27 - Melhorias Visuais Prioritárias (CONCLUÍDO)
+### Crítico (Antes do Pitch)
+- [x] Atualizar index.css com nova paleta de cores corporativa (Azul petróleo, Verde esmeralda, Cinza grafite, Azul turquesa)
+- [x] Importar fonte Inter no index.html
+- [x] Adicionar 10º agente (Auditor) na seção de agentes da Home.tsx
+- [x] Refatorar componente AgentProgressPipeline.tsx com novo visual
+- [x] Atualizar cores dos botões principais (bg-primary em vez de bg-amber)
+- [x] Ajustar espaçamentos em Home.tsx e ProjectDetails.tsx
+
+### Importante (Pós-Pitch)
+- [ ] Criar componente ProjectCard redesenhado
+- [ ] Adicionar animações em Button component
+- [ ] Implementar badges de status coloridos
