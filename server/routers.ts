@@ -34,8 +34,27 @@ export const appRouter = router({
         location: z.string().optional(),
         restrictions: z.string().optional(),
         memorialDescritivo: z.string().optional(),
+        bdiPreset: z.enum(["padrao", "reduzido", "majorado", "personalizado"]).optional().default("padrao"),
+        bdiPercentual: z.number().min(0).max(100).optional(), // Só usado quando bdiPreset = "personalizado"
       }))
       .mutation(async ({ ctx, input }) => {
+        // Calcular BDI baseado no preset
+        let bdiValue: number | null = null;
+        switch (input.bdiPreset) {
+          case "reduzido":
+            bdiValue = 15;
+            break;
+          case "padrao":
+            bdiValue = 25;
+            break;
+          case "majorado":
+            bdiValue = 35;
+            break;
+          case "personalizado":
+            bdiValue = input.bdiPercentual ?? 25;
+            break;
+        }
+        
         // Usar transação atômica: se qualquer operação falhar, tudo é revertido
         const projectId = await db.createProjectWithAgents({
           userId: ctx.user.id,
@@ -47,6 +66,8 @@ export const appRouter = router({
           memorialDescritivo: input.memorialDescritivo || null,
           status: "draft",
           currentAgentId: 1,
+          bdiPreset: input.bdiPreset,
+          bdiPercentual: bdiValue?.toString() ?? null,
         });
         
         return { projectId };
@@ -267,7 +288,7 @@ export const appRouter = router({
         
         const agentTypes: AgentType[] = [
           "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
-          "comercial", "gestao_projetos", "financeiro", "juridico", "board"
+          "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"
         ];
         
         const results: Record<string, any> = {};
@@ -1229,6 +1250,12 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
       const logOutput = getOutput("logistica");
       // IMPORTANTE: totalIndirectCost vem da Logística, não do Orçamentista
       const totalIndirectFromLogistics = logOutput.totalLogisticsCost || 0;
+      
+      // BDI: Prioridade é o BDI do projeto, depois o da empresa
+      const projectBdi = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) : null;
+      const companyBdi = parseFloat(companySettings.bdiPercentual as string) || 25.0;
+      const effectiveBdi = projectBdi ?? companyBdi;
+      
       return {
         budgetItems: orcOutput.budgetItems || [],
         totalDirectCost: orcOutput.totalDirectCost || 0,
@@ -1237,9 +1264,12 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
         contractType: project.contractType,
         logisticsComplexity: logOutput.totalLogisticsCost > 50000 ? "high" : logOutput.totalLogisticsCost > 20000 ? "medium" : "low",
         fiscalRisk: tribOutput.alerts?.length > 2 ? "high" : tribOutput.alerts?.length > 0 ? "medium" : "low",
-        // Configurações de BDI e lucro da empresa
+        // BDI efetivo do projeto (prioridade: projeto > empresa)
+        projectBdi: effectiveBdi,
+        bdiPreset: project.bdiPreset || "padrao",
+        // Configurações de BDI e lucro da empresa (para referência)
         companyBdiSettings: {
-          bdiPercentual: parseFloat(companySettings.bdiPercentual as string) || 25.0,
+          bdiPercentual: companyBdi,
           lucroPercentual: parseFloat(companySettings.lucroPercentual as string) || 8.0,
           adminCentralPercentual: parseFloat(companySettings.adminCentralPercentual as string) || 4.0,
           despesasFinanceirasPercentual: parseFloat(companySettings.despesasFinanceirasPercentual as string) || 1.0,
@@ -1273,7 +1303,8 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
         contractType: project.contractType,
         totalPrice: comOutput.finalPrice || 0,
         paymentTerms: "30/60/90 dias após medição",
-        duration: gestOutput.totalDuration || 8,
+        // CORRIGIDO: Usar totalDays do Gestão (em dias, não semanas)
+        durationDays: gestOutput.totalDays || 30,
         restrictions: getOutput("logistica").restrictions || [],
         financialAlerts: finOutput.alerts || [],
       };
@@ -1294,6 +1325,28 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
           name: project.name,
           totalPrice: getOutput("comercial").finalPrice || 0,
           duration: getOutput("gestao_projetos").totalDuration || 8,
+          contractType: project.contractType,
+        },
+      };
+      
+    case "auditor":
+      // Auditor recebe todos os outputs para validação cruzada
+      const projectBdiAuditor = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) : 25;
+      return {
+        allAgentOutputs: {
+          engenheiro: getOutput("engenheiro_tecnico"),
+          logistica: getOutput("logistica"),
+          orcamentista: getOutput("orcamentista"),
+          tributario: getOutput("tributario"),
+          comercial: getOutput("comercial"),
+          gestao: getOutput("gestao_projetos"),
+          financeiro: getOutput("financeiro"),
+          juridico: getOutput("juridico"),
+          board: getOutput("board"),
+        },
+        projectConfig: {
+          name: project.name,
+          bdiPercentual: projectBdiAuditor,
           contractType: project.contractType,
         },
       };

@@ -41,6 +41,10 @@ export const projects = mysqlTable("projects", {
   parentProjectId: int("parentProjectId"), // ID do projeto original (null se for o original)
   revisionNumber: int("revisionNumber").default(0), // 0 = original, 1 = REV_01, 2 = REV_02, etc.
   originalName: varchar("originalName", { length: 255 }), // Nome original antes das revisões
+  // BDI configurável por projeto
+  bdiPercentual: decimal("bdiPercentual", { precision: 6, scale: 2 }), // BDI específico do projeto (null = usar configuração da empresa)
+  bdiPreset: mysqlEnum("bdiPreset", ["padrao", "reduzido", "majorado", "personalizado"]).default("padrao"), // Preset de BDI selecionado
+  
   // Campos de auto-correção financeira do Board
   financialRevisionCycle: int("financialRevisionCycle").default(0), // 0 = sem revisão, 1 = em revisão financeira
   financialRevisionReason: text("financialRevisionReason"), // Motivo da revisão financeira (instruções do Board)
@@ -65,7 +69,8 @@ export const agentExecutions = mysqlTable("agent_executions", {
     "gestao_projetos",
     "financeiro",
     "juridico",
-    "board"
+    "board",
+    "auditor"
   ]).notNull(),
   agentOrder: int("agentOrder").notNull(),
   status: mysqlEnum("status", ["pending", "running", "completed", "failed", "needs_review"]).default("pending").notNull(),

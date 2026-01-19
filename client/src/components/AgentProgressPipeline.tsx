@@ -95,6 +95,13 @@ const agentConfig = [
     description: "Aprova e emite parecer",
     details: "Revisa todos os outputs e emite parecer final de aprovação."
   },
+  { 
+    type: "auditor", 
+    name: "Auditor", 
+    icon: CheckCircle2,
+    description: "Validação matemática",
+    details: "Executa auditoria de consistência entre todos os documentos e valores calculados."
+  },
 ];
 
 const statusConfig = {
@@ -375,7 +382,7 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
             <div 
               className="absolute top-1/2 left-0 h-px bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-500"
               style={{ 
-                width: `${(executions.filter(e => e.status === "completed" && agentConfig.slice(5).some(a => a.type === e.agentType)).length / 4) * 100}%`
+                width: `${(executions.filter(e => e.status === "completed" && agentConfig.slice(5).some(a => a.type === e.agentType)).length / 5) * 100}%`
               }}
             />
             

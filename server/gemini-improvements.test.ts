@@ -148,10 +148,10 @@ describe("Consistência de Tipos de Agentes", () => {
     }
   });
 
-  it("AGENT_ORDER deve ter ordem sequencial de 1 a 9", async () => {
+  it("AGENT_ORDER deve ter ordem sequencial de 1 a 10", async () => {
     const { AGENT_ORDER } = await import("../shared/agents");
     
     const orders = Object.values(AGENT_ORDER);
-    expect(orders.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(orders.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 });

@@ -8,7 +8,8 @@ export type AgentType =
   | "gestao_projetos"
   | "financeiro"
   | "juridico"
-  | "board";
+  | "board"
+  | "auditor";
 
 export const AGENT_ORDER: Record<AgentType, number> = {
   engenheiro_tecnico: 1,
@@ -20,6 +21,7 @@ export const AGENT_ORDER: Record<AgentType, number> = {
   financeiro: 7,
   juridico: 8,
   board: 9,
+  auditor: 10,
 };
 
 export const AGENT_NAMES: Record<AgentType, string> = {
@@ -32,6 +34,7 @@ export const AGENT_NAMES: Record<AgentType, string> = {
   financeiro: "Financeiro",
   juridico: "Jurídico",
   board: "Board de Aprovação",
+  auditor: "Auditor de Consistência",
 };
 
 export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
@@ -44,6 +47,7 @@ export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
   financeiro: "Analisa fluxo de caixa e identifica necessidade de adiantamento",
   juridico: "Redige proposta técnica com cláusulas de proteção",
   board: "Auditoria geral e aprovação final com consenso unânime",
+  auditor: "Validação matemática e consistência entre todos os documentos",
 };
 
 // Contract Types
@@ -336,4 +340,63 @@ export interface FinancialRevisionInstructions {
     comercial: string;
   };
   originalBoardOutput: BoardOutput;
+}
+
+// Auditor Agent Types
+export interface AuditorInput {
+  allAgentOutputs: {
+    engenheiro: EngenheiroTecnicoOutput;
+    logistica: LogisticaOutput;
+    orcamentista: OrcamentistaOutput;
+    tributario: TributarioOutput;
+    comercial: ComercialOutput;
+    gestao: GestaoProjOutput;
+    financeiro: FinanceiroOutput;
+    juridico: JuridicoOutput;
+    board: BoardOutput;
+  };
+  projectConfig: {
+    name: string;
+    bdiPercentual: number;
+    contractType?: ContractType;
+  };
+}
+
+export interface AuditorValidation {
+  rule: string;
+  description: string;
+  expected: string;
+  actual: string;
+  passed: boolean;
+  severity: "critical" | "warning" | "info";
+  recommendation?: string;
+}
+
+export interface AuditorOutput {
+  isValid: boolean;
+  validationScore: number; // 0-100
+  criticalErrors: number;
+  warnings: number;
+  validations: AuditorValidation[];
+  crossAgentChecks: {
+    check: string;
+    agents: string[];
+    consistent: boolean;
+    details: string;
+  }[];
+  financialSummary: {
+    directCost: number;
+    logisticsCost: number;
+    baseCost: number;
+    bdiAmount: number;
+    taxes: number;
+    finalPrice: number;
+    grossMargin: number;
+    grossMarginPercent: number;
+    netMargin: number;
+    netMarginPercent: number;
+  };
+  auditSeal: "approved" | "approved_with_warnings" | "rejected";
+  auditTimestamp: string;
+  auditNotes: string;
 }

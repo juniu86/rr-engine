@@ -1,0 +1,1 @@
+ALTER TABLE `agent_executions` MODIFY COLUMN `agentType` enum('engenheiro_tecnico','logistica','orcamentista','tributario','comercial','gestao_projetos','financeiro','juridico','board','auditor') NOT NULL;

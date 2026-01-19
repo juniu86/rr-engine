@@ -57,6 +57,7 @@ const agentIcons: Record<string, any> = {
   financeiro: DollarSign,
   juridico: Scale,
   board: Users,
+  auditor: CheckCircle2,
 };
 
 const statusConfig = {
@@ -224,7 +225,8 @@ export default function ProjectDetails() {
   const documents = details?.documents || [];
   
   const completedAgents = agentExecutions.filter(e => e.status === "completed").length;
-  const progress = (completedAgents / 9) * 100;
+  const totalAgents = 10; // 9 agentes + 1 auditor
+  const progress = (completedAgents / totalAgents) * 100;
 
   // Verificar se há itens opcionais da Logística
   const logisticaExec = agentExecutions.find(e => e.agentType === "logistica");
@@ -361,10 +363,12 @@ export default function ProjectDetails() {
           const orcamentistaExec = agentExecutions.find(e => e.agentType === "orcamentista");
           const logisticaExec = agentExecutions.find(e => e.agentType === "logistica");
           const comercialExec = agentExecutions.find(e => e.agentType === "comercial");
+          const auditorExec = agentExecutions.find(e => e.agentType === "auditor");
           
           const orcamentistaOutput = orcamentistaExec?.output as any;
           const logisticaOutput = logisticaExec?.output as any;
           const comercialOutput = comercialExec?.output as any;
+          const auditorOutput = auditorExec?.output as any;
           
           const custoDirecto = (orcamentistaOutput?.totalDirectCost || 0) + (orcamentistaOutput?.totalIndirectCost || 0);
           const custoLogistica = logisticaOutput?.totalCost || 0;
@@ -372,6 +376,12 @@ export default function ProjectDetails() {
           const bdiPercentual = comercialOutput?.adjustedBdi ? (comercialOutput.adjustedBdi * 100) : 0;
           const precoFinal = comercialOutput?.finalPrice || 0;
           const bdiValor = precoFinal - custoBase;
+          
+          // Dados do auditor
+          const auditSeal = auditorOutput?.auditSeal;
+          const validationScore = auditorOutput?.validationScore || 0;
+          const criticalErrors = auditorOutput?.criticalErrors || 0;
+          const warnings = auditorOutput?.warnings || 0;
           
           // Só mostrar se houver dados financeiros
           if (custoDirecto === 0 && precoFinal === 0) return null;
@@ -384,9 +394,27 @@ export default function ProjectDetails() {
                     <DollarSign className="h-5 w-5 text-amber-500" />
                     Resumo Financeiro
                   </CardTitle>
-                  <Badge variant="outline" className="text-amber-500 border-amber-500/50">
-                    BDI: {bdiPercentual.toFixed(1)}%
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    {/* Selo de Auditoria */}
+                    {auditSeal && (
+                      <Badge 
+                        className={`
+                          ${auditSeal === 'approved' ? 'bg-green-600 hover:bg-green-700' : ''}
+                          ${auditSeal === 'approved_with_warnings' ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
+                          ${auditSeal === 'rejected' ? 'bg-red-600 hover:bg-red-700' : ''}
+                        `}
+                        title={`Score: ${validationScore}/100 | Erros: ${criticalErrors} | Warnings: ${warnings}`}
+                      >
+                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                        {auditSeal === 'approved' && 'Auditado'}
+                        {auditSeal === 'approved_with_warnings' && `Auditado (${warnings} alertas)`}
+                        {auditSeal === 'rejected' && `Rejeitado (${criticalErrors} erros)`}
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-amber-500 border-amber-500/50">
+                      BDI: {bdiPercentual.toFixed(1)}%
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -477,7 +505,7 @@ export default function ProjectDetails() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Pipeline de Processamento</CardTitle>
-              <span className="text-sm text-muted-foreground">{completedAgents}/9 agentes concluídos</span>
+              <span className="text-sm text-muted-foreground">{completedAgents}/{totalAgents} agentes concluídos</span>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">

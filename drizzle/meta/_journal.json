@@ -50,6 +50,20 @@
       "when": 1768599035227,
       "tag": "0006_wandering_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1768843349431,
+      "tag": "0007_flashy_rictor",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1768844380858,
+      "tag": "0008_living_masque",
+      "breakpoints": true
     }
   ]
 }

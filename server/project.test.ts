@@ -255,13 +255,13 @@ describe("project.getDetails", () => {
 });
 
 describe("agent.list", () => {
-  it("returns all 9 agents with correct info", async () => {
+  it("returns all 10 agents with correct info", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.agent.list();
 
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(10);
     expect(result[0]).toMatchObject({
       type: "engenheiro_tecnico",
       order: 1,
@@ -271,6 +271,11 @@ describe("agent.list", () => {
       type: "board",
       order: 9,
       name: "Board de Aprovação",
+    });
+    expect(result[9]).toMatchObject({
+      type: "auditor",
+      order: 10,
+      name: "Auditor de Consistência",
     });
   });
 });

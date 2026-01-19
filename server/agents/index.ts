@@ -19,6 +19,8 @@ import type {
   JuridicoOutput,
   BoardInput,
   BoardOutput,
+  AuditorInput,
+  AuditorOutput,
   ContractType,
 } from "../../shared/agents";
 import { AGENT_NAMES, CONTRACT_BDI, TAX_RATES } from "../../shared/agents";
@@ -671,7 +673,11 @@ EXEMPLO:
     // IMPORTANTE: NÃO incluir totalTaxes no custo base - BDI já inclui tributos
     const custoBase = input.totalDirectCost + input.totalIndirectCost;
     
-    // Obter configurações de BDI da empresa
+    // BDI do projeto tem prioridade sobre o da empresa
+    const projectBdi = (input as any).projectBdi;
+    const bdiPreset = (input as any).bdiPreset || "padrao";
+    
+    // Obter configurações de BDI da empresa (para referência)
     const bdiSettings = (input as any).companyBdiSettings || {
       bdiPercentual: 25.0,
       lucroPercentual: 8.0,
@@ -680,8 +686,19 @@ EXEMPLO:
       riscosPercentual: 1.0,
     };
     
-    const bdiDecimal = bdiSettings.bdiPercentual / 100;
+    // BDI efetivo: projeto > empresa
+    const effectiveBdi = projectBdi ?? bdiSettings.bdiPercentual;
+    const bdiDecimal = effectiveBdi / 100;
     const precoExemplo = custoBase * (1 + bdiDecimal);
+    
+    // Mapear preset para nome legível
+    const presetNames: Record<string, string> = {
+      "reduzido": "Reduzido (15%)",
+      "padrao": "Padrão (25%)",
+      "majorado": "Majorado (35%)",
+      "personalizado": `Personalizado (${effectiveBdi}%)`
+    };
+    const presetLabel = presetNames[bdiPreset] || "Padrão (25%)";
     
     return `Defina o preço de venda para o projeto:
 
@@ -695,28 +712,32 @@ CUSTOS:
 (Nota: O Tributário calculou R$ ${input.totalTaxes.toFixed(2)} em impostos para fins de classificação fiscal,
 mas estes JÁ ESTÃO EMBUTIDOS no BDI e NÃO devem ser somados ao custo base.)
 
-=== CONFIGURAÇÕES DE BDI DA EMPRESA ===
-BDI Configurado: ${bdiSettings.bdiPercentual}%
-Lucro Esperado: ${bdiSettings.lucroPercentual}%
-Administração Central: ${bdiSettings.adminCentralPercentual}%
-Despesas Financeiras: ${bdiSettings.despesasFinanceirasPercentual}%
-Riscos: ${bdiSettings.riscosPercentual}%
+=== BDI DO PROJETO ===
+🎯 BDI DEFINIDO PARA ESTE PROJETO: ${effectiveBdi}% (${presetLabel})
+
+Este BDI foi configurado especificamente para este projeto e DEVE ser usado como base.
+NÃO use valores padrão - use EXATAMENTE ${effectiveBdi}% como BDI base.
 
 COMPLEXIDADE LOGÍSTICA: ${input.logisticsComplexity}
 RISCO FISCAL: ${input.fiscalRisk}
 
+AJUSTES PERMITIDOS (sobre o BDI do projeto):
+- Risco fiscal alto: +5%
+- Complexidade logística alta: +5%
+- Prazo apertado: +10%
+
 FÓRMULA OBRIGATÓRIA:
-- BDI BASE: ${bdiSettings.bdiPercentual}% (configurado pela empresa)
+- BDI BASE: ${effectiveBdi}% (definido para este projeto)
 - Preço Final = Custo Base × (1 + BDI)
 - Exemplo: Preço Final = ${custoBase.toFixed(2)} × ${(1 + bdiDecimal).toFixed(2)} = ${precoExemplo.toFixed(2)}
 
 IMPORTANTE:
-- baseBdi: DEVE ser ${bdiDecimal.toFixed(2)} (${bdiSettings.bdiPercentual}% configurado pela empresa)
+- baseBdi: DEVE ser ${bdiDecimal.toFixed(2)} (${effectiveBdi}% definido para o projeto)
 - adjustedBdi: BDI base + ajustes por risco/complexidade
 - totalBdiAmount: valor monetário do BDI = Custo Base × adjustedBdi
 - finalPrice: Preço Final = Custo Base × (1 + adjustedBdi)
 
-Calcule o BDI adequado (partindo do BDI configurado) e o preço final de venda.`;
+Calcule o BDI adequado (partindo de ${effectiveBdi}%) e o preço final de venda.`;
   }
   
   getOutputSchema(): object {
@@ -1087,12 +1108,19 @@ CLÁUSULAS ESSENCIAIS:
   }
   
   getUserPrompt(input: JuridicoInput): string {
+    // Calcular prazo em dias e semanas para clareza
+    const durationDays = (input as any).durationDays || 30;
+    const durationWeeks = Math.ceil(durationDays / 7);
+    
     return `Redija a proposta técnica para o projeto:
 
 PROJETO: ${input.projectName}
 VALOR TOTAL: R$ ${input.totalPrice.toFixed(2)}
 CONDIÇÕES DE PAGAMENTO: ${input.paymentTerms}
-PRAZO: ${input.duration} semanas
+PRAZO: ${durationDays} dias (≈ ${durationWeeks} semanas)
+
+⚠️ IMPORTANTE: O prazo de ${durationDays} dias foi calculado pelo Agente de Gestão de Projetos.
+Use EXATAMENTE este prazo na proposta - NÃO arredonde para semanas.
 
 RESTRIÇÕES IDENTIFICADAS:
 ${input.restrictions.join("\n")}
@@ -1100,7 +1128,8 @@ ${input.restrictions.join("\n")}
 ALERTAS FINANCEIROS:
 ${input.financialAlerts.join("\n")}
 
-Gere o texto da proposta com todas as cláusulas necessárias.`;
+Gere o texto da proposta com todas as cláusulas necessárias.
+Na cláusula de prazo, use "${durationDays} dias" como prazo de execução.`;
   }
   
   getOutputSchema(): object {
@@ -1355,6 +1384,195 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
   }
 }
 
+// Agent 10: Auditor de Consistência
+export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
+  name = AGENT_NAMES.auditor;
+  type: AgentType = "auditor";
+  
+  getSystemPrompt(): string {
+    return `Você é o Auditor de Consistência da RR Engenharia, responsável por VALIDAR MATEMATICAMENTE todos os cálculos e garantir consistência entre os documentos.
+
+MISSÃO: Executar auditoria final de consistência antes da emissão da proposta comercial.
+
+=== VALIDAÇÕES OBRIGATÓRIAS ===
+
+1. CONSISTÊNCIA DE PREÇOS (CRITICAL)
+   - Preço Final = (Custo Direto + Logística) × (1 + BDI)
+   - Tolerância: ± R$ 1,00 (arredondamento)
+   - Se diferença > R$ 1,00: ERRO CRÍTICO
+
+2. MARGEM BRUTA (CRITICAL)
+   - Margem Bruta = Preço Final - (Custo Direto + Logística)
+   - Margem Bruta % = (Margem Bruta / Preço Final) × 100
+   - Se Margem Bruta < 0: ERRO CRÍTICO (venda abaixo do custo)
+
+3. MARGEM LÍQUIDA (WARNING)
+   - Margem Líquida = Preço Final - (Custo Direto + Logística + Impostos)
+   - Margem Líquida % = (Margem Líquida / Preço Final) × 100
+   - Se Margem Líquida < 10%: WARNING (margem baixa)
+   - Se Margem Líquida < 5%: CRITICAL (margem insuficiente)
+
+4. IMPOSTOS (WARNING)
+   - Total Impostos não deve exceder 50% do Preço Final
+   - Se exceder: WARNING com recomendação de revisão tributária
+
+5. FLUXO DE CAIXA (CRITICAL)
+   - Saldo final do fluxo de caixa deve ser >= 0
+   - Se negativo: CRITICAL (projeto gera prejuízo)
+
+6. CONSISTÊNCIA ENTRE AGENTES (INFO)
+   - Verificar se Orçamentista.totalDirectCost = soma dos budgetItems
+   - Verificar se Comercial.finalPrice é usado em todos os documentos
+   - Verificar se Gestão.totalDays é usado no Jurídico
+
+=== CRITÉRIOS DE SELO DE AUDITORIA ===
+
+- "approved": 0 erros críticos, 0 warnings
+- "approved_with_warnings": 0 erros críticos, 1+ warnings
+- "rejected": 1+ erros críticos
+
+=== SCORE DE VALIDAÇÃO ===
+
+Calcule o score de 0 a 100:
+- Cada validação crítica que passa: +15 pontos
+- Cada validação warning que passa: +10 pontos
+- Cada validação info que passa: +5 pontos
+- Cada erro crítico: -25 pontos
+- Cada warning: -10 pontos
+
+Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da proposta ser enviada ao cliente.`;
+  }
+  
+  getUserPrompt(input: AuditorInput): string {
+    const { allAgentOutputs, projectConfig } = input;
+    
+    // Extrair dados para auditoria
+    const directCost = allAgentOutputs.orcamentista?.totalDirectCost || 0;
+    const logisticsCost = allAgentOutputs.logistica?.totalLogisticsCost || 0;
+    const baseCost = directCost + logisticsCost;
+    const bdiPercent = projectConfig.bdiPercentual || 25;
+    const expectedPrice = baseCost * (1 + bdiPercent / 100);
+    const actualPrice = allAgentOutputs.comercial?.finalPrice || 0;
+    const totalTaxes = allAgentOutputs.tributario?.totalTaxes || 0;
+    const cashFlowFinal = allAgentOutputs.financeiro?.cashFlow?.slice(-1)[0]?.balance || 0;
+    const totalDays = allAgentOutputs.gestao?.totalDuration || 0;
+    
+    // Calcular margens
+    const grossMargin = actualPrice - baseCost;
+    const grossMarginPercent = actualPrice > 0 ? (grossMargin / actualPrice) * 100 : 0;
+    const netMargin = actualPrice - baseCost - totalTaxes;
+    const netMarginPercent = actualPrice > 0 ? (netMargin / actualPrice) * 100 : 0;
+    
+    return `AUDITORIA DE CONSISTÊNCIA - PROJETO: ${projectConfig.name}
+
+=== DADOS PARA VALIDAÇÃO ===
+
+CUSTOS:
+- Custo Direto (Orçamentista): R$ ${directCost.toFixed(2)}
+- Custo Logística: R$ ${logisticsCost.toFixed(2)}
+- Custo Base (Direto + Logística): R$ ${baseCost.toFixed(2)}
+
+BDI:
+- BDI Configurado: ${bdiPercent}%
+- Preço Esperado (Base × 1.${bdiPercent}): R$ ${expectedPrice.toFixed(2)}
+- Preço Comercial (Agente): R$ ${actualPrice.toFixed(2)}
+- Diferença: R$ ${Math.abs(expectedPrice - actualPrice).toFixed(2)}
+
+MARGENS:
+- Margem Bruta: R$ ${grossMargin.toFixed(2)} (${grossMarginPercent.toFixed(2)}%)
+- Margem Líquida: R$ ${netMargin.toFixed(2)} (${netMarginPercent.toFixed(2)}%)
+
+IMPOSTOS:
+- Total Impostos: R$ ${totalTaxes.toFixed(2)}
+- % do Preço Final: ${actualPrice > 0 ? ((totalTaxes / actualPrice) * 100).toFixed(2) : 0}%
+
+FLUXO DE CAIXA:
+- Saldo Final: R$ ${cashFlowFinal.toFixed(2)}
+
+PRAZO:
+- Duração Total (Gestão): ${totalDays} dias
+
+DECISÃO DO BOARD:
+- Aprovado: ${allAgentOutputs.board?.approved ? 'Sim' : 'Não'}
+- Bloqueado: ${allAgentOutputs.board?.blockProposal ? 'Sim' : 'Não'}
+
+=== AÇÃO REQUERIDA ===
+
+1. Execute TODAS as validações obrigatórias
+2. Calcule o score de validação (0-100)
+3. Determine o selo de auditoria (approved/approved_with_warnings/rejected)
+4. Liste todas as validações com resultado (passed/failed)
+5. Forneça recomendações para cada falha
+
+Retorne o JSON com o resultado completo da auditoria.`;
+  }
+  
+  getOutputSchema(): object {
+    return {
+      type: "object",
+      properties: {
+        isValid: { type: "boolean", description: "True se não houver erros críticos" },
+        validationScore: { type: "number", description: "Score de 0 a 100" },
+        criticalErrors: { type: "number", description: "Número de erros críticos" },
+        warnings: { type: "number", description: "Número de warnings" },
+        validations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              rule: { type: "string" },
+              description: { type: "string" },
+              expected: { type: "string" },
+              actual: { type: "string" },
+              passed: { type: "boolean" },
+              severity: { type: "string", enum: ["critical", "warning", "info"] },
+              recommendation: { type: "string" },
+            },
+            required: ["rule", "description", "expected", "actual", "passed", "severity", "recommendation"],
+            additionalProperties: false,
+          },
+        },
+        crossAgentChecks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              check: { type: "string" },
+              agents: { type: "array", items: { type: "string" } },
+              consistent: { type: "boolean" },
+              details: { type: "string" },
+            },
+            required: ["check", "agents", "consistent", "details"],
+            additionalProperties: false,
+          },
+        },
+        financialSummary: {
+          type: "object",
+          properties: {
+            directCost: { type: "number" },
+            logisticsCost: { type: "number" },
+            baseCost: { type: "number" },
+            bdiAmount: { type: "number" },
+            taxes: { type: "number" },
+            finalPrice: { type: "number" },
+            grossMargin: { type: "number" },
+            grossMarginPercent: { type: "number" },
+            netMargin: { type: "number" },
+            netMarginPercent: { type: "number" },
+          },
+          required: ["directCost", "logisticsCost", "baseCost", "bdiAmount", "taxes", "finalPrice", "grossMargin", "grossMarginPercent", "netMargin", "netMarginPercent"],
+          additionalProperties: false,
+        },
+        auditSeal: { type: "string", enum: ["approved", "approved_with_warnings", "rejected"] },
+        auditTimestamp: { type: "string" },
+        auditNotes: { type: "string" },
+      },
+      required: ["isValid", "validationScore", "criticalErrors", "warnings", "validations", "crossAgentChecks", "financialSummary", "auditSeal", "auditTimestamp", "auditNotes"],
+      additionalProperties: false,
+    };
+  }
+}
+
 // Export all agents
 export const agents = {
   engenheiro_tecnico: new EngenheiroTecnicoAgent(),
@@ -1366,4 +1584,5 @@ export const agents = {
   financeiro: new FinanceiroAgent(),
   juridico: new JuridicoAgent(),
   board: new BoardAgent(),
+  auditor: new AuditorAgent(),
 };

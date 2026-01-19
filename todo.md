@@ -220,3 +220,35 @@
 - [x] ALTA #3: Valor total na planilha de preços diferente da cláusula - CORRIGIDO: Ambos documentos usam comercialOutput.finalPrice como fonte única
 - [x] Implementar testes de auditoria de consistência (7 testes)
 - [x] Garantir que Jurídico use preço e prazo do Comercial/Gestão como fonte única
+
+## Correções Críticas v1.26 - Auditoria Gemini
+### 🔴 CRÍTICA: BDI Configurável por Projeto
+- [x] Adicionar campo bdiPercentual opcional na criação de projeto (routers.ts)
+- [x] Criar combobox na interface com opções: Padrão (25%), Reduzido (15%), Majorado (35%), Personalizado
+- [x] Passar BDI do projeto para o agente Comercial (index.ts)
+- [x] Remover completamente o markup de 15,57%
+
+### 🟡 ALTA: Consistência de Dados entre Agentes
+- [x] Refatorar agente Jurídico para usar preço final do agente Comercial
+- [x] Refatorar agente Cronograma para usar prazo do agente Gestão de Projetos
+- [x] Centralizar Memória de Cálculo como fonte única da verdade
+
+### 🟢 MÉDIA: Simplificar Fluxo de Agentes
+- [x] SKIPPED: Mesclar Custos Diretos + Logística (avaliado como arriscado, manter 9 agentes)
+- [x] SKIPPED: Mesclar Comercial + Financeiro (avaliado como arriscado, manter 9 agentes)
+- [x] Implementar agente Auditor para validação automática
+
+### Documentação
+- [ ] Criar CHANGELOG.md com todas as mudanças
+- [ ] Criar testes automatizados para validar correções
+
+## v1.26 - Agente Auditor de Consistência
+- [x] Criar tipo AuditorInput e AuditorOutput em shared/agents.ts
+- [x] Implementar classe AuditorAgent em server/agents/index.ts
+- [x] Adicionar auditor ao enum agentType no schema do banco
+- [x] Adicionar auditor à lista AGENT_TYPES_ORDERED em db.ts
+- [x] Adicionar auditor ao array agentTypes em executeAll
+- [x] Implementar buildAgentInput para o auditor
+- [x] Adicionar auditor ao AgentProgressPipeline no frontend
+- [x] Adicionar selo de auditoria no card de Resumo Financeiro
+- [x] Executar migração do banco de dados (pnpm db:push)

@@ -161,7 +161,7 @@ export async function runTransaction<T>(
  */
 const AGENT_TYPES_ORDERED: AgentType[] = [
   "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
-  "comercial", "gestao_projetos", "financeiro", "juridico", "board"
+  "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"
 ];
 
 /**

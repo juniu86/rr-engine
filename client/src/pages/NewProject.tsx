@@ -15,7 +15,8 @@ import {
   MapPin, 
   AlertTriangle,
   ArrowRight,
-  Loader2
+  Loader2,
+  Percent
 } from "lucide-react";
 
 export default function NewProject() {
@@ -26,6 +27,8 @@ export default function NewProject() {
     location: "",
     restrictions: "",
     memorialDescritivo: "",
+    bdiPreset: "padrao" as "padrao" | "reduzido" | "majorado" | "personalizado",
+    bdiPercentual: 25,
   });
 
   const createProject = trpc.project.create.useMutation({
@@ -127,6 +130,91 @@ export default function NewProject() {
                   onChange={(e) => setFormData({ ...formData, restrictions: e.target.value })}
                   rows={3}
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* BDI Configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Percent className="h-5 w-5 text-amber-500" />
+                Configuração de BDI
+              </CardTitle>
+              <CardDescription>
+                Defina o BDI (Benefícios e Despesas Indiretas) para este projeto
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="bdiPreset">Tipo de BDI</Label>
+                <Select
+                  value={formData.bdiPreset}
+                  onValueChange={(value: "padrao" | "reduzido" | "majorado" | "personalizado") => 
+                    setFormData({ 
+                      ...formData, 
+                      bdiPreset: value,
+                      bdiPercentual: value === "reduzido" ? 15 : value === "majorado" ? 35 : value === "padrao" ? 25 : formData.bdiPercentual
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o tipo de BDI" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="reduzido">
+                      <div className="flex flex-col">
+                        <span>Reduzido (15%)</span>
+                        <span className="text-xs text-muted-foreground">Para obras simples ou clientes recorrentes</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="padrao">
+                      <div className="flex flex-col">
+                        <span>Padrão (25%)</span>
+                        <span className="text-xs text-muted-foreground">BDI padrão de mercado</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="majorado">
+                      <div className="flex flex-col">
+                        <span>Majorado (35%)</span>
+                        <span className="text-xs text-muted-foreground">Para obras complexas ou de alto risco</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="personalizado">
+                      <div className="flex flex-col">
+                        <span>Personalizado</span>
+                        <span className="text-xs text-muted-foreground">Defina um valor específico</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {formData.bdiPreset === "personalizado" && (
+                <div className="space-y-2">
+                  <Label htmlFor="bdiPercentual">BDI Personalizado (%)</Label>
+                  <Input
+                    id="bdiPercentual"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={formData.bdiPercentual}
+                    onChange={(e) => setFormData({ ...formData, bdiPercentual: parseFloat(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Valores típicos: 15% (simples) a 40% (complexo)
+                  </p>
+                </div>
+              )}
+              
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <p className="text-sm">
+                  <strong>BDI selecionado:</strong> {formData.bdiPreset === "personalizado" ? formData.bdiPercentual : formData.bdiPreset === "reduzido" ? 15 : formData.bdiPreset === "majorado" ? 35 : 25}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  O BDI será aplicado sobre o custo base (direto + logística) para calcular o preço de venda.
+                </p>
               </div>
             </CardContent>
           </Card>
