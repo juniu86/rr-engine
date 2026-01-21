@@ -178,28 +178,6 @@ export default function Settings() {
     toast.success(`Preset "${regimeLabels[preset]}" aplicado! Clique em Salvar para confirmar.`);
   };
 
-  // Calculate BDI from components
-  const calculateBdi = () => {
-    const adminCentral = parseFloat(formData.adminCentralPercentual) || 0;
-    const despesasFinanceiras = parseFloat(formData.despesasFinanceirasPercentual) || 0;
-    const riscos = parseFloat(formData.riscosPercentual) || 0;
-    const lucro = parseFloat(formData.lucroPercentual) || 0;
-    const iss = parseFloat(formData.issPercentual) || 0;
-    const pis = parseFloat(formData.pisPercentual) || 0;
-    const cofins = parseFloat(formData.cofinsPercentual) || 0;
-    const irpj = parseFloat(formData.irpjPercentual) || 0;
-    const csll = parseFloat(formData.csllPercentual) || 0;
-
-    const tributos = (iss + pis + cofins + irpj + csll) / 100;
-    const despesas = (adminCentral + despesasFinanceiras + riscos + lucro) / 100;
-    
-    const bdi = ((1 + despesas) / (1 - tributos)) - 1;
-    const bdiPercentual = (bdi * 100).toFixed(2);
-    
-    setFormData(prev => ({ ...prev, bdiPercentual }));
-    toast.info(`BDI calculado: ${bdiPercentual}%`);
-  };
-
   // Funções para gerenciar parcelas de faturamento
   const addInstallment = () => {
     setInstallments(prev => [...prev, { name: `Parcela ${prev.length + 1}`, percentage: 0 }]);
@@ -295,7 +273,7 @@ export default function Settings() {
 
       <main className="container py-8">
         <Tabs defaultValue="empresa" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-[750px]">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[600px]">
             <TabsTrigger value="empresa" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               <span className="hidden sm:inline">Empresa</span>
@@ -303,10 +281,6 @@ export default function Settings() {
             <TabsTrigger value="tributos" className="flex items-center gap-2">
               <Receipt className="h-4 w-4" />
               <span className="hidden sm:inline">Tributos</span>
-            </TabsTrigger>
-            <TabsTrigger value="bdi" className="flex items-center gap-2">
-              <Calculator className="h-4 w-4" />
-              <span className="hidden sm:inline">BDI</span>
             </TabsTrigger>
             <TabsTrigger value="faturamento" className="flex items-center gap-2">
               <CreditCard className="h-4 w-4" />
@@ -510,105 +484,6 @@ export default function Settings() {
                     <strong>Importante:</strong> Os tributos configurados aqui são utilizados no cálculo do BDI e na 
                     precificação das propostas. Certifique-se de que os valores estão corretos para o regime tributário 
                     da sua empresa.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Tab: BDI */}
-          <TabsContent value="bdi">
-            <Card>
-              <CardHeader>
-                <CardTitle>Composição do BDI</CardTitle>
-                <CardDescription>
-                  Bonificação e Despesas Indiretas. BDI atual: <strong>{formData.bdiPercentual}%</strong>
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="adminCentral">Administração Central (%)</Label>
-                    <Input
-                      id="adminCentral"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="10"
-                      value={formData.adminCentralPercentual}
-                      onChange={(e) => setFormData(prev => ({ ...prev, adminCentralPercentual: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Típico: 3% a 5%</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="despesasFinanceiras">Despesas Financeiras (%)</Label>
-                    <Input
-                      id="despesasFinanceiras"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="5"
-                      value={formData.despesasFinanceirasPercentual}
-                      onChange={(e) => setFormData(prev => ({ ...prev, despesasFinanceirasPercentual: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Típico: 0.5% a 2%</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="riscos">Riscos e Imprevistos (%)</Label>
-                    <Input
-                      id="riscos"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="5"
-                      value={formData.riscosPercentual}
-                      onChange={(e) => setFormData(prev => ({ ...prev, riscosPercentual: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Típico: 0.5% a 2%</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="lucro">Lucro Esperado (%)</Label>
-                    <Input
-                      id="lucro"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="20"
-                      value={formData.lucroPercentual}
-                      onChange={(e) => setFormData(prev => ({ ...prev, lucroPercentual: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Típico: 5% a 12%</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 space-y-2">
-                    <Label htmlFor="bdiTotal">BDI Total (%)</Label>
-                    <Input
-                      id="bdiTotal"
-                      type="number"
-                      step="0.01"
-                      value={formData.bdiPercentual}
-                      onChange={(e) => setFormData(prev => ({ ...prev, bdiPercentual: e.target.value }))}
-                      className="text-lg font-bold"
-                    />
-                  </div>
-                  <Button variant="outline" onClick={calculateBdi} className="mt-6">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Recalcular BDI
-                  </Button>
-                </div>
-
-                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                  <p className="text-sm font-medium">Fórmula do BDI:</p>
-                  <code className="text-xs bg-background px-2 py-1 rounded">
-                    BDI = ((1 + AC + DF + R + L) / (1 - Tributos)) - 1
-                  </code>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Onde: AC = Administração Central, DF = Despesas Financeiras, R = Riscos, L = Lucro
                   </p>
                 </div>
               </CardContent>

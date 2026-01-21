@@ -1,0 +1,170 @@
+{
+  "query": "DESCRIBE company_settings;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute DESCRIBE company_settings;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int(11)",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "userId",
+      "Type": "int(11)",
+      "Null": "NO",
+      "Key": "UNI",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "companyName",
+      "Type": "varchar(255)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "cnpj",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "priceRegion",
+      "Type": "enum('AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "SP",
+      "Extra": ""
+    },
+    {
+      "Field": "taxaLeisSociais",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "128.23",
+      "Extra": ""
+    },
+    {
+      "Field": "bdiPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "25.00",
+      "Extra": ""
+    },
+    {
+      "Field": "lucroPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "8.00",
+      "Extra": ""
+    },
+    {
+      "Field": "issPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "5.00",
+      "Extra": ""
+    },
+    {
+      "Field": "pisPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0.65",
+      "Extra": ""
+    },
+    {
+      "Field": "cofinsPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "3.00",
+      "Extra": ""
+    },
+    {
+      "Field": "irpjPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1.20",
+      "Extra": ""
+    },
+    {
+      "Field": "csllPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1.08",
+      "Extra": ""
+    },
+    {
+      "Field": "adminCentralPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "4.00",
+      "Extra": ""
+    },
+    {
+      "Field": "despesasFinanceirasPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1.00",
+      "Extra": ""
+    },
+    {
+      "Field": "riscosPercentual",
+      "Type": "decimal(6,2)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1.00",
+      "Extra": ""
+    },
+    {
+      "Field": "regimeTributario",
+      "Type": "enum('simples_nacional','lucro_presumido','lucro_real')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "lucro_presumido",
+      "Extra": ""
+    },
+    {
+      "Field": "dataReferenciaPrecos",
+      "Type": "varchar(10)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "2025/01",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "updatedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint(11)\tNO\tPRI\tNULL\tauto_increment\nuserId\tint(11)\tNO\tUNI\tNULL\t\ncompanyName\tvarchar(255)\tYES\t\tNULL\t\ncnpj\tvarchar(20)\tYES\t\tNULL\t\npriceRegion\tenum('AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO')\tNO\t\tSP\t\ntaxaLeisSociais\tdecimal(6,2)\tNO\t\t128.23\t\nbdiPercentual\tdecimal(6,2)\tNO\t\t25.00\t\nlucroPercentual\tdecimal(6,2)\tNO\t\t8.00\t\nissPercentual\tdecimal(6,2)\tNO\t\t5.00\t\npisPercentual\tdecimal(6,2)\tNO\t\t0.65\t\ncofinsPercentual\tdecimal(6,2)\tNO\t\t3.00\t\nirpjPercentual\tdecimal(6,2)\tNO\t\t1.20\t\ncsllPercentual\tdecimal(6,2)\tNO\t\t1.08\t\nadminCentralPercentual\tdecimal(6,2)\tNO\t\t4.00\t\ndespesasFinanceirasPercentual\tdecimal(6,2)\tNO\t\t1.00\t\nriscosPercentual\tdecimal(6,2)\tNO\t\t1.00\t\nregimeTributario\tenum('simples_nacional','lucro_presumido','lucro_real')\tNO\t\tlucro_presumido\t\ndataReferenciaPrecos\tvarchar(10)\tYES\t\t2025/01\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\tDEFAULT_GENERATED on update CURRENT_TIMESTAMP\n",
+  "stderr": "",
+  "execution_time_ms": 103
+}

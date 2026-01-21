@@ -347,3 +347,14 @@
 - [ ] Arquitetura AgentResponse implementada
 - [ ] Endpoint continueAgent criado
 - [ ] Estado salvo no banco de dados
+
+## v2.1.1 - Correções de Bugs
+### Bug 1: Campo BDI persistindo em Configurações ✅
+- [x] Remover tab de BDI do Settings.tsx
+- [x] Remover função calculateBdi
+- [x] Atualizar grid de tabs de 5 para 4 colunas
+
+### Bug 2: Erro ao salvar configurações da empresa ✅
+- [x] Diagnosticar erro de query: billingInstallments não existe na tabela
+- [x] Verificar se migração foi executada corretamente
+- [x] Executar ALTER TABLE para adicionar coluna billingInstallments
