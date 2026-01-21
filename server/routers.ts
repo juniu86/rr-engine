@@ -34,26 +34,11 @@ export const appRouter = router({
         location: z.string().optional(),
         restrictions: z.string().optional(),
         memorialDescritivo: z.string().optional(),
-        bdiPreset: z.enum(["padrao", "reduzido", "majorado", "personalizado"]).optional().default("padrao"),
-        bdiPercentual: z.number().min(0).max(100).optional(), // Só usado quando bdiPreset = "personalizado"
       }))
       .mutation(async ({ ctx, input }) => {
-        // Calcular BDI baseado no preset
-        let bdiValue: number | null = null;
-        switch (input.bdiPreset) {
-          case "reduzido":
-            bdiValue = 15;
-            break;
-          case "padrao":
-            bdiValue = 25;
-            break;
-          case "majorado":
-            bdiValue = 35;
-            break;
-          case "personalizado":
-            bdiValue = input.bdiPercentual ?? 25;
-            break;
-        }
+        // Buscar BDI das configurações da empresa do usuário
+        const companySettings = await db.getCompanySettingsOrDefault(ctx.user.id);
+        const bdiValue = companySettings.bdiPercentual ?? 25;
         
         // Usar transação atômica: se qualquer operação falhar, tudo é revertido
         const projectId = await db.createProjectWithAgents({
@@ -66,8 +51,8 @@ export const appRouter = router({
           memorialDescritivo: input.memorialDescritivo || null,
           status: "draft",
           currentAgentId: 1,
-          bdiPreset: input.bdiPreset,
-          bdiPercentual: bdiValue?.toString() ?? null,
+          bdiPreset: "padrao", // Sempre usar padrão pois BDI vem das configurações
+          bdiPercentual: bdiValue.toString(),
         });
         
         return { projectId };

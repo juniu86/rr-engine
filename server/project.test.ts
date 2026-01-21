@@ -18,6 +18,15 @@ vi.mock("./db", () => ({
   getScheduleItemsByProjectId: vi.fn().mockResolvedValue([]),
   getCashFlowItemsByProjectId: vi.fn().mockResolvedValue([]),
   getGeneratedDocumentsByProjectId: vi.fn().mockResolvedValue([]),
+  getCompanySettingsOrDefault: vi.fn().mockResolvedValue({
+    bdiPercentual: 25,
+    lucroPercentual: 10,
+    issPercentual: 5,
+    pisPercentual: 0.65,
+    cofinsPercentual: 3,
+    irpjPercentual: 1.2,
+    csllPercentual: 1.08,
+  }),
 }));
 
 import * as db from "./db";

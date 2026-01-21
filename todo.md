@@ -347,3 +347,9 @@
 - [ ] Arquitetura AgentResponse implementada
 - [ ] Endpoint continueAgent criado
 - [ ] Estado salvo no banco de dados
+
+## v2.1.2 - Remoção do Campo BDI do Novo Orçamento ✅
+- [x] Remover seção "Configuração de BDI" do formulário NewProject.tsx
+- [x] Remover estado bdiType e customBdi do componente
+- [x] Atualizar backend para buscar BDI das configurações da empresa automaticamente
+- [x] Testar fluxo completo de criação de orçamento
