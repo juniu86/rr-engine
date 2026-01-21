@@ -353,3 +353,19 @@
 - [x] Remover estado bdiType e customBdi do componente
 - [x] Atualizar backend para buscar BDI das configurações da empresa automaticamente
 - [x] Testar fluxo completo de criação de orçamento
+
+## v2.1.3 - Correções Críticas (P0)
+### Correção #1: UI do Agente Auditor ✅
+- [x] Adicionar case "auditor" à função renderAgentSummary
+- [x] Adicionar case "auditor" à função renderAgentDetails
+
+### Correção #2: Exibir Custo de Logística ✅
+- [x] Corrigir variável de custoLogistica para totalLogisticsCost
+
+### Correção #3: Ajustar Cálculo do Custo Direto ✅
+- [x] Remover duplicação de custos indiretos no cálculo do custo direto
+
+### Verificação Final ✅
+- [x] Testar UI do Agente Auditor (score, selo, detalhes)
+- [x] Confirmar valor de Logística no Resumo Financeiro
+- [x] Validar Custo Direto sem duplicação

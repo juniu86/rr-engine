@@ -423,8 +423,8 @@ export default function ProjectDetails() {
           const comercialOutput = comercialExec?.output as any;
           const auditorOutput = auditorExec?.output as any;
           
-          const custoDirecto = (orcamentistaOutput?.totalDirectCost || 0) + (orcamentistaOutput?.totalIndirectCost || 0);
-          const custoLogistica = logisticaOutput?.totalCost || 0;
+          const custoDirecto = orcamentistaOutput?.totalDirectCost || 0;
+          const custoLogistica = logisticaOutput?.totalLogisticsCost || 0;
           const custoBase = custoDirecto + custoLogistica;
           const bdiPercentual = comercialOutput?.adjustedBdi ? (comercialOutput.adjustedBdi * 100) : 0;
           const precoFinal = comercialOutput?.finalPrice || 0;
@@ -1631,6 +1631,19 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
           <p>Risco: <strong>{output.projectViability?.riskLevel || 'N/A'}</strong></p>
         </>
       );
+    case "auditor":
+      return (
+        <>
+          <p>Score: <strong>{output.validationScore || 0}/100</strong></p>
+          <p>Erros: <strong className="text-red-500">{output.criticalErrors || 0}</strong></p>
+          <p>Alertas: <strong className="text-yellow-500">{output.warnings || 0}</strong></p>
+          <p>Selo: <strong className={
+            output.auditSeal === 'approved' ? 'text-green-500' :
+            output.auditSeal === 'approved_with_warnings' ? 'text-yellow-500' :
+            'text-red-500'
+          }>{output.auditSeal?.replace('_', ' ') || 'N/A'}</strong></p>
+        </>
+      );
     default:
       return null;
   }
@@ -2047,6 +2060,59 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
               <p className="text-sm">{output.conditionsForApproval}</p>
             </div>
           )}
+        </div>
+      );
+
+    case "auditor":
+      return (
+        <div className="space-y-4">
+          {/* Score e Selo */}
+          <div className="p-4 bg-primary/10 rounded-lg text-center">
+            <p className="text-xs text-primary/80 mb-1">Selo de Auditoria</p>
+            <p className="text-xl font-bold text-primary">{output.auditSeal?.replace('_', ' ') || 'N/A'}</p>
+            <p className="text-2xl font-bold mt-2">Score: {output.validationScore || 0}/100</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {output.criticalErrors || 0} erros críticos | {output.warnings || 0} alertas
+            </p>
+          </div>
+
+          {/* Validações */}
+          {output.validations?.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">Detalhes da Validação ({output.validations.length})</h4>
+              <div className="space-y-2">
+                {output.validations.map((v: any, i: number) => (
+                  <div key={i} className={`p-3 rounded-lg border ${
+                    v.severity === 'critical' ? 'bg-red-900/20 border-red-700' :
+                    v.severity === 'warning' ? 'bg-yellow-900/20 border-yellow-700' :
+                    'bg-blue-900/20 border-blue-700'
+                  }`}>
+                    <div className="flex justify-between items-center">
+                      <p className="font-medium">{v.rule}</p>
+                      <Badge variant={v.passed ? 'default' : 'destructive'}>{v.passed ? 'Passou' : 'Falhou'}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{v.description}</p>
+                    <Separator className="my-2 bg-slate-700"/>
+                    <div className="text-xs grid grid-cols-2 gap-1">
+                      <span>Esperado:</span><span>{v.expected}</span>
+                      <span>Atual:</span><span>{v.actual}</span>
+                    </div>
+                    {!v.passed && (
+                      <p className="text-xs text-primary mt-2 bg-primary/10 p-2 rounded">
+                        <strong>Recomendação:</strong> {v.recommendation}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notas e Timestamp */}
+          <div className="text-xs text-muted-foreground space-y-1 pt-2">
+            {output.auditNotes && <p><strong>Notas:</strong> {output.auditNotes}</p>}
+            {output.auditTimestamp && <p><strong>Auditado em:</strong> {new Date(output.auditTimestamp).toLocaleString('pt-BR')}</p>}
+          </div>
         </div>
       );
 
