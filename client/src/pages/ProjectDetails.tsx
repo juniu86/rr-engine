@@ -46,6 +46,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { MissingInfoRequest } from "../../../shared/agents";
 
 const agentIcons: Record<string, any> = {
   engenheiro_tecnico: FileText,
@@ -66,6 +70,7 @@ const statusConfig = {
   completed: { label: "Concluído", color: "bg-green-500", icon: CheckCircle2 },
   failed: { label: "Falhou", color: "bg-red-500", icon: XCircle },
   needs_review: { label: "Revisão", color: "bg-primary", icon: AlertCircle },
+  waiting_for_user_input: { label: "Aguardando Dados", color: "bg-orange-500", icon: AlertCircle },
   // Status de projeto
   draft: { label: "Rascunho", color: "bg-slate-500", icon: Clock },
   processing: { label: "Processando", color: "bg-blue-500", icon: Loader2 },
@@ -94,6 +99,12 @@ export default function ProjectDetails() {
   const [showOptionalItemsDialog, setShowOptionalItemsDialog] = useState(false);
   const [optionalItems, setOptionalItems] = useState<any[]>([]);
   const [selectedOptionalItems, setSelectedOptionalItems] = useState<number[]>([]);
+  
+  // Estados para interatividade do agente (v2.1)
+  const [showMissingInfoDialog, setShowMissingInfoDialog] = useState(false);
+  const [missingInfoRequests, setMissingInfoRequests] = useState<MissingInfoRequest[]>([]);
+  const [userResponses, setUserResponses] = useState<Record<string, string | number>>({});
+  const [waitingAgentType, setWaitingAgentType] = useState<string | null>(null);
   
   const { data: details, isLoading, refetch } = trpc.project.getDetails.useQuery(
     { id: projectId },
@@ -217,6 +228,29 @@ export default function ProjectDetails() {
     },
   });
 
+  // Mutation para continuar agente com dados do usuário (v2.1)
+  // @ts-expect-error - endpoint adicionado em v2.1
+  const continueAgent = trpc.project.continueAgent.useMutation({
+    onSuccess: (data: { status: string; missingInfoRequests?: MissingInfoRequest[]; iterationCount?: number }) => {
+      if (data.status === "waiting_for_user_input") {
+        // Agente ainda precisa de mais dados
+        setMissingInfoRequests(data.missingInfoRequests || []);
+        toast.info(`Iteração ${data.iterationCount}: O agente ainda precisa de mais informações.`);
+      } else {
+        // Agente completou
+        toast.success("Dados recebidos! Agente completou a análise.");
+        setShowMissingInfoDialog(false);
+        setMissingInfoRequests([]);
+        setUserResponses({});
+        setWaitingAgentType(null);
+      }
+      refetch();
+    },
+    onError: (error: { message: string }) => {
+      toast.error("Erro ao enviar dados: " + error.message);
+    },
+  });
+
   // Extrair dados se disponíveis (para uso nos useEffects)
   const project = details?.project;
   const agentExecutions = details?.agentExecutions || [];
@@ -234,6 +268,10 @@ export default function ProjectDetails() {
   const hasOptionalItems = logisticaOutput?.optionalItems?.length > 0;
   const hasSelectedOptionalItems = logisticaOutput?.selectedOptionalItems?.length > 0;
 
+  // Verificar se há agente aguardando input do usuário (v2.1)
+  const waitingForInputAgent = agentExecutions.find(e => e.status === "waiting_for_user_input");
+  const hasAgentWaitingForInput = !!waitingForInputAgent;
+
   // Verificar status de confirmação pendente
   useEffect(() => {
     if (project?.status === "pending_confirmation") {
@@ -247,6 +285,21 @@ export default function ProjectDetails() {
       }
     }
   }, [project?.status, project?.warningMessages]);
+
+  // Detectar agente aguardando input e abrir modal automaticamente (v2.1)
+  useEffect(() => {
+    if (waitingForInputAgent && !showMissingInfoDialog) {
+      const output = waitingForInputAgent.output as any;
+      const requests = output?.missingInfoRequests || 
+                       (waitingForInputAgent as any).missingInfoRequests || [];
+      
+      if (requests.length > 0) {
+        setMissingInfoRequests(requests);
+        setWaitingAgentType(waitingForInputAgent.agentType);
+        setShowMissingInfoDialog(true);
+      }
+    }
+  }, [waitingForInputAgent, showMissingInfoDialog]);
 
   // Verificar itens opcionais após execução da logística
   useEffect(() => {
@@ -1325,6 +1378,137 @@ export default function ProjectDetails() {
                 <CheckCircle2 className="mr-2 h-4 w-4" />
               )}
               Adicionar {selectedOptionalItems.length} Item(ns)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Interatividade - Dados Faltantes (v2.1) */}
+      <Dialog open={showMissingInfoDialog} onOpenChange={(open) => {
+        if (!open) {
+          // Não fechar se houver dados obrigatórios pendentes
+          const hasRequired = missingInfoRequests.some(r => r.required);
+          if (hasRequired && Object.keys(userResponses).length < missingInfoRequests.filter(r => r.required).length) {
+            toast.warning("Por favor, preencha todos os campos obrigatórios antes de fechar.");
+            return;
+          }
+        }
+        setShowMissingInfoDialog(open);
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-500">
+              <AlertCircle className="h-5 w-5" />
+              Informações Adicionais Necessárias
+            </DialogTitle>
+            <DialogDescription>
+              O Engenheiro Técnico identificou que algumas informações estão faltando no memorial descritivo.
+              Por favor, preencha os campos abaixo para continuar a análise.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            {missingInfoRequests.map((request, index) => (
+              <div key={request.fieldId || index} className="space-y-2">
+                <Label htmlFor={request.fieldId} className="flex items-center gap-2">
+                  {request.question}
+                  {request.required && <span className="text-red-500">*</span>}
+                </Label>
+                
+                {request.type === "select" && request.options ? (
+                  <Select
+                    value={String(userResponses[request.fieldId] || "")}
+                    onValueChange={(value) => setUserResponses(prev => ({ ...prev, [request.fieldId]: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma opção..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {request.options.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : request.type === "number" ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id={request.fieldId}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder={`Digite o valor${request.unit ? ` em ${request.unit}` : ''}...`}
+                      value={userResponses[request.fieldId] || ""}
+                      onChange={(e) => setUserResponses(prev => ({ 
+                        ...prev, 
+                        [request.fieldId]: e.target.value ? parseFloat(e.target.value) : "" 
+                      }))}
+                      className="flex-1"
+                    />
+                    {request.unit && (
+                      <span className="text-sm text-muted-foreground min-w-[60px]">
+                        {request.unit}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <Input
+                    id={request.fieldId}
+                    type="text"
+                    placeholder="Digite sua resposta..."
+                    value={String(userResponses[request.fieldId] || "")}
+                    onChange={(e) => setUserResponses(prev => ({ ...prev, [request.fieldId]: e.target.value }))}
+                  />
+                )}
+                
+                {request.hint && (
+                  <p className="text-xs text-muted-foreground">
+                    {request.hint}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowMissingInfoDialog(false);
+                setUserResponses({});
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => {
+                if (!waitingAgentType) return;
+                
+                // Validar campos obrigatórios
+                const requiredFields = missingInfoRequests.filter(r => r.required);
+                const missingRequired = requiredFields.filter(r => !userResponses[r.fieldId]);
+                
+                if (missingRequired.length > 0) {
+                  toast.error(`Por favor, preencha os campos obrigatórios: ${missingRequired.map(r => r.question).join(", ")}`);
+                  return;
+                }
+                
+                continueAgent.mutate({
+                  projectId,
+                  agentType: waitingAgentType as any,
+                  userResponses,
+                });
+              }}
+              disabled={continueAgent.isPending}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {continueAgent.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+              )}
+              Enviar Dados e Continuar
             </Button>
           </DialogFooter>
         </DialogContent>

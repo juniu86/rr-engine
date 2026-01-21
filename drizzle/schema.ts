@@ -73,10 +73,14 @@ export const agentExecutions = mysqlTable("agent_executions", {
     "auditor"
   ]).notNull(),
   agentOrder: int("agentOrder").notNull(),
-  status: mysqlEnum("status", ["pending", "running", "completed", "failed", "needs_review"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed", "needs_review", "waiting_for_user_input"]).default("pending").notNull(),
   input: json("input"),
   output: json("output"),
   errors: json("errors"),
+  // Campos para interatividade do agente (v2.1)
+  missingInfoRequests: json("missingInfoRequests"), // Lista de MissingInfoRequest quando status = waiting_for_user_input
+  userResponses: json("userResponses"), // Respostas do usuário (Record<string, string | number>)
+  iterationCount: int("iterationCount").default(0), // Número de iterações de solicitação
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

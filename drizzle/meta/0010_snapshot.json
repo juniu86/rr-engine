@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "7c2dbe31-d403-4843-8cb6-0ca863fc3371",
-  "prevId": "0f06c137-e4af-4775-8c90-43ed82b06013",
+  "id": "dd512f6f-bc66-430f-862a-04edeeddc4d2",
+  "prevId": "7c2dbe31-d403-4843-8cb6-0ca863fc3371",
   "tables": {
     "agent_executions": {
       "name": "agent_executions",
@@ -37,7 +37,7 @@
         },
         "status": {
           "name": "status",
-          "type": "enum('pending','running','completed','failed','needs_review')",
+          "type": "enum('pending','running','completed','failed','needs_review','waiting_for_user_input')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
@@ -63,6 +63,28 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "missingInfoRequests": {
+          "name": "missingInfoRequests",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "userResponses": {
+          "name": "userResponses",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "iterationCount": {
+          "name": "iterationCount",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 0
         },
         "startedAt": {
           "name": "startedAt",

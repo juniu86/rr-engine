@@ -881,6 +881,178 @@ export const appRouter = router({
           selectedCount: selectedOptionalItems.length
         };
       }),
+
+    // ========================================
+    // INTERATIVIDADE DO AGENTE (v2.1)
+    // ========================================
+    
+    /**
+     * Continuar execução de um agente que está aguardando input do usuário.
+     * Recebe as respostas do usuário e re-executa o agente com os dados complementares.
+     */
+    continueAgent: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        agentType: z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"]),
+        userResponses: z.record(z.string(), z.union([z.string(), z.number()])),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Buscar execução do agente
+        const executions = await db.getAgentExecutionsByProjectId(input.projectId);
+        const execution = executions.find(e => e.agentType === input.agentType);
+        
+        if (!execution) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Execução do agente não encontrada" });
+        }
+        
+        if (execution.status !== "waiting_for_user_input") {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: `Agente não está aguardando input. Status atual: ${execution.status}` 
+          });
+        }
+        
+        // Mesclar respostas anteriores com as novas
+        const previousResponses = (execution.userResponses as Record<string, string | number>) || {};
+        const mergedResponses: Record<string, string | number> = { 
+          ...previousResponses, 
+          ...input.userResponses as Record<string, string | number> 
+        };
+        
+        // Incrementar contador de iterações
+        const newIterationCount = (execution.iterationCount || 0) + 1;
+        
+        // Limite de segurança para evitar loops infinitos
+        if (newIterationCount > 5) {
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: "Número máximo de iterações atingido. Por favor, revise o memorial descritivo." 
+          });
+        }
+        
+        // Atualizar execução com status running
+        await db.updateAgentExecution(execution.id, { 
+          status: "running", 
+          startedAt: new Date(),
+          userResponses: mergedResponses,
+          iterationCount: newIterationCount,
+        });
+        
+        try {
+          // Construir input com respostas do usuário
+          const agentInput = await buildAgentInput(
+            input.agentType as AgentType, 
+            project, 
+            executions, 
+            ctx.user.id,
+            mergedResponses // Passar respostas do usuário
+          );
+          
+          // Executar agente
+          const agent = agents[input.agentType as AgentType];
+          const output = await agent.execute(agentInput);
+          
+          // Verificar se o agente ainda precisa de mais informações
+          const typedOutput = output as any;
+          if (typedOutput.analysisStatus === "waiting_for_user_input" && 
+              typedOutput.missingInfoRequests?.length > 0) {
+            // Agente ainda precisa de mais dados
+            await db.updateAgentExecution(execution.id, {
+              status: "waiting_for_user_input",
+              output: output as any,
+              missingInfoRequests: typedOutput.missingInfoRequests,
+              userResponses: mergedResponses,
+              iterationCount: newIterationCount,
+            });
+            
+            return {
+              success: true,
+              status: "waiting_for_user_input",
+              missingInfoRequests: typedOutput.missingInfoRequests,
+              iterationCount: newIterationCount,
+              message: "O agente ainda precisa de mais informações para continuar."
+            };
+          }
+          
+          // Agente completou com sucesso
+          await db.updateAgentExecution(execution.id, {
+            status: "completed",
+            output: output as any,
+            completedAt: new Date(),
+            missingInfoRequests: null,
+          });
+          
+          // Atualizar projeto para próximo agente
+          await db.updateProject(input.projectId, { 
+            currentAgentId: AGENT_ORDER[input.agentType as AgentType] + 1 
+          });
+          
+          return {
+            success: true,
+            status: "completed",
+            output,
+            message: "Agente completou a análise com sucesso!"
+          };
+          
+        } catch (error) {
+          await db.updateAgentExecution(execution.id, {
+            status: "failed",
+            errors: { message: error instanceof Error ? error.message : "Unknown error" } as any,
+          });
+          
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: `Falha ao continuar agente: ${error instanceof Error ? error.message : "Erro desconhecido"}` 
+          });
+        }
+      }),
+
+    /**
+     * Obter solicitações de informação pendentes de um agente.
+     */
+    getMissingInfoRequests: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        agentType: z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"]).optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        const executions = await db.getAgentExecutionsByProjectId(input.projectId);
+        
+        // Se agentType especificado, retornar apenas desse agente
+        if (input.agentType) {
+          const execution = executions.find(e => e.agentType === input.agentType);
+          if (!execution) return null;
+          
+          return {
+            agentType: execution.agentType,
+            status: execution.status,
+            missingInfoRequests: execution.missingInfoRequests || [],
+            userResponses: execution.userResponses || {},
+            iterationCount: execution.iterationCount || 0,
+          };
+        }
+        
+        // Retornar todos os agentes aguardando input
+        const waitingAgents = executions
+          .filter(e => e.status === "waiting_for_user_input")
+          .map(e => ({
+            agentType: e.agentType,
+            status: e.status,
+            missingInfoRequests: e.missingInfoRequests || [],
+            userResponses: e.userResponses || {},
+            iterationCount: e.iterationCount || 0,
+          }));
+        
+        return waitingAgents;
+      }),
   }),
 
   // Budget Router
@@ -1195,7 +1367,14 @@ export const appRouter = router({
 });
 
 // Helper function to build agent input based on previous outputs
-async function buildAgentInput(agentType: AgentType, project: any, executions: any[], userId: number): Promise<any> {
+// userResponses: Respostas do usuário para interatividade (v2.1)
+async function buildAgentInput(
+  agentType: AgentType, 
+  project: any, 
+  executions: any[], 
+  userId: number,
+  userResponses?: Record<string, string | number>
+): Promise<any> {
   const getOutput = (type: AgentType) => {
     const exec = executions.find(e => e.agentType === type);
     return exec?.output || {};
@@ -1210,6 +1389,8 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
         memorialDescritivo: project.memorialDescritivo || "",
         location: project.location || "",
         restrictions: project.restrictions || "",
+        // Respostas do usuário para interatividade (v2.1)
+        userResponses: userResponses || {},
       };
       
     case "orcamentista":

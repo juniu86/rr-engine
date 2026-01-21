@@ -22,6 +22,9 @@ import type {
   AuditorInput,
   AuditorOutput,
   ContractType,
+  MissingInfoRequest,
+  AgentResponse,
+  UserResponses,
 } from "../../shared/agents";
 import { AGENT_NAMES } from "../../shared/agents";
 
@@ -142,7 +145,7 @@ abstract class BaseAgent<TInput, TOutput> {
   }
 }
 
-// Agent 1: Engenheiro Técnico
+// Agent 1: Engenheiro Técnico (com suporte a interatividade v2.1)
 export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, EngenheiroTecnicoOutput> {
   name = AGENT_NAMES.engenheiro_tecnico;
   type: AgentType = "engenheiro_tecnico";
@@ -151,6 +154,25 @@ export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, En
     return `Você é o Engenheiro Técnico da RR Engenharia, responsável por auditar e traduzir Memoriais Descritivos em tarefas de engenharia específicas.
 
 MISSÃO: Transformar descrições genéricas em especificações técnicas baseadas em NBRs.
+
+⚠️ REGRA CRÍTICA DE INTERATIVIDADE (v2.1):
+Se o memorial for VAGO ou INCOMPLETO (ex: "pintar parede" sem área, "instalar piso" sem metragem),
+você DEVE identificar as informações faltantes e solicitar ao usuário.
+
+CRITÉRIOS PARA SOLICITAR INFORMAÇÕES:
+1. Serviços de área (pintura, piso, forro) sem metragem em m²
+2. Serviços lineares (rodapé, tubulação) sem metragem em m
+3. Itens unitários (portas, janelas, pontos elétricos) sem quantidade
+4. Especificações técnicas críticas ausentes (tipo de material, acabamento)
+
+SE FALTAR INFORMAÇÃO CRÍTICA:
+- Defina analysisStatus = "waiting_for_user_input"
+- Preencha missingInfoRequests com as perguntas necessárias
+- Cada pergunta deve ter: fieldId (único), question (clara), type (number/text/select), unit (se aplicável)
+
+SE TODAS AS INFORMAÇÕES ESTIVEREM PRESENTES:
+- Defina analysisStatus = "completed"
+- missingInfoRequests deve ser array vazio
 
 ⚠️ REGRA CRÍTICA: PROCESSAR 100% DOS ITENS!
 Você DEVE processar TODOS os grupos de serviços e TODOS os itens do memorial.
@@ -166,54 +188,58 @@ GRUPOS TÍPICOS DE SERVIÇOS (processar TODOS):
 6. FORRO E ACABAMENTOS (gesso, pintura, rodapés)
 7. ESQUADRIAS (portas, janelas, ferragens)
 8. INSTALAÇÕES HIDROSSANITÁRIAS (tubulações, louças, metais)
-9. INSTALAÇÕES ELÉTRICAS (fiação, quadros, pontos, iluminação)
+9. INSTALAçÕES ELÉTRICAS (fiação, quadros, pontos, iluminação)
 10. LIMPEZA E FINALIZAÇÃO (limpeza, remoção de entulho)
 
 REGRAS:
 1. Ler o memorial COMPLETO do início ao fim
 2. Extrair CADA ITEM de CADA TABELA do documento
 3. Manter o número do grupo/seção original (ex: 1.1, 2.3, 8.5)
-4. Se faltar medida, NÃO ESTIMAR - marcar como "Pendente de Vistoria"
+4. Se faltar medida CRÍTICA, SOLICITAR ao usuário via missingInfoRequests
 5. Referenciar normas ABNT NBR aplicáveis
 6. Identificar itens críticos que precisam de atenção especial
 
-VALIDAÇÃO FINAL:
-- Verifique se processou TODOS os grupos numerados do memorial
-- Verifique se nenhuma tabela foi pulada
-- O número de itens na saída deve ser >= número de linhas nas tabelas do input
-
-FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences e criticalNotes.`;
+FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences, criticalNotes, missingInfoRequests e analysisStatus.`;
   }
   
   getUserPrompt(input: EngenheiroTecnicoInput): string {
+    // Se há respostas do usuário, incluir no prompt
+    const userResponsesSection = input.userResponses && Object.keys(input.userResponses).length > 0
+      ? `\n\nDADOS COMPLEMENTARES FORNECIDOS PELO USUÁRIO:\n${Object.entries(input.userResponses)
+          .map(([key, value]) => `- ${key}: ${value}`)
+          .join('\n')}\n\nUse esses dados para completar a análise. Se ainda faltar informação, solicite novamente.`
+      : '';
+
     return `Analise o seguinte Memorial Descritivo e extraia TODOS os itens de engenharia.
 
 ⚠️ IMPORTANTE: Você DEVE processar o documento COMPLETO, do início ao fim.
 NÃO interrompa a leitura. NÃO omita nenhum grupo de serviços.
 
+⚠️ INTERATIVIDADE: Se o memorial for vago (ex: "pintar sala" sem área),
+você DEVE solicitar as informações faltantes via missingInfoRequests.
+
 MEMORIAL DESCRITIVO:
 ${input.memorialDescritivo}
 
 LOCALIZAÇÃO: ${input.location}
-RESTRIÇÕES: ${input.restrictions}
+RESTRIÇÕES: ${input.restrictions}${userResponsesSection}
 
 INSTRUÇÕES:
 1. Leia o memorial COMPLETO
 2. Identifique TODOS os grupos de serviços (1, 2, 3... até o último)
 3. Extraia CADA ITEM de CADA TABELA
 4. Mantenha a numeração original (1.1, 1.2, 2.1, etc.)
-5. NÃO pule nenhum grupo, especialmente:
-   - Estrutura e Vedação
-   - Cobertura
-   - Instalações Hidrossanitárias
-   - Instalações Elétricas
+5. Se faltar informação crítica (metragem, quantidade), SOLICITE ao usuário
+6. NÃO pule nenhum grupo
 
 Retorne um JSON com:
-- items: lista COMPLETA de itens com group (número do grupo), itemNumber (número do item), description, quantity (se disponível), unit, specifications, nbrReference, isPendingVistoria
-- pendingItems: lista de itens que precisam de vistoria para definir quantidade
+- analysisStatus: "completed" se todas as informações estão presentes, "waiting_for_user_input" se faltam dados
+- missingInfoRequests: array de solicitações (fieldId, question, type, unit) - vazio se analysisStatus = "completed"
+- items: lista de itens (só preencher completamente se analysisStatus = "completed")
+- pendingItems: lista de itens que precisam de vistoria
 - nbrReferences: lista de normas ABNT aplicáveis
 - criticalNotes: observações críticas sobre o memorial
-- groupsProcessed: lista dos grupos processados (ex: ["1. SERVIÇOS PRELIMINARES", "2. ESTRUTURA", ...])
+- groupsProcessed: lista dos grupos processados
 - totalItemsExtracted: número total de itens extraídos`;
   }
   
@@ -221,6 +247,28 @@ Retorne um JSON com:
     return {
       type: "object",
       properties: {
+        analysisStatus: {
+          type: "string",
+          enum: ["completed", "waiting_for_user_input"],
+          description: "Status da análise: completed se dados suficientes, waiting_for_user_input se faltam dados"
+        },
+        missingInfoRequests: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              fieldId: { type: "string", description: "ID único para o campo, ex: area_pintura_sala" },
+              question: { type: "string", description: "Pergunta clara para o usuário" },
+              type: { type: "string", enum: ["number", "text", "select", "textarea"], description: "Tipo de input" },
+              unit: { type: "string", description: "Unidade de medida, ex: m²" },
+              options: { type: "array", items: { type: "string" }, description: "Opções para select" },
+              hint: { type: "string", description: "Dica para ajudar o usuário" },
+            },
+            required: ["fieldId", "question", "type"],
+            additionalProperties: false,
+          },
+          description: "Lista de informações faltantes a solicitar ao usuário"
+        },
         items: {
           type: "array",
           items: {
@@ -245,7 +293,7 @@ Retorne um JSON com:
         groupsProcessed: { type: "array", items: { type: "string" } },
         totalItemsExtracted: { type: "number" },
       },
-      required: ["items", "pendingItems", "nbrReferences", "criticalNotes", "groupsProcessed", "totalItemsExtracted"],
+      required: ["analysisStatus", "missingInfoRequests", "items", "pendingItems", "nbrReferences", "criticalNotes", "groupsProcessed", "totalItemsExtracted"],
       additionalProperties: false,
     };
   }

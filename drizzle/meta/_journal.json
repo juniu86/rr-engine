@@ -71,6 +71,13 @@
       "when": 1769023786882,
       "tag": "0009_fair_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1769024808752,
+      "tag": "0010_exotic_thunderball",
+      "breakpoints": true
     }
   ]
 }

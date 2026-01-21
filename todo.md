@@ -286,3 +286,64 @@
 - [x] AuditorAgent: validar se companySettings foi salvo pelo menos uma vez
 - [x] AuditorAgent: emitir warning se usando configurações padrão
 - [x] Dashboard: exibir banner de alerta para novos usuários sem configurações
+
+## v2.1 - Interatividade do Engenheiro Técnico (ALTA PRIORIDADE)
+### Problema
+- Memorial descritivo vago (ex: "pintar parede" sem área em m²) gera orçamento impreciso
+- Sistema precisa identificar ambiguidade e solicitar dados necessários ao usuário
+
+### Tarefa 1: Definir Interfaces (Backend) ✅
+- [x] Criar interface AgentResponse<T> em shared/agents.ts
+- [x] Criar interface MissingInfoRequest com fieldId, question, type, unit, options
+- [x] Definir tipos: "completed" | "waiting_for_user_input" | "failed"
+- [x] Criar interface AgentState para persistência
+- [x] Criar type UserResponses para respostas do usuário
+
+### Tarefa 2: Persistência de Estado (Banco de Dados) ✅
+- [x] Adicionar campo missingInfoRequests no schema de agentExecutions (JSON)
+- [x] Adicionar campo userResponses no schema de agentExecutions (JSON)
+- [x] Adicionar campo iterationCount no schema de agentExecutions
+- [x] Adicionar status waiting_for_user_input ao enum
+- [x] Executar migração do banco de dados
+
+### Tarefa 3: Modificar EngenheiroTecnicoAgent (Backend) ✅
+- [x] Atualizar getSystemPrompt para instruir LLM a identificar dados faltantes
+- [x] Atualizar getOutputSchema para incluir missingInfoRequests e analysisStatus
+- [x] Atualizar getUserPrompt para incluir userResponses quando disponível
+- [x] Adicionar campo userResponses ao EngenheiroTecnicoInput
+- [x] Adicionar campos missingInfoRequests e analysisStatus ao EngenheiroTecnicoOutput
+
+### Tarefa 4: Criar Endpoint continueAgent (Backend) ✅
+- [x] Criar endpoint tRPC project.continueAgent
+- [x] Receber projectId, agentType e respostas do usuário
+- [x] Re-executar EngenheiroTecnicoAgent com dados complementares
+- [x] Continuar pipeline se agente retornar completed
+- [x] Criar endpoint getMissingInfoRequests para consultar solicitações pendentes
+- [x] Atualizar buildAgentInput para aceitar userResponses
+
+### Tarefa 5: Formulário Dinâmico (Frontend) ✅
+- [x] Verificar status do EngenheiroTecnicoAgent em ProjectDetails.tsx
+- [x] Renderizar formulário dinâmico baseado em missingInfoRequests
+- [x] Usar componentes ShadCN (Input, Select, Label)
+- [x] Chamar mutação project.continueAgent ao submeter
+- [x] Adicionar status waiting_for_user_input ao statusConfig
+- [x] Detectar automaticamente agente aguardando input e abrir modal
+- [x] Validar campos obrigatórios antes de enviar
+
+### Tarefa 6: Testes e Validação ✅
+- [x] Criar testes unitários para interatividade (13 testes)
+- [x] Testar interfaces MissingInfoRequest e AgentState
+- [x] Testar validação de UserResponses
+- [x] Testar detecção de memorial vago
+- [x] Testar limite de iterações
+- [x] Testar validação de campos obrigatórios
+- [ ] Verificar que UI exibe pergunta clara
+- [ ] Verificar que processo continua após resposta do usuário
+
+### Critérios de Aceitação
+- [ ] Memorial vago pausa o processo
+- [ ] UI exibe pergunta clara ao usuário
+- [ ] Processo continua após usuário inserir dados
+- [ ] Arquitetura AgentResponse implementada
+- [ ] Endpoint continueAgent criado
+- [ ] Estado salvo no banco de dados

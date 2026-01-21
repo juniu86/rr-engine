@@ -63,7 +63,80 @@ export type PriceSource = "sinapi" | "pini" | "mercado";
 export type ProjectStatus = "draft" | "processing" | "review" | "approved" | "rejected";
 
 // Agent Execution Status
-export type AgentStatus = "pending" | "running" | "completed" | "failed" | "needs_review";
+export type AgentStatus = "pending" | "running" | "completed" | "failed" | "needs_review" | "waiting_for_user_input";
+
+// ========================================
+// INTERATIVIDADE DO AGENTE (v2.1)
+// ========================================
+
+/**
+ * Tipo de input esperado para uma solicitação de informação faltante
+ */
+export type MissingInfoInputType = "number" | "text" | "select" | "textarea";
+
+/**
+ * Representa uma solicitação de informação faltante que o agente precisa do usuário
+ */
+export interface MissingInfoRequest {
+  /** ID único para o campo, ex: "area_pintura_sala" */
+  fieldId: string;
+  /** A pergunta para o usuário, ex: "Qual a área em m² da parede da sala a ser pintada?" */
+  question: string;
+  /** Tipo de input esperado */
+  type: MissingInfoInputType;
+  /** Unidade de medida, ex: "m²" */
+  unit?: string;
+  /** Opções para o tipo 'select' */
+  options?: string[];
+  /** Valor padrão sugerido */
+  defaultValue?: string | number;
+  /** Se o campo é obrigatório */
+  required?: boolean;
+  /** Contexto adicional para ajudar o usuário */
+  hint?: string;
+}
+
+/**
+ * Resposta genérica de um agente que pode pausar para solicitar informações
+ */
+export interface AgentResponse<T> {
+  /** Status da execução do agente */
+  status: "completed" | "waiting_for_user_input" | "failed";
+  /** Dados de saída quando status = "completed" */
+  data?: T;
+  /** Lista de informações faltantes quando status = "waiting_for_user_input" */
+  missingInfoRequests?: MissingInfoRequest[];
+  /** Mensagem de erro quando status = "failed" */
+  error?: string;
+  /** Mensagem explicativa para o usuário */
+  message?: string;
+}
+
+/**
+ * Respostas do usuário para as solicitações de informação faltante
+ * Mapeamento de fieldId para o valor fornecido
+ */
+export type UserResponses = Record<string, string | number>;
+
+/**
+ * Estado persistido do agente para retomada
+ */
+export interface AgentState {
+  /** Tipo do agente que está aguardando input */
+  agentType: AgentType;
+  /** Solicitações de informação pendentes */
+  pendingRequests: MissingInfoRequest[];
+  /** Respostas já fornecidas pelo usuário */
+  userResponses: UserResponses;
+  /** Número de iterações de solicitação (para evitar loops infinitos) */
+  iterationCount: number;
+  /** Timestamp da última atualização */
+  updatedAt: number;
+}
+
+// ========================================
+// FIM INTERATIVIDADE DO AGENTE
+// ========================================
 
 // Memorial Item (parsed from memorial descritivo)
 export interface MemorialItem {
@@ -102,6 +175,8 @@ export interface EngenheiroTecnicoInput {
   memorialDescritivo: string;
   location: string;
   restrictions: string;
+  /** Respostas do usuário para dados faltantes (v2.1) */
+  userResponses?: UserResponses;
 }
 
 export interface EngenheiroTecnicoOutput {
@@ -109,6 +184,10 @@ export interface EngenheiroTecnicoOutput {
   pendingItems: string[];
   nbrReferences: string[];
   criticalNotes: string[];
+  /** Solicitações de informação faltante para interatividade (v2.1) */
+  missingInfoRequests?: MissingInfoRequest[];
+  /** Status da análise: completed = dados suficientes, waiting = precisa de mais dados */
+  analysisStatus?: "completed" | "waiting_for_user_input";
 }
 
 export interface LogisticaInput {
