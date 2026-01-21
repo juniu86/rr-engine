@@ -17,6 +17,8 @@ import {
   TrendingUp
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Settings } from "lucide-react";
 
 const statusConfig = {
   draft: { label: "Rascunho", color: "bg-slate-500", icon: FileText },
@@ -31,6 +33,7 @@ const statusConfig = {
 export default function Dashboard() {
   const { user } = useAuth();
   const { data: projects, isLoading } = trpc.project.list.useQuery();
+  const { data: hasCustomSettings } = trpc.settings.hasCustomSettings.useQuery();
 
   const stats = {
     total: projects?.length || 0,
@@ -57,6 +60,21 @@ export default function Dashboard() {
             </Button>
           </Link>
         </div>
+
+        {/* Banner de Alerta - Configurações Não Personalizadas */}
+        {hasCustomSettings === false && (
+          <Alert className="border-amber-500/50 bg-amber-500/10">
+            <Settings className="h-4 w-4 text-amber-500" />
+            <AlertTitle className="text-amber-500">Configure sua Empresa</AlertTitle>
+            <AlertDescription>
+              Você ainda não personalizou suas configurações de impostos e BDI. 
+              Orçamentos gerados usarão valores padrão, o que pode afetar a precisão.
+              <Link href="/settings" className="ml-2 text-primary hover:underline font-medium">
+                Configurar agora →
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">

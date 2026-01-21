@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, Calculator, Percent, Receipt, Save, RefreshCw } from "lucide-react";
+import { ArrowLeft, Building2, Calculator, Percent, Receipt, Save, RefreshCw, CreditCard, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const ESTADOS_BRASIL = [
@@ -65,6 +65,12 @@ export default function Settings() {
     },
   });
 
+  // Estado para parcelas de faturamento
+  const [installments, setInstallments] = useState<{name: string, percentage: number}[]>([
+    { name: "Entrada", percentage: 40 },
+    { name: "Final", percentage: 60 }
+  ]);
+
   // Form state
   const [formData, setFormData] = useState({
     companyName: "",
@@ -106,6 +112,10 @@ export default function Settings() {
         regimeTributario: settings.regimeTributario || "lucro_presumido",
         dataReferenciaPrecos: settings.dataReferenciaPrecos || "2025/01",
       });
+      // Carregar parcelas de faturamento
+      if (settings.billingInstallments && Array.isArray(settings.billingInstallments)) {
+        setInstallments(settings.billingInstallments as {name: string, percentage: number}[]);
+      }
     }
   }, [settings]);
 
@@ -190,6 +200,39 @@ export default function Settings() {
     toast.info(`BDI calculado: ${bdiPercentual}%`);
   };
 
+  // Funções para gerenciar parcelas de faturamento
+  const addInstallment = () => {
+    setInstallments(prev => [...prev, { name: `Parcela ${prev.length + 1}`, percentage: 0 }]);
+  };
+
+  const removeInstallment = (index: number) => {
+    if (installments.length <= 2) {
+      toast.error("Mínimo de 2 parcelas necessárias");
+      return;
+    }
+    setInstallments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateInstallment = (index: number, field: 'name' | 'percentage', value: string | number) => {
+    setInstallments(prev => prev.map((item, i) => 
+      i === index ? { ...item, [field]: field === 'percentage' ? Number(value) : value } : item
+    ));
+  };
+
+  const totalInstallmentPercentage = () => {
+    return installments.reduce((sum, item) => sum + item.percentage, 0);
+  };
+
+  const applyInstallmentPreset = (preset: '40-60' | '50-50' | '30-40-30') => {
+    const presets = {
+      '40-60': [{ name: 'Entrada', percentage: 40 }, { name: 'Final', percentage: 60 }],
+      '50-50': [{ name: 'Entrada', percentage: 50 }, { name: 'Final', percentage: 50 }],
+      '30-40-30': [{ name: 'Entrada', percentage: 30 }, { name: 'Intermediária', percentage: 40 }, { name: 'Final', percentage: 30 }],
+    };
+    setInstallments(presets[preset]);
+    toast.success(`Preset "${preset}" aplicado!`);
+  };
+
   // Calculate total taxes
   const totalTributos = () => {
     const iss = parseFloat(formData.issPercentual) || 0;
@@ -201,10 +244,18 @@ export default function Settings() {
   };
 
   const handleSave = () => {
+    // Validar soma das parcelas
+    const totalPercent = totalInstallmentPercentage();
+    if (totalPercent !== 100) {
+      toast.error(`A soma das parcelas deve ser 100%. Atual: ${totalPercent}%`);
+      return;
+    }
+    
     updateSettings.mutate({
       ...formData,
       priceRegion: formData.priceRegion as "AC" | "AL" | "AP" | "AM" | "BA" | "CE" | "DF" | "ES" | "GO" | "MA" | "MT" | "MS" | "MG" | "PA" | "PB" | "PR" | "PE" | "PI" | "RJ" | "RN" | "RS" | "RO" | "RR" | "SC" | "SP" | "SE" | "TO",
       regimeTributario: formData.regimeTributario as "simples_nacional" | "lucro_presumido" | "lucro_real",
+      billingInstallments: JSON.stringify(installments),
     });
   };
 
@@ -244,7 +295,7 @@ export default function Settings() {
 
       <main className="container py-8">
         <Tabs defaultValue="empresa" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-[600px]">
+          <TabsList className="grid w-full grid-cols-5 lg:w-[750px]">
             <TabsTrigger value="empresa" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               <span className="hidden sm:inline">Empresa</span>
@@ -256,6 +307,10 @@ export default function Settings() {
             <TabsTrigger value="bdi" className="flex items-center gap-2">
               <Calculator className="h-4 w-4" />
               <span className="hidden sm:inline">BDI</span>
+            </TabsTrigger>
+            <TabsTrigger value="faturamento" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              <span className="hidden sm:inline">Faturamento</span>
             </TabsTrigger>
             <TabsTrigger value="precos" className="flex items-center gap-2">
               <Percent className="h-4 w-4" />
@@ -556,6 +611,101 @@ export default function Settings() {
                     Onde: AC = Administração Central, DF = Despesas Financeiras, R = Riscos, L = Lucro
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Faturamento */}
+          <TabsContent value="faturamento">
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle>Configuração de Parcelas</CardTitle>
+                    <CardDescription>
+                      Defina como o valor total será dividido em parcelas de faturamento.
+                      Total atual: <strong className={totalInstallmentPercentage() === 100 ? 'text-green-500' : 'text-red-500'}>{totalInstallmentPercentage()}%</strong>
+                    </CardDescription>
+                  </div>
+                </div>
+                {/* Preset Buttons */}
+                <div className="flex flex-wrap gap-2 pt-4 border-t mt-4">
+                  <span className="text-sm text-muted-foreground mr-2 self-center">Presets:</span>
+                  <Button variant="outline" size="sm" onClick={() => applyInstallmentPreset('40-60')}>
+                    40/60
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => applyInstallmentPreset('50-50')}>
+                    50/50
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => applyInstallmentPreset('30-40-30')}>
+                    30/40/30
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Lista de Parcelas */}
+                <div className="space-y-3">
+                  {installments.map((installment, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+                      <div className="flex-1">
+                        <Label htmlFor={`installment-name-${index}`} className="text-xs text-muted-foreground">Nome</Label>
+                        <Input
+                          id={`installment-name-${index}`}
+                          value={installment.name}
+                          onChange={(e) => updateInstallment(index, 'name', e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div className="w-32">
+                        <Label htmlFor={`installment-percent-${index}`} className="text-xs text-muted-foreground">Percentual</Label>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Input
+                            id={`installment-percent-${index}`}
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={installment.percentage}
+                            onChange={(e) => updateInstallment(index, 'percentage', e.target.value)}
+                          />
+                          <span className="text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="mt-5 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                        onClick={() => removeInstallment(index)}
+                        disabled={installments.length <= 2}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Botão Adicionar Parcela */}
+                <Button variant="outline" onClick={addInstallment} className="w-full">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar Parcela
+                </Button>
+
+                {/* Aviso de Validação */}
+                {totalInstallmentPercentage() !== 100 && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                    <p className="text-sm text-red-200">
+                      <strong>Atenção:</strong> A soma das parcelas deve ser exatamente 100%.
+                      Faltam <strong>{100 - totalInstallmentPercentage()}%</strong> para completar.
+                    </p>
+                  </div>
+                )}
+
+                {totalInstallmentPercentage() === 100 && (
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                    <p className="text-sm text-green-200">
+                      <strong>✓ Válido:</strong> As parcelas somam 100% e estão prontas para uso.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

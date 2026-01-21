@@ -266,3 +266,23 @@
 - [ ] Criar componente ProjectCard redesenhado
 - [ ] Adicionar animações em Button component
 - [ ] Implementar badges de status coloridos
+
+## v2.0 - Melhorias de Limpeza e Flexibilização
+### Tarefa 1: Limpeza de Código Morto (CRÍTICA) ✅
+- [x] Remover constante TAX_RATES de shared/agents.ts
+- [x] Remover constante CONTRACT_BDI de shared/agents.ts
+- [x] Remover importação de TAX_RATES e CONTRACT_BDI de server/agents/index.ts
+- [x] Verificar com grep que não há referências ocultas
+
+### Tarefa 2: Flexibilização do Faturamento (CRÍTICA) ✅
+- [x] Adicionar seção "Configurações de Faturamento" em Settings.tsx
+- [x] Criar componente de parcelas dinâmicas (nome + percentual)
+- [x] Validação em tempo real: soma dos percentuais = 100%
+- [x] Adicionar presets: 40/60, 50/50, 30/40/30
+- [x] Adicionar campo billingInstallments ao schema de companySettings
+- [ ] Atualizar FinanceiroAgent para usar configuração do banco (próxima fase)
+
+### Tarefa 3: Validação de Configurações (ALTA PRIORIDADE) ✅
+- [x] AuditorAgent: validar se companySettings foi salvo pelo menos uma vez
+- [x] AuditorAgent: emitir warning se usando configurações padrão
+- [x] Dashboard: exibir banner de alerta para novos usuários sem configurações

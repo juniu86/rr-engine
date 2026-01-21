@@ -64,6 +64,13 @@
       "when": 1768844380858,
       "tag": "0008_living_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1769023786882,
+      "tag": "0009_fair_siren",
+      "breakpoints": true
     }
   ]
 }

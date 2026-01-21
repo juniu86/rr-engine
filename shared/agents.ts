@@ -50,23 +50,11 @@ export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
   auditor: "Validação matemática e consistência entre todos os documentos",
 };
 
-// Contract Types
+// Contract Types (deprecated - BDI agora vem das configurações da empresa)
 export type ContractType = "manutencao" | "obra";
-
-export const CONTRACT_BDI: Record<ContractType, number> = {
-  manutencao: 0.40,
-  obra: 0.55,
-};
 
 // Tax Types
 export type TaxType = "iss" | "icms" | "both" | "none";
-
-export const TAX_RATES = {
-  iss: 0.05,
-  icms: 0.18,
-  pis_cofins: 0.0365,
-  inss: 0.11,
-};
 
 // Budget Item Sources
 export type PriceSource = "sinapi" | "pini" | "mercado";
@@ -360,6 +348,7 @@ export interface AuditorInput {
     bdiPercentual: number;
     contractType?: ContractType;
   };
+  hasCustomSettings: boolean; // Se o usuário já salvou configurações personalizadas
 }
 
 export interface AuditorValidation {

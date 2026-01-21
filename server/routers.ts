@@ -891,6 +891,12 @@ export const appRouter = router({
         return db.getCompanySettingsOrDefault(ctx.user.id);
       }),
 
+    // Verificar se o usuário já salvou configurações personalizadas
+    hasCustomSettings: protectedProcedure
+      .query(async ({ ctx }) => {
+        return db.hasCustomCompanySettings(ctx.user.id);
+      }),
+
     update: protectedProcedure
       .input(z.object({
         companyName: z.string().optional(),
@@ -909,6 +915,7 @@ export const appRouter = router({
         riscosPercentual: z.string().optional(),
         regimeTributario: z.enum(["simples_nacional", "lucro_presumido", "lucro_real"]).optional(),
         dataReferenciaPrecos: z.string().optional(),
+        billingInstallments: z.string().optional(), // JSON string de parcelas
       }))
       .mutation(async ({ ctx, input }) => {
         return db.upsertCompanySettings(ctx.user.id, input);
@@ -1332,6 +1339,8 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
     case "auditor":
       // Auditor recebe todos os outputs para validação cruzada
       const projectBdiAuditor = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) : 25;
+      // Verificar se o usuário já salvou configurações personalizadas
+      const hasCustomSettings = await db.hasCustomCompanySettings(userId);
       return {
         allAgentOutputs: {
           engenheiro: getOutput("engenheiro_tecnico"),
@@ -1349,6 +1358,7 @@ async function buildAgentInput(agentType: AgentType, project: any, executions: a
           bdiPercentual: projectBdiAuditor,
           contractType: project.contractType,
         },
+        hasCustomSettings,
       };
       
     default:

@@ -266,6 +266,10 @@ export const companySettings = mysqlTable("company_settings", {
   // Data de referência dos preços (formato YYYY/MM)
   dataReferenciaPrecos: varchar("dataReferenciaPrecos", { length: 10 }).default("2025/01"),
   
+  // Configurações de Faturamento - Parcelas dinâmicas
+  // JSON array: [{name: "Entrada", percentage: 40}, {name: "Final", percentage: 60}]
+  billingInstallments: json("billingInstallments"),
+  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

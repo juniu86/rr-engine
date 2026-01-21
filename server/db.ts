@@ -530,6 +530,7 @@ export async function getCompanySettingsOrDefault(userId: number): Promise<Compa
     riscosPercentual: "1.00",
     regimeTributario: "lucro_presumido",
     dataReferenciaPrecos: "2025/01",
+    billingInstallments: [{name: "Entrada", percentage: 40}, {name: "Final", percentage: 60}],
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -716,4 +717,11 @@ export async function getAdminProjects() {
   }));
   
   return projectsWithDetails;
+}
+
+
+// Função para verificar se o usuário já salvou configurações personalizadas
+export async function hasCustomCompanySettings(userId: number): Promise<boolean> {
+  const settings = await getCompanySettingsByUserId(userId);
+  return settings !== null;
 }

@@ -23,7 +23,7 @@ import type {
   AuditorOutput,
   ContractType,
 } from "../../shared/agents";
-import { AGENT_NAMES, CONTRACT_BDI, TAX_RATES } from "../../shared/agents";
+import { AGENT_NAMES } from "../../shared/agents";
 
 // Base agent class
 abstract class BaseAgent<TInput, TOutput> {
@@ -1425,6 +1425,10 @@ MISSÃO: Executar auditoria final de consistência antes da emissão da proposta
    - Verificar se Comercial.finalPrice é usado em todos os documentos
    - Verificar se Gestão.totalDays é usado no Jurídico
 
+7. CONFIGURAÇÕES PERSONALIZADAS (WARNING)
+   - Verificar se hasCustomSettings = true
+   - Se false: WARNING com mensagem "Atenção: Este orçamento foi gerado com impostos e BDI padrão. Personalize suas configurações em 'Configurações da Empresa' para maior precisão."
+
 === CRITÉRIOS DE SELO DE AUDITORIA ===
 
 - "approved": 0 erros críticos, 0 warnings
@@ -1444,7 +1448,7 @@ Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da pro
   }
   
   getUserPrompt(input: AuditorInput): string {
-    const { allAgentOutputs, projectConfig } = input;
+    const { allAgentOutputs, projectConfig, hasCustomSettings } = input;
     
     // Extrair dados para auditoria
     const directCost = allAgentOutputs.orcamentista?.totalDirectCost || 0;
@@ -1495,6 +1499,9 @@ PRAZO:
 DECISÃO DO BOARD:
 - Aprovado: ${allAgentOutputs.board?.approved ? 'Sim' : 'Não'}
 - Bloqueado: ${allAgentOutputs.board?.blockProposal ? 'Sim' : 'Não'}
+
+CONFIGURAÇÕES DA EMPRESA:
+- Configurações Personalizadas: ${hasCustomSettings ? 'Sim (usuário salvou configurações)' : 'NÃO (usando valores padrão - EMITIR WARNING)'}
 
 === AÇÃO REQUERIDA ===
 
