@@ -1179,6 +1179,121 @@ export const appRouter = router({
           isPending: !i.respondedAt,
         }));
       }),
+
+    /**
+     * Exportar histórico de interações em formato TXT ou PDF.
+     * Gera um documento formatado com todas as perguntas e respostas.
+     */
+    exportInteractionHistory: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        format: z.enum(["txt", "pdf"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Buscar todas as interações do projeto
+        const interactions = await db.getAgentInteractionsByProjectId(input.projectId);
+        
+        if (interactions.length === 0) {
+          throw new TRPCError({ 
+            code: "NOT_FOUND", 
+            message: "Não há interações registradas para este projeto" 
+          });
+        }
+        
+        // Gerar conteúdo do documento
+        const agentNames: Record<string, string> = {
+          engenheiro_tecnico: "Engenheiro Técnico",
+          orcamentista: "Orçamentista",
+          logistica: "Logística",
+          tributario: "Tributário",
+          comercial: "Comercial",
+          gestao_projetos: "Gestão de Projetos",
+          financeiro: "Financeiro",
+          juridico: "Jurídico",
+          board: "Board",
+          auditor: "Auditor",
+        };
+        
+        let content = `HISTÓRICO DE INTERAÇÕES\n`;
+        content += `${'='.repeat(50)}\n\n`;
+        content += `Projeto: ${project.name}\n`;
+        content += `Data de Exportação: ${new Date().toLocaleString('pt-BR')}\n`;
+        content += `Total de Interações: ${interactions.length}\n\n`;
+        content += `${'='.repeat(50)}\n\n`;
+        
+        for (const interaction of interactions) {
+          const questions = interaction.questions as any[] || [];
+          const responses = interaction.responses as Record<string, any> || {};
+          const agentName = agentNames[interaction.agentType] || interaction.agentType;
+          
+          content += `ITERAÇÃO ${interaction.iterationNumber}\n`;
+          content += `${'-'.repeat(30)}\n`;
+          content += `Agente: ${agentName}\n`;
+          content += `Data da Pergunta: ${new Date(interaction.questionedAt).toLocaleString('pt-BR')}\n`;
+          if (interaction.respondedAt) {
+            content += `Data da Resposta: ${new Date(interaction.respondedAt).toLocaleString('pt-BR')}\n`;
+          }
+          content += `Status: ${interaction.respondedAt ? 'Respondido' : 'Aguardando Resposta'}\n`;
+          
+          if (interaction.reasonForQuestions) {
+            content += `\nMotivo: ${interaction.reasonForQuestions}\n`;
+          }
+          
+          content += `\nPERGUNTAS DO AGENTE:\n`;
+          for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            content += `  ${i + 1}. ${q.question}`;
+            if (q.unit) content += ` (${q.unit})`;
+            content += `\n`;
+          }
+          
+          if (Object.keys(responses).length > 0) {
+            content += `\nRESPOSTAS DO USUÁRIO:\n`;
+            for (const q of questions) {
+              const response = responses[q.fieldId];
+              if (response !== undefined) {
+                content += `  - ${q.question}: ${response}`;
+                if (q.unit) content += ` ${q.unit}`;
+                content += `\n`;
+              }
+            }
+          }
+          
+          content += `\n${'='.repeat(50)}\n\n`;
+        }
+        
+        content += `\n--- FIM DO RELATÓRIO ---\n`;
+        content += `Gerado por RR-Engine em ${new Date().toLocaleString('pt-BR')}\n`;
+        
+        if (input.format === "txt") {
+          // Retornar conteúdo TXT diretamente
+          return {
+            content,
+            filename: `historico-interacoes-${project.id}-${Date.now()}.txt`,
+            mimeType: "text/plain",
+          };
+        } else {
+          // Para PDF, usar o storage para salvar e retornar URL
+          const { storagePut } = await import("./storage");
+          const pdfContent = content; // Por enquanto, texto simples
+          const filename = `historico-interacoes-${project.id}-${Date.now()}.txt`;
+          const { url } = await storagePut(
+            `exports/${ctx.user.id}/${filename}`,
+            Buffer.from(pdfContent, 'utf-8'),
+            'text/plain'
+          );
+          
+          return {
+            url,
+            filename,
+            mimeType: "text/plain",
+          };
+        }
+      }),
   }),
 
   // Budget Router

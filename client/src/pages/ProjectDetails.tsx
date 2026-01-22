@@ -227,6 +227,37 @@ export default function ProjectDetails() {
     },
   });
 
+  // Mutation para exportar histórico de interações
+  const exportHistory = trpc.agent.exportInteractionHistory.useMutation({
+    onSuccess: (data) => {
+      if (data.content) {
+        // Download direto do conteúdo TXT
+        const blob = new Blob([data.content], { type: data.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("Histórico exportado com sucesso!");
+      } else if (data.url) {
+        // Abrir URL do arquivo
+        window.open(data.url, '_blank');
+        toast.success("Histórico exportado com sucesso!");
+      }
+    },
+    onError: (error) => {
+      toast.error("Erro ao exportar histórico: " + error.message);
+    },
+  });
+
+  // Função para exportar histórico
+  const handleExportHistory = (format: "txt" | "pdf") => {
+    exportHistory.mutate({ projectId, format });
+  };
+
   // Mutation para selecionar itens opcionais
   const selectOptionalItems = trpc.agent.selectOptionalItems.useMutation({
     onSuccess: (data) => {
@@ -1023,7 +1054,22 @@ export default function ProjectDetails() {
                       <MessageSquare className="h-5 w-5 text-primary" />
                       <CardTitle>Histórico de Interações</CardTitle>
                     </div>
-                    <Badge variant="outline">{interactionHistory.length} interações</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{interactionHistory.length} interações</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleExportHistory("txt")}
+                        disabled={exportHistory.isPending}
+                      >
+                        {exportHistory.isPending ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <Download className="mr-1 h-3 w-3" />
+                        )}
+                        Exportar TXT
+                      </Button>
+                    </div>
                   </div>
                   <CardDescription>
                     Registro de todas as perguntas feitas pelo Engenheiro Técnico e respostas fornecidas

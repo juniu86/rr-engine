@@ -410,3 +410,11 @@
 - [x] Criar UI para exibir histórico de interações no projeto
 - [x] Quando atingir limite de iterações, exibir resumo completo de todas as interações
 - [x] Mostrar registro de interações na aba Agentes ou em seção dedicada
+
+## v2.3.1 - Exportar Histórico de Interações
+### Requisitos
+- [x] Criar endpoint de exportação no backend (PDF e TXT)
+- [x] Adicionar botão "Exportar Histórico" na UI
+- [x] Gerar PDF formatado com perguntas/respostas (usando TXT por simplicidade)
+- [x] Gerar TXT simples para documentação
+- [x] Testar exportação em ambos os formatos

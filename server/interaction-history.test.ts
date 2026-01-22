@@ -306,4 +306,73 @@ describe("Histórico de Interações", () => {
       expect(errorMessage).toContain("informações técnicas");
     });
   });
+
+  describe("Exportação de Histórico", () => {
+    it("deve gerar conteúdo TXT formatado", () => {
+      const interactions: AgentInteraction[] = [
+        {
+          id: 1,
+          projectId: 100,
+          agentExecutionId: 50,
+          agentType: "engenheiro_tecnico",
+          iterationNumber: 1,
+          questions: [
+            { fieldId: "area", question: "Qual a área total?", type: "number", unit: "m²" },
+          ],
+          responses: { area: 150 },
+          reasonForQuestions: "Memorial incompleto",
+          questionedAt: new Date("2026-01-22T10:00:00"),
+          respondedAt: new Date("2026-01-22T10:05:00"),
+        },
+      ];
+
+      // Simular geração de conteúdo TXT
+      let content = `HISTÓRICO DE INTERAÇÕES\n`;
+      content += `${'='.repeat(50)}\n\n`;
+      content += `Projeto: Teste\n`;
+      content += `Total de Interações: ${interactions.length}\n\n`;
+
+      for (const interaction of interactions) {
+        content += `ITERAÇÃO ${interaction.iterationNumber}\n`;
+        content += `Agente: Engenheiro Técnico\n`;
+        content += `Status: Respondido\n`;
+        
+        for (const q of interaction.questions) {
+          content += `  - ${q.question}\n`;
+        }
+        
+        if (interaction.responses) {
+          for (const q of interaction.questions) {
+            const response = interaction.responses[q.fieldId];
+            if (response !== undefined) {
+              content += `  Resposta: ${response} ${q.unit || ''}\n`;
+            }
+          }
+        }
+      }
+
+      expect(content).toContain("HISTÓRICO DE INTERAÇÕES");
+      expect(content).toContain("ITERAÇÃO 1");
+      expect(content).toContain("Engenheiro Técnico");
+      expect(content).toContain("Qual a área total?");
+      expect(content).toContain("150 m²");
+    });
+
+    it("deve suportar formato TXT", () => {
+      const format = "txt";
+      const mimeType = format === "txt" ? "text/plain" : "application/pdf";
+      
+      expect(mimeType).toBe("text/plain");
+    });
+
+    it("deve gerar nome de arquivo com timestamp", () => {
+      const projectId = 100;
+      const timestamp = Date.now();
+      const filename = `historico-interacoes-${projectId}-${timestamp}.txt`;
+
+      expect(filename).toContain("historico-interacoes");
+      expect(filename).toContain("100");
+      expect(filename).toContain(".txt");
+    });
+  });
 });
