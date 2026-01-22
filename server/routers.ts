@@ -1001,11 +1001,20 @@ export const appRouter = router({
             status: "processing"
           });
           
+          // === CONTINUAR PIPELINE AUTOMATICAMENTE ===
+          // Disparar execução dos agentes restantes em background
+          const continueResult = await executeRemainingAgents(
+            input.projectId, 
+            input.agentType as AgentType, 
+            ctx.user.id
+          );
+          
           return {
             success: true,
             status: "completed",
             output,
-            message: "Agente completou a análise com sucesso!"
+            pipelineStatus: continueResult.status,
+            message: "Agente completou a análise e pipeline continua automaticamente!"
           };
           
         } catch (error) {
@@ -1375,6 +1384,178 @@ export const appRouter = router({
       }),
   }),
 });
+
+// === FUNÇÃO PARA CONTINUAR PIPELINE APÓS INTERATIVIDADE ===
+// Executa os agentes restantes após um agente completar via continueAgent
+async function executeRemainingAgents(
+  projectId: number,
+  completedAgentType: AgentType,
+  userId: number
+): Promise<{ status: string; completedAgents: string[]; error?: string }> {
+  const agentTypes: AgentType[] = [
+    "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
+    "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"
+  ];
+  
+  const completedAgentOrder = AGENT_ORDER[completedAgentType];
+  const remainingAgents = agentTypes.filter(t => AGENT_ORDER[t] > completedAgentOrder);
+  
+  console.log(`[Pipeline] Continuando após ${completedAgentType}. Agentes restantes: ${remainingAgents.join(', ')}`);
+  
+  const project = await db.getProjectById(projectId);
+  if (!project) {
+    return { status: "error", completedAgents: [], error: "Projeto não encontrado" };
+  }
+  
+  const completedAgents: string[] = [];
+  
+  for (const agentType of remainingAgents) {
+    const executions = await db.getAgentExecutionsByProjectId(projectId);
+    const execution = executions.find(e => e.agentType === agentType);
+    if (!execution) continue;
+    
+    await db.updateAgentExecution(execution.id, { status: "running", startedAt: new Date() });
+    
+    try {
+      const agentInput = await buildAgentInput(agentType, project, executions, userId);
+      const agent = agents[agentType];
+      const output = await agent.execute(agentInput);
+      
+      // Salvar itens de orçamento após execução do orçamentista
+      if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
+        const rawItems = (output as any).budgetItems;
+        const budgetItemsToSave = rawItems.map((item: any) => {
+          const quantity = Number(item.quantity) || 0;
+          const unitCostTotal = Number(item.unitCostTotal) || 0;
+          const totalCost = quantity * unitCostTotal;
+          const bdiPercent = 0.55;
+          const bdiAmount = totalCost * bdiPercent;
+          const finalPrice = totalCost + bdiAmount;
+          
+          return {
+            projectId: projectId,
+            category: item.category || 'Geral',
+            code: item.code || '',
+            description: item.description,
+            unit: item.unit,
+            quantity: String(quantity),
+            unitCostMaterial: String(item.unitCostMaterial || 0),
+            unitCostLabor: String(item.unitCostLabor || 0),
+            unitCostLogistics: String(item.unitCostLogistics || 0),
+            unitCostTotal: String(unitCostTotal),
+            totalCost: String(totalCost),
+            bdiAmount: String(bdiAmount),
+            finalPrice: String(finalPrice),
+            source: item.source || 'Estimativa',
+            sourceCode: item.sourceCode || null,
+            sourceDate: item.sourceDate || null,
+          };
+        });
+        await db.createBudgetItems(budgetItemsToSave);
+      }
+      
+      // Salvar custos logísticos
+      if (agentType === 'logistica' && output && (output as any).costs) {
+        try {
+          const rawCosts = (output as any).costs;
+          const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
+          const costsToSave = rawCosts.map((cost: any) => {
+            let category: typeof validCategories[number] = 'outros';
+            const rawCategory = (cost.category || '').toLowerCase();
+            if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
+            else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
+            else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
+            else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
+            else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
+            else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
+            
+            return {
+              projectId: projectId,
+              category,
+              description: String(cost.description || 'Custo logístico').substring(0, 1000),
+              quantity: String(Number(cost.quantity) || 1),
+              unit: String(cost.unit || 'un').substring(0, 20),
+              unitCost: String(Number(cost.unitCost) || 0),
+              totalCost: String(Number(cost.totalCost) || 0),
+            };
+          });
+          await db.createLogisticsCosts(costsToSave);
+        } catch (logisticsError) {
+          console.error('[Logistica] Error saving costs:', logisticsError);
+        }
+      }
+      
+      // Salvar cronograma
+      if (agentType === 'gestao_projetos' && output && (output as any).schedule) {
+        const rawSchedule = (output as any).schedule;
+        const scheduleToSave = rawSchedule.map((item: any) => ({
+          projectId: projectId,
+          description: item.activity || item.description || 'Atividade',
+          startWeek: item.startWeek,
+          duration: item.endWeek - item.startWeek + 1,
+          dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
+        }));
+        await db.createScheduleItems(scheduleToSave);
+      }
+      
+      // Salvar fluxo de caixa
+      if (agentType === 'financeiro' && output && (output as any).cashFlow) {
+        const rawCashFlow = (output as any).cashFlow;
+        let cumulativeBalance = 0;
+        const cashFlowToSave = rawCashFlow.map((item: any) => {
+          const expense = Number(item.expense || item.outflow || 0);
+          const income = Number(item.income || item.inflow || 0);
+          cumulativeBalance += income - expense;
+          return {
+            projectId: projectId,
+            weekNumber: item.week,
+            plannedExpense: String(expense),
+            plannedIncome: String(income),
+            actualExpense: null,
+            actualIncome: null,
+            cashBalance: String(cumulativeBalance),
+            hasAlert: cumulativeBalance < 0,
+          };
+        });
+        await db.createCashFlowItems(cashFlowToSave);
+      }
+      
+      await db.updateAgentExecution(execution.id, {
+        status: "completed",
+        output: output as any,
+        completedAt: new Date(),
+      });
+      
+      await db.updateProject(projectId, { currentAgentId: AGENT_ORDER[agentType] + 1 });
+      completedAgents.push(agentType);
+      
+      console.log(`[Pipeline] Agente ${agentType} completou com sucesso`);
+      
+    } catch (error) {
+      console.error(`[Pipeline] Erro no agente ${agentType}:`, error);
+      await db.updateAgentExecution(execution.id, {
+        status: "failed",
+        errors: { message: error instanceof Error ? error.message : "Unknown error" } as any,
+      });
+      await db.updateProject(projectId, { status: "review" });
+      return { status: "error", completedAgents, error: `Falha no agente ${agentType}` };
+    }
+  }
+  
+  // Verificar resultado do Board para definir status final
+  const finalExecutions = await db.getAgentExecutionsByProjectId(projectId);
+  const boardExec = finalExecutions.find(e => e.agentType === 'board');
+  const boardOutput = boardExec?.output as any;
+  
+  if (boardOutput?.blockProposal) {
+    await db.updateProject(projectId, { status: "blocked" });
+  } else {
+    await db.updateProject(projectId, { status: "approved" });
+  }
+  
+  console.log(`[Pipeline] Pipeline completo. ${completedAgents.length} agentes executados.`);
+  return { status: "completed", completedAgents };
+}
 
 // Helper function to build agent input based on previous outputs
 // userResponses: Respostas do usuário para interatividade (v2.1)

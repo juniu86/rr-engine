@@ -396,3 +396,9 @@
 - [x] Testar que logística não está zerada - R$ 5.700,00 exibido corretamente
 - [x] Testar que BDI percentual está correto - 34.0% exibido
 - [x] Testar que card do Auditor aparece - Score 95/100, Rejeitado, Aprovado com Ressalvas funcionando
+
+## Bug v2.2.1 - Pipeline não continua após resposta do usuário
+- [x] Após Engenheiro Técnico receber respostas, pipeline não continua para próximos agentes
+- [x] Criada função executeRemainingAgents para continuar pipeline automaticamente
+- [x] Modificado continueAgent para chamar executeRemainingAgents após agente completar
+- [x] Testar fluxo completo: memorial vago → perguntas → respostas → próximos agentes - FUNCIONANDO!
