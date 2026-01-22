@@ -297,6 +297,99 @@ Retorne um JSON com:
       additionalProperties: false,
     };
   }
+  
+  /**
+   * Verifica se o memorial é vago (sem metragens ou quantidades explícitas).
+   */
+  private _isMemorialVago(memorial: string): boolean {
+    const padroesMetragem = [
+      /\d+[.,]?\d*\s*(m²|m2|metros?\s*quadrados?)/i,
+      /\d+[.,]?\d*\s*(m³|m3|metros?\s*cúbicos?)/i,
+      /\d+[.,]?\d*\s*(m|metros?)\s*(lineares?)?/i,
+      /\d+[.,]?\d*\s*(un|unidades?|peças?|pcs)/i,
+      /\d+\s*x\s*\d+/i,
+    ];
+    for (const padrao of padroesMetragem) {
+      if (padrao.test(memorial)) return false;
+    }
+    return memorial.length < 200;
+  }
+  
+  /**
+   * Gera perguntas específicas baseadas no tipo de serviço.
+   */
+  private _generateQuestionsForService(memorial: string): MissingInfoRequest[] {
+    const questions: MissingInfoRequest[] = [];
+    const m = memorial.toLowerCase();
+    
+    if (m.includes('pint') || m.includes('parede') || m.includes('tinta')) {
+      questions.push({ fieldId: 'area_pintura', question: 'Qual a área total das paredes a serem pintadas?', type: 'number', unit: 'm²', hint: 'Some a área de todas as paredes', required: true });
+      questions.push({ fieldId: 'tipo_tinta', question: 'Qual o tipo de tinta desejado?', type: 'select', options: ['Acrílica fosca', 'Acrílica acetinada', 'Latex PVA', 'Esmalte sintético'], required: true });
+      questions.push({ fieldId: 'num_demaos', question: 'Quantas demãos de tinta?', type: 'select', options: ['2 demãos', '3 demãos'], required: true });
+    } else if (m.includes('piso') || m.includes('cerâmica') || m.includes('porcelanato')) {
+      questions.push({ fieldId: 'area_piso', question: 'Qual a área total do piso?', type: 'number', unit: 'm²', required: true });
+      questions.push({ fieldId: 'tipo_piso', question: 'Qual o tipo de piso?', type: 'select', options: ['Cerâmica', 'Porcelanato', 'Laminado', 'Vinílico'], required: true });
+    } else if (m.includes('elétric') || m.includes('tomada') || m.includes('ponto')) {
+      questions.push({ fieldId: 'num_pontos', question: 'Quantos pontos elétricos?', type: 'number', unit: 'pontos', required: true });
+      questions.push({ fieldId: 'tipo_instalacao', question: 'Tipo de instalação?', type: 'select', options: ['Embutida', 'Aparente', 'Mista'], required: true });
+    } else {
+      questions.push({ fieldId: 'area_servico', question: 'Qual a área ou quantidade do serviço?', type: 'text', hint: 'Informe em m², metros lineares ou unidades', required: true });
+      questions.push({ fieldId: 'detalhes_servico', question: 'Descreva com mais detalhes o serviço', type: 'textarea', hint: 'Inclua especificações de material, acabamento, etc.', required: true });
+    }
+    return questions;
+  }
+  
+  /**
+   * Override do execute com estratégia dupla: PRÉ-LLM e PÓS-LLM.
+   */
+  async execute(input: EngenheiroTecnicoInput): Promise<EngenheiroTecnicoOutput> {
+    const memorial = input.memorialDescritivo;
+    const temRespostasUsuario = input.userResponses && Object.keys(input.userResponses).length > 0;
+    
+    console.log(`[EngenheiroTecnico] Memorial length: ${memorial.length}, temRespostas: ${temRespostasUsuario}`);
+    
+    // ESTRATÉGIA PRÉ-LLM: Se memorial vago e sem respostas, retornar direto
+    if (this._isMemorialVago(memorial) && !temRespostasUsuario) {
+      console.log(`[EngenheiroTecnico] MEMORIAL VAGO - Retornando perguntas sem chamar LLM`);
+      return {
+        analysisStatus: 'waiting_for_user_input',
+        missingInfoRequests: this._generateQuestionsForService(memorial),
+        items: [],
+        pendingItems: [],
+        nbrReferences: [],
+        criticalNotes: ['Memorial incompleto - aguardando dados do usuário'],
+        groupsProcessed: [],
+        totalItemsExtracted: 0
+      };
+    }
+    
+    // Chamar LLM
+    console.log(`[EngenheiroTecnico] Chamando LLM...`);
+    const output = await super.execute(input);
+    
+    console.log(`[EngenheiroTecnico] Output items: ${output.items?.length || 0}`);
+    console.log(`[EngenheiroTecnico] analysisStatus: ${output.analysisStatus}`);
+    
+    // ESTRATÉGIA PÓS-LLM: Se LLM retornou items=0 e não solicitou info, forçar
+    const llmFalhou = 
+      (output.items?.length === 0) && 
+      (output.missingInfoRequests?.length === 0) &&
+      !temRespostasUsuario;
+    
+    if (llmFalhou) {
+      console.log(`[EngenheiroTecnico] LLM NÃO GEROU ITEMS - Forçando interatividade`);
+      return {
+        ...output,
+        analysisStatus: 'waiting_for_user_input',
+        missingInfoRequests: this._generateQuestionsForService(memorial),
+        items: [],
+        pendingItems: [],
+        criticalNotes: ['Memorial incompleto - aguardando dados do usuário']
+      };
+    }
+    
+    return output;
+  }
 }
 
 // Agent 2: Logística e Mobilização

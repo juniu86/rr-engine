@@ -292,6 +292,30 @@ export const appRouter = router({
             
             results[agentType] = output;
             
+            // Verificar se o agente precisa de mais dados do usuário (interatividade)
+            if (agentType === 'engenheiro_tecnico') {
+              const typedOutput = output as any;
+              if (typedOutput.analysisStatus === 'waiting_for_user_input' && 
+                  typedOutput.missingInfoRequests?.length > 0) {
+                // Pausar pipeline e aguardar input do usuário
+                await db.updateAgentExecution(execution.id, {
+                  status: 'waiting_for_user_input',
+                  output: output as any,
+                  missingInfoRequests: typedOutput.missingInfoRequests,
+                });
+                
+                await db.updateProject(input.projectId, { status: 'waiting_for_input' });
+                
+                return {
+                  success: false,
+                  status: 'waiting_for_user_input',
+                  agentType: 'engenheiro_tecnico',
+                  missingInfoRequests: typedOutput.missingInfoRequests,
+                  message: 'O Engenheiro Técnico precisa de mais informações para continuar.',
+                };
+              }
+            }
+            
             // Salvar itens de orçamento após execução do orçamentista
             if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
               const rawItems = (output as any).budgetItems;
@@ -971,9 +995,10 @@ export const appRouter = router({
             missingInfoRequests: null,
           });
           
-          // Atualizar projeto para próximo agente
+          // Atualizar projeto para próximo agente e status para processing
           await db.updateProject(input.projectId, { 
-            currentAgentId: AGENT_ORDER[input.agentType as AgentType] + 1 
+            currentAgentId: AGENT_ORDER[input.agentType as AgentType] + 1,
+            status: "processing"
           });
           
           return {

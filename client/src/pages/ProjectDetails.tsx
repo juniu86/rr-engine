@@ -229,8 +229,7 @@ export default function ProjectDetails() {
   });
 
   // Mutation para continuar agente com dados do usuário (v2.1)
-  // @ts-expect-error - endpoint adicionado em v2.1
-  const continueAgent = trpc.project.continueAgent.useMutation({
+  const continueAgent = trpc.agent.continueAgent.useMutation({
     onSuccess: (data: { status: string; missingInfoRequests?: MissingInfoRequest[]; iterationCount?: number }) => {
       if (data.status === "waiting_for_user_input") {
         // Agente ainda precisa de mais dados
@@ -1483,11 +1482,21 @@ export default function ProjectDetails() {
             </Button>
             <Button 
               onClick={() => {
-                if (!waitingAgentType) return;
+                console.log('[DEBUG] Botão clicado');
+                console.log('[DEBUG] waitingAgentType:', waitingAgentType);
+                console.log('[DEBUG] userResponses:', JSON.stringify(userResponses));
+                console.log('[DEBUG] missingInfoRequests:', JSON.stringify(missingInfoRequests));
+                
+                if (!waitingAgentType) {
+                  console.log('[DEBUG] waitingAgentType is null, returning');
+                  return;
+                }
                 
                 // Validar campos obrigatórios
                 const requiredFields = missingInfoRequests.filter(r => r.required);
+                console.log('[DEBUG] requiredFields:', JSON.stringify(requiredFields));
                 const missingRequired = requiredFields.filter(r => !userResponses[r.fieldId]);
+                console.log('[DEBUG] missingRequired:', JSON.stringify(missingRequired));
                 
                 if (missingRequired.length > 0) {
                   toast.error(`Por favor, preencha os campos obrigatórios: ${missingRequired.map(r => r.question).join(", ")}`);

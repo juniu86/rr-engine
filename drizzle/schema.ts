@@ -27,7 +27,7 @@ export const projects = mysqlTable("projects", {
   restrictions: text("restrictions"),
   memorialDescritivo: text("memorialDescritivo"),
   memorialFileUrl: varchar("memorialFileUrl", { length: 1000 }),
-  status: mysqlEnum("status", ["draft", "processing", "review", "approved", "rejected", "blocked", "pending_confirmation"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "processing", "review", "approved", "rejected", "blocked", "pending_confirmation", "waiting_for_input"]).default("draft").notNull(),
   blockReason: text("blockReason"),
   warningMessages: text("warningMessages"),
   currentAgentId: int("currentAgentId").default(1),

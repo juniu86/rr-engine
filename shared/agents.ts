@@ -188,6 +188,10 @@ export interface EngenheiroTecnicoOutput {
   missingInfoRequests?: MissingInfoRequest[];
   /** Status da análise: completed = dados suficientes, waiting = precisa de mais dados */
   analysisStatus?: "completed" | "waiting_for_user_input";
+  /** Grupos de serviços processados */
+  groupsProcessed?: string[];
+  /** Total de itens extraídos */
+  totalItemsExtracted?: number;
 }
 
 export interface LogisticaInput {

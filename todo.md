@@ -337,16 +337,20 @@
 - [x] Testar detecção de memorial vago
 - [x] Testar limite de iterações
 - [x] Testar validação de campos obrigatórios
-- [ ] Verificar que UI exibe pergunta clara
-- [ ] Verificar que processo continua após resposta do usuário
+- [x] Verificar que UI exibe pergunta clara
+- [x] Verificar que processo continua após resposta do usuário
 
-### Critérios de Aceitação
-- [ ] Memorial vago pausa o processo
-- [ ] UI exibe pergunta clara ao usuário
-- [ ] Processo continua após usuário inserir dados
-- [ ] Arquitetura AgentResponse implementada
-- [ ] Endpoint continueAgent criado
-- [ ] Estado salvo no banco de dados
+### Critérios de Aceitação ✅
+- [x] Memorial vago pausa o processo
+- [x] UI exibe pergunta clara ao usuário
+- [x] Processo continua após usuário inserir dados
+- [x] Arquitetura AgentResponse implementada
+- [x] Endpoint continueAgent criado
+- [x] Estado salvo no banco de dados
+
+## Bug v2.1.5 - Correções de Interatividade
+- [x] Botão "Enviar Dados e Continuar" não funcionava - CORRIGIDO: Endpoint estava em trpc.agent.continueAgent, não trpc.project.continueAgent
+- [x] Status do projeto não atualizava após agente completar - CORRIGIDO: Adicionado status: "processing" no updateProject
 
 ## v2.1.2 - Remoção do Campo BDI do Novo Orçamento ✅
 - [x] Remover seção "Configuração de BDI" do formulário NewProject.tsx

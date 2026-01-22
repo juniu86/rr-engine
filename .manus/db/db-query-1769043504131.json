@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, projectId, agentType, status, userResponses, missingInfoRequests, iterationCount FROM agent_executions WHERE projectId = 570014 AND agentType = 'engenheiro_tecnico';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute SELECT id, projectId, agentType, status, userResponses, missingInfoRequests, iterationCount FROM agent_executions WHERE projectId = 570014 AND agentType = 'engenheiro_tecnico';",
+  "rows": [
+    {
+      "id": "570131",
+      "projectId": "570014",
+      "agentType": "engenheiro_tecnico",
+      "status": "waiting_for_user_input",
+      "userResponses": "NULL",
+      "missingInfoRequests": "[{\"fieldId\": \"area_pintura\", \"hint\": \"Some a área de todas as paredes\", \"question\": \"Qual a área total das paredes a serem pintadas?\", \"type\": \"number\", \"unit\": \"m²\"}, {\"fieldId\": \"tipo_tinta\", \"options\": [\"Acrílica fosca\", \"Acrílica acetinada\", \"Latex PVA\", \"Esmalte sintético\"], \"question\": \"Qual o tipo de tinta desejado?\", \"type\": \"select\"}, {\"fieldId\": \"num_demaos\", \"options\": [\"2 demãos\", \"3 demãos\"], \"question\": \"Quantas demãos de tinta?\", \"type\": \"select\"}]",
+      "iterationCount": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tprojectId\tagentType\tstatus\tuserResponses\tmissingInfoRequests\titerationCount\n570131\t570014\tengenheiro_tecnico\twaiting_for_user_input\tNULL\t[{\"fieldId\": \"area_pintura\", \"hint\": \"Some a área de todas as paredes\", \"question\": \"Qual a área total das paredes a serem pintadas?\", \"type\": \"number\", \"unit\": \"m²\"}, {\"fieldId\": \"tipo_tinta\", \"options\": [\"Acrílica fosca\", \"Acrílica acetinada\", \"Latex PVA\", \"Esmalte sintético\"], \"question\": \"Qual o tipo de tinta desejado?\", \"type\": \"select\"}, {\"fieldId\": \"num_demaos\", \"options\": [\"2 demãos\", \"3 demãos\"], \"question\": \"Quantas demãos de tinta?\", \"type\": \"select\"}]\t0\n",
+  "stderr": "",
+  "execution_time_ms": 353
+}

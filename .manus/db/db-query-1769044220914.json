@@ -1,0 +1,15 @@
+{
+  "query": "SELECT agentType, status, missingInfoRequests FROM agent_executions WHERE projectId = 570015 AND agentType = 'engenheiro_tecnico'",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 268sP8KynbaAvRq.root --database eKTcTXnLfJ9tQMwur4fmhG --execute SELECT agentType, status, missingInfoRequests FROM agent_executions WHERE projectId = 570015 AND agentType = 'engenheiro_tecnico'",
+  "rows": [
+    {
+      "agentType": "engenheiro_tecnico",
+      "status": "waiting_for_user_input",
+      "missingInfoRequests": "[{\"fieldId\": \"area_pintura\", \"hint\": \"Some a área de todas as paredes\", \"question\": \"Qual a área total das paredes a serem pintadas?\", \"required\": true, \"type\": \"number\", \"unit\": \"m²\"}, {\"fieldId\": \"tipo_tinta\", \"options\": [\"Acrílica fosca\", \"Acrílica acetinada\", \"Latex PVA\", \"Esmalte sintético\"], \"question\": \"Qual o tipo de tinta desejado?\", \"required\": true, \"type\": \"select\"}, {\"fieldId\": \"num_demaos\", \"options\": [\"2 demãos\", \"3 demãos\"], \"question\": \"Quantas demãos de tinta?\", \"required\": true, \"type\": \"select\"}]"
+    }
+  ],
+  "messages": [],
+  "stdout": "agentType\tstatus\tmissingInfoRequests\nengenheiro_tecnico\twaiting_for_user_input\t[{\"fieldId\": \"area_pintura\", \"hint\": \"Some a área de todas as paredes\", \"question\": \"Qual a área total das paredes a serem pintadas?\", \"required\": true, \"type\": \"number\", \"unit\": \"m²\"}, {\"fieldId\": \"tipo_tinta\", \"options\": [\"Acrílica fosca\", \"Acrílica acetinada\", \"Latex PVA\", \"Esmalte sintético\"], \"question\": \"Qual o tipo de tinta desejado?\", \"required\": true, \"type\": \"select\"}, {\"fieldId\": \"num_demaos\", \"options\": [\"2 demãos\", \"3 demãos\"], \"question\": \"Quantas demãos de tinta?\", \"required\": true, \"type\": \"select\"}]\n",
+  "stderr": "",
+  "execution_time_ms": 370
+}
