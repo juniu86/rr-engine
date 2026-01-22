@@ -373,3 +373,7 @@
 - [x] Testar UI do Agente Auditor (score, selo, detalhes)
 - [x] Confirmar valor de Logística no Resumo Financeiro
 - [x] Validar Custo Direto sem duplicação
+
+## Bug v2.1.6 - Erro no Dashboard
+- [x] Erro de JavaScript ao acessar Dashboard - CORRIGIDO: status "waiting_for_input" não estava no statusConfig
+- [x] Adicionado fallback para status desconhecido para evitar erros futuros

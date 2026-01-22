@@ -28,6 +28,7 @@ const statusConfig = {
   rejected: { label: "Rejeitado", color: "bg-red-500", icon: AlertCircle },
   blocked: { label: "Bloqueado", color: "bg-red-600", icon: AlertCircle },
   pending_confirmation: { label: "Aguardando Confirmação", color: "bg-orange-500", icon: AlertCircle },
+  waiting_for_input: { label: "Aguardando Dados", color: "bg-amber-500", icon: AlertCircle },
 };
 
 export default function Dashboard() {
@@ -141,7 +142,8 @@ export default function Dashboard() {
             ) : projects && projects.length > 0 ? (
               <div className="space-y-4">
                 {projects.map(project => {
-                  const status = statusConfig[project.status as keyof typeof statusConfig];
+                  const status = statusConfig[project.status as keyof typeof statusConfig] || 
+                    { label: project.status || "Desconhecido", color: "bg-slate-500", icon: FileText };
                   const StatusIcon = status.icon;
                   return (
                     <Link key={project.id} href={`/projects/${project.id}`}>
