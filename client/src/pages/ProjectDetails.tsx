@@ -38,7 +38,9 @@ import {
   Save,
   X,
   Archive,
-  Shield
+  Shield,
+  MessageSquare,
+  HelpCircle
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Streamdown } from "streamdown";
@@ -107,6 +109,9 @@ export default function ProjectDetails() {
   const [userResponses, setUserResponses] = useState<Record<string, string | number>>({});
   const [waitingAgentType, setWaitingAgentType] = useState<string | null>(null);
   
+  // Estado para exibir histórico de interações
+  const [showInteractionHistory, setShowInteractionHistory] = useState(false);
+  
   const { data: details, isLoading, refetch } = trpc.project.getDetails.useQuery(
     { id: projectId },
     { enabled: projectId > 0, refetchInterval: 5000 }
@@ -120,6 +125,12 @@ export default function ProjectDetails() {
   
   // Query para obter revisões existentes
   const { data: revisionsData } = trpc.project.getRevisions.useQuery(
+    { projectId },
+    { enabled: projectId > 0 }
+  );
+  
+  // Query para obter histórico de interações
+  const { data: interactionHistory, refetch: refetchInteractions } = trpc.agent.getInteractionHistory.useQuery(
     { projectId },
     { enabled: projectId > 0 }
   );
@@ -1002,6 +1013,109 @@ export default function ProjectDetails() {
                 );
               })}
             </div>
+            
+            {/* Card de Histórico de Interações */}
+            {interactionHistory && interactionHistory.length > 0 && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-5 w-5 text-primary" />
+                      <CardTitle>Histórico de Interações</CardTitle>
+                    </div>
+                    <Badge variant="outline">{interactionHistory.length} interações</Badge>
+                  </div>
+                  <CardDescription>
+                    Registro de todas as perguntas feitas pelo Engenheiro Técnico e respostas fornecidas
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[400px] pr-4">
+                    <div className="space-y-4">
+                      {interactionHistory.map((interaction, index) => {
+                        const questions = interaction.questions as MissingInfoRequest[] || [];
+                        const responses = interaction.responses as Record<string, string | number> || {};
+                        
+                        return (
+                          <div key={interaction.id} className="border rounded-lg p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary">Iteração {interaction.iterationNumber}</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {getAgentName(interaction.agentType)}
+                                </span>
+                              </div>
+                              {interaction.isPending ? (
+                                <Badge variant="outline" className="text-orange-500 border-orange-500">
+                                  <Clock className="mr-1 h-3 w-3" />
+                                  Aguardando Resposta
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-green-500 border-green-500">
+                                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                                  Respondido
+                                </Badge>
+                              )}
+                            </div>
+                            
+                            {interaction.reasonForQuestions && (
+                              <p className="text-xs text-muted-foreground italic">
+                                {interaction.reasonForQuestions}
+                              </p>
+                            )}
+                            
+                            {/* Perguntas */}
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium flex items-center gap-1">
+                                <HelpCircle className="h-4 w-4 text-blue-500" />
+                                Perguntas do Agente:
+                              </p>
+                              {questions.map((q, qIndex) => (
+                                <div key={qIndex} className="ml-5 p-2 bg-blue-500/10 rounded text-sm">
+                                  <p className="font-medium">{q.question}</p>
+                                  {q.unit && <span className="text-xs text-muted-foreground">Unidade: {q.unit}</span>}
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {/* Respostas */}
+                            {Object.keys(responses).length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium flex items-center gap-1">
+                                  <MessageSquare className="h-4 w-4 text-green-500" />
+                                  Respostas do Usuário:
+                                </p>
+                                {questions.map((q, qIndex) => {
+                                  const response = responses[q.fieldId];
+                                  if (response === undefined) return null;
+                                  return (
+                                    <div key={qIndex} className="ml-5 p-2 bg-green-500/10 rounded text-sm">
+                                      <p className="text-xs text-muted-foreground">{q.question}</p>
+                                      <p className="font-medium">
+                                        {response}
+                                        {q.unit && ` ${q.unit}`}
+                                      </p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            
+                            {/* Timestamps */}
+                            <div className="flex gap-4 text-xs text-muted-foreground">
+                              <span>Perguntado: {new Date(interaction.questionedAt).toLocaleString('pt-BR')}</span>
+                              {interaction.respondedAt && (
+                                <span>Respondido: {new Date(interaction.respondedAt).toLocaleString('pt-BR')}</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Budget Tab */}

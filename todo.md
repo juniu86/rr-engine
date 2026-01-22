@@ -402,3 +402,11 @@
 - [x] Criada função executeRemainingAgents para continuar pipeline automaticamente
 - [x] Modificado continueAgent para chamar executeRemainingAgents após agente completar
 - [x] Testar fluxo completo: memorial vago → perguntas → respostas → próximos agentes - FUNCIONANDO!
+
+## v2.3.0 - Histórico de Interações do Engenheiro Técnico
+### Requisitos
+- [x] Criar tabela no banco para armazenar histórico de interações (perguntas/respostas) - tabela agent_interactions criada
+- [x] Modificar backend para salvar cada interação (pergunta do agente + resposta do usuário)
+- [x] Criar UI para exibir histórico de interações no projeto
+- [x] Quando atingir limite de iterações, exibir resumo completo de todas as interações
+- [x] Mostrar registro de interações na aba Agentes ou em seção dedicada

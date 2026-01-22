@@ -85,6 +85,13 @@
       "when": 1769043106619,
       "tag": "0011_condemned_talon",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1769122613730,
+      "tag": "0012_far_joshua_kane",
+      "breakpoints": true
     }
   ]
 }

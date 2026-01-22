@@ -280,3 +280,43 @@ export const companySettings = mysqlTable("company_settings", {
 
 export type CompanySettings = typeof companySettings.$inferSelect;
 export type InsertCompanySettings = typeof companySettings.$inferInsert;
+
+
+// ==================== AGENT INTERACTIONS (Histórico de Perguntas/Respostas) ====================
+// Armazena o histórico completo de interações entre agentes e usuários
+export const agentInteractions = mysqlTable("agent_interactions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  agentExecutionId: int("agentExecutionId").notNull(),
+  agentType: mysqlEnum("agentType", [
+    "engenheiro_tecnico",
+    "logistica",
+    "orcamentista",
+    "tributario",
+    "comercial",
+    "gestao_projetos",
+    "financeiro",
+    "juridico",
+    "board",
+    "auditor"
+  ]).notNull(),
+  iterationNumber: int("iterationNumber").notNull(), // 1, 2, 3...
+  
+  // Perguntas feitas pelo agente nesta iteração
+  questions: json("questions"), // Array de MissingInfoRequest
+  
+  // Respostas do usuário para esta iteração
+  responses: json("responses"), // Record<string, string | number>
+  
+  // Contexto adicional
+  reasonForQuestions: text("reasonForQuestions"), // Por que o agente precisou perguntar
+  
+  // Timestamps
+  questionedAt: timestamp("questionedAt").defaultNow().notNull(), // Quando as perguntas foram feitas
+  respondedAt: timestamp("respondedAt"), // Quando o usuário respondeu (null se ainda não respondeu)
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AgentInteraction = typeof agentInteractions.$inferSelect;
+export type InsertAgentInteraction = typeof agentInteractions.$inferInsert;

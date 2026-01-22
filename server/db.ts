@@ -725,3 +725,83 @@ export async function hasCustomCompanySettings(userId: number): Promise<boolean>
   const settings = await getCompanySettingsByUserId(userId);
   return settings !== null;
 }
+
+
+// ==================== AGENT INTERACTIONS (Histórico de Perguntas/Respostas) ====================
+import { agentInteractions, InsertAgentInteraction, AgentInteraction } from "../drizzle/schema";
+
+/**
+ * Cria um registro de interação quando o agente faz perguntas ao usuário
+ */
+export async function createAgentInteraction(data: InsertAgentInteraction): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(agentInteractions).values(data);
+  return Number(result[0].insertId);
+}
+
+/**
+ * Atualiza uma interação com as respostas do usuário
+ */
+export async function updateAgentInteraction(id: number, data: Partial<InsertAgentInteraction>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(agentInteractions).set(data).where(eq(agentInteractions.id, id));
+}
+
+/**
+ * Busca todas as interações de um projeto, ordenadas por iteração
+ */
+export async function getAgentInteractionsByProjectId(projectId: number): Promise<AgentInteraction[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(agentInteractions)
+    .where(eq(agentInteractions.projectId, projectId))
+    .orderBy(agentInteractions.iterationNumber);
+}
+
+/**
+ * Busca todas as interações de uma execução de agente específica
+ */
+export async function getAgentInteractionsByExecutionId(agentExecutionId: number): Promise<AgentInteraction[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(agentInteractions)
+    .where(eq(agentInteractions.agentExecutionId, agentExecutionId))
+    .orderBy(agentInteractions.iterationNumber);
+}
+
+/**
+ * Busca a última interação pendente (sem resposta) de uma execução
+ */
+export async function getPendingInteraction(agentExecutionId: number): Promise<AgentInteraction | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select()
+    .from(agentInteractions)
+    .where(and(
+      eq(agentInteractions.agentExecutionId, agentExecutionId),
+      sql`${agentInteractions.respondedAt} IS NULL`
+    ))
+    .orderBy(desc(agentInteractions.iterationNumber))
+    .limit(1);
+  
+  return result[0];
+}
+
+/**
+ * Deleta todas as interações de um projeto (usado ao deletar projeto)
+ */
+export async function deleteAgentInteractionsByProjectId(projectId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(agentInteractions).where(eq(agentInteractions.projectId, projectId));
+}

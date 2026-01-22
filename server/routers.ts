@@ -306,6 +306,16 @@ export const appRouter = router({
                 
                 await db.updateProject(input.projectId, { status: 'waiting_for_input' });
                 
+                // === REGISTRAR INTERAÇÃO NO HISTÓRICO ===
+                await db.createAgentInteraction({
+                  projectId: input.projectId,
+                  agentExecutionId: execution.id,
+                  agentType: 'engenheiro_tecnico',
+                  iterationNumber: 1,
+                  questions: typedOutput.missingInfoRequests,
+                  reasonForQuestions: 'Memorial descritivo incompleto - dados faltantes identificados na análise inicial',
+                });
+                
                 return {
                   success: false,
                   status: 'waiting_for_user_input',
@@ -933,13 +943,65 @@ export const appRouter = router({
         };
         
         // Incrementar contador de iterações
-        const newIterationCount = (execution.iterationCount || 0) + 1;
+        const currentIterationCount = execution.iterationCount || 1;
+        const newIterationCount = currentIterationCount + 1;
+        
+        // === REGISTRAR RESPOSTA DO USUÁRIO NO HISTÓRICO ===
+        // Buscar a interação pendente e atualizar com as respostas
+        const pendingInteraction = await db.getPendingInteraction(execution.id);
+        if (pendingInteraction) {
+          await db.updateAgentInteraction(pendingInteraction.id, {
+            responses: input.userResponses,
+            respondedAt: new Date(),
+          });
+        }
         
         // Limite de segurança para evitar loops infinitos
         if (newIterationCount > 5) {
+          // Buscar histórico completo de interações para exibir ao usuário
+          const interactionHistory = await db.getAgentInteractionsByExecutionId(execution.id);
+          
+          // Construir resumo detalhado do histórico
+          let historySummary = `\n\n=== HISTÓRICO DE INTERAÇÕES (${interactionHistory.length}) ===\n`;
+          for (const interaction of interactionHistory) {
+            const questions = interaction.questions as any[] || [];
+            const responses = interaction.responses as Record<string, any> || {};
+            
+            historySummary += `\n--- Iteração ${interaction.iterationNumber} ---\n`;
+            historySummary += `Motivo: ${interaction.reasonForQuestions || 'Não especificado'}\n`;
+            
+            historySummary += `Perguntas:\n`;
+            for (const q of questions) {
+              historySummary += `  • ${q.question}\n`;
+            }
+            
+            if (Object.keys(responses).length > 0) {
+              historySummary += `Respostas:\n`;
+              for (const q of questions) {
+                const response = responses[q.fieldId];
+                if (response !== undefined) {
+                  historySummary += `  • ${q.question}: ${response}${q.unit ? ` ${q.unit}` : ''}\n`;
+                }
+              }
+            } else {
+              historySummary += `Respostas: Aguardando\n`;
+            }
+          }
+          
+          // Marcar agente como falhou com histórico
+          await db.updateAgentExecution(execution.id, {
+            status: "failed",
+            errors: {
+              code: "MAX_ITERATIONS_REACHED",
+              message: "Limite máximo de iterações atingido",
+              interactionCount: interactionHistory.length,
+              history: interactionHistory,
+            },
+          });
+          
           throw new TRPCError({ 
             code: "BAD_REQUEST", 
-            message: "Número máximo de iterações atingido. Por favor, revise o memorial descritivo." 
+            message: `Número máximo de iterações atingido (5/5). O memorial descritivo precisa de mais detalhes para que o orçamento seja gerado corretamente.${historySummary}\nPor favor, edite o memorial descritivo adicionando mais informações técnicas (medidas, especificações, quantidades) e tente novamente.`
           });
         }
         
@@ -976,6 +1038,16 @@ export const appRouter = router({
               missingInfoRequests: typedOutput.missingInfoRequests,
               userResponses: mergedResponses,
               iterationCount: newIterationCount,
+            });
+            
+            // === REGISTRAR NOVA INTERAÇÃO NO HISTÓRICO ===
+            await db.createAgentInteraction({
+              projectId: input.projectId,
+              agentExecutionId: execution.id,
+              agentType: input.agentType,
+              iterationNumber: newIterationCount,
+              questions: typedOutput.missingInfoRequests,
+              reasonForQuestions: `Iteração ${newIterationCount}: Agente ainda precisa de mais dados para completar a análise`,
             });
             
             return {
@@ -1071,6 +1143,41 @@ export const appRouter = router({
           }));
         
         return waitingAgents;
+      }),
+
+    /**
+     * Obter histórico completo de interações de um projeto.
+     * Retorna todas as perguntas feitas pelo agente e respostas do usuário.
+     */
+    getInteractionHistory: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        agentType: z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"]).optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        
+        // Buscar todas as interações do projeto
+        const interactions = await db.getAgentInteractionsByProjectId(input.projectId);
+        
+        // Filtrar por agente se especificado
+        const filteredInteractions = input.agentType 
+          ? interactions.filter(i => i.agentType === input.agentType)
+          : interactions;
+        
+        return filteredInteractions.map(i => ({
+          id: i.id,
+          agentType: i.agentType,
+          iterationNumber: i.iterationNumber,
+          questions: i.questions || [],
+          responses: i.responses || {},
+          reasonForQuestions: i.reasonForQuestions,
+          questionedAt: i.questionedAt,
+          respondedAt: i.respondedAt,
+          isPending: !i.respondedAt,
+        }));
       }),
   }),
 
