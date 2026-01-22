@@ -37,7 +37,8 @@ import {
   History,
   Save,
   X,
-  Archive
+  Archive,
+  Shield
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Streamdown } from "streamdown";
@@ -546,6 +547,77 @@ export default function ProjectDetails() {
                       BDI ({precoFinal > 0 ? ((bdiValor / precoFinal) * 100).toFixed(0) : 0}%)
                     </span>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
+        {/* Auditor Card - Detalhes de Auditoria */}
+        {(() => {
+          const auditorExec = agentExecutions.find(e => e.agentType === "auditor");
+          const auditorOutput = auditorExec?.output as any;
+          
+          if (!auditorOutput) return null;
+          
+          const auditSeal = auditorOutput.auditSeal;
+          const validationScore = auditorOutput.validationScore || 0;
+          const criticalErrors = auditorOutput.criticalErrors || 0;
+          const warnings = auditorOutput.warnings || 0;
+          const recommendations = auditorOutput.recommendations || [];
+          
+          return (
+            <Card className="border-primary/30 bg-gradient-to-br from-slate-900 to-slate-800">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-primary" />
+                    Auditoria de Qualidade
+                  </CardTitle>
+                  <Badge
+                    className={`
+                      ${auditSeal === 'approved' ? 'bg-green-600 hover:bg-green-700' : ''}
+                      ${auditSeal === 'approved_with_warnings' ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
+                      ${auditSeal === 'rejected' ? 'bg-red-600 hover:bg-red-700' : ''}
+                    `}
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    {auditSeal === 'approved' && 'Aprovado'}
+                    {auditSeal === 'approved_with_warnings' && 'Aprovado com Ressalvas'}
+                    {auditSeal === 'rejected' && 'Rejeitado'}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Score de Validação */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Score de Validação</div>
+                      <div className="text-2xl font-bold text-primary">{validationScore}/100</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground mb-1">Erros Críticos</div>
+                      <div className="text-2xl font-bold text-red-400">{criticalErrors}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground mb-1">Avisos</div>
+                      <div className="text-2xl font-bold text-yellow-400">{warnings}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Recomendações */}
+                  {recommendations.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-slate-300">Recomendações:</div>
+                      {recommendations.map((rec: string, idx: number) => (
+                        <div key={idx} className="flex items-start gap-2 p-3 rounded-lg bg-slate-800/30 border border-slate-700/50">
+                          <AlertCircle className="h-4 w-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-slate-300">{rec}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -1446,8 +1446,38 @@ async function buildAgentInput(
       const orcOutput = getOutput("orcamentista");
       const tribOutput = getOutput("tributario");
       const logOutput = getOutput("logistica");
+      
+      // ✅ VALIDAÇÃO #1: Orçamentista deve retornar custo direto válido
+      if (!orcOutput || !orcOutput.totalDirectCost || orcOutput.totalDirectCost <= 0) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Orçamentista retornou custo direto inválido: ${orcOutput?.totalDirectCost}. Verifique se os itens foram precificados corretamente.`
+        });
+      }
+      
+      // ✅ VALIDAÇÃO #2: Logística deve retornar custo válido (pode ser zero em casos específicos)
+      if (!logOutput || logOutput.totalLogisticsCost === undefined || logOutput.totalLogisticsCost < 0) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Logística retornou custo inválido: ${logOutput?.totalLogisticsCost}. Verifique o agente de logística.`
+        });
+      }
+      
+      // ✅ VALIDAÇÃO #3: Tributário deve retornar impostos válidos (pode ser zero em regimes especiais)
+      if (!tribOutput || tribOutput.totalTaxes === undefined || tribOutput.totalTaxes < 0) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Tributário retornou impostos inválidos: ${tribOutput?.totalTaxes}. Verifique o agente tributário.`
+        });
+      }
+      
       // IMPORTANTE: totalIndirectCost vem da Logística, não do Orçamentista
-      const totalIndirectFromLogistics = logOutput.totalLogisticsCost || 0;
+      const totalIndirectFromLogistics = logOutput.totalLogisticsCost;
+      
+      // ✅ LOG DE AUDITORIA: Registrar valores para rastreabilidade
+      console.log(`[Comercial] Custo Direto: R$ ${orcOutput.totalDirectCost.toFixed(2)}`);
+      console.log(`[Comercial] Custo Logística: R$ ${totalIndirectFromLogistics.toFixed(2)}`);
+      console.log(`[Comercial] Impostos: R$ ${tribOutput.totalTaxes.toFixed(2)}`);
       
       // BDI: Prioridade é o BDI do projeto, depois o da empresa
       const projectBdi = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) : null;

@@ -377,3 +377,22 @@
 ## Bug v2.1.6 - Erro no Dashboard
 - [x] Erro de JavaScript ao acessar Dashboard - CORRIGIDO: status "waiting_for_input" não estava no statusConfig
 - [x] Adicionado fallback para status desconhecido para evitar erros futuros
+
+## v2.2.0 - Correções Validadas por 3 APIs (Manus + Gemini + GPT)
+
+### PARTE 1: Frontend (P0 - CRÍTICO)
+- [x] Corrigir duplicação de logística no cálculo de custoDirecto (remover totalIndirectCost) - JÁ ESTAVA CORRETO
+- [x] Corrigir campo errado de logística (totalCost → totalLogisticsCost) - JÁ ESTAVA CORRETO
+- [x] Adicionar card do Auditor com selo, score e recomendações
+
+### PARTE 2: Backend (P1 - IMPORTANTE)
+- [x] Adicionar validação de totalDirectCost > 0
+- [x] Adicionar validação de totalLogisticsCost >= 0
+- [x] Adicionar validação de totalTaxes >= 0
+- [x] Adicionar logs de auditoria no case "comercial"
+
+### PARTE 3: Testes
+- [x] Testar que custo base está correto - Verificado em múltiplos projetos
+- [x] Testar que logística não está zerada - R$ 5.700,00 exibido corretamente
+- [x] Testar que BDI percentual está correto - 34.0% exibido
+- [x] Testar que card do Auditor aparece - Score 95/100, Rejeitado, Aprovado com Ressalvas funcionando
