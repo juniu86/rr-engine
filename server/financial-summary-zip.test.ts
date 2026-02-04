@@ -84,7 +84,7 @@ describe("Export All Documents (ZIP)", () => {
     it("deve aceitar se houver documentos", async () => {
       const documents = [
         { id: 1, documentType: "proposta_comercial", fileUrl: "https://example.com/doc1.pdf" },
-        { id: 2, documentType: "memoria_calculo", fileUrl: "https://example.com/doc2.xls" },
+        { id: 2, documentType: "memoria_calculo", fileUrl: "https://example.com/doc2.xlsx" },
       ];
       
       const hasDocuments = documents.length > 0;

@@ -174,10 +174,10 @@ export async function generateMemoriaCalculo(
   const xlsxBuffer = Buffer.from(xlsxContent, "utf-8");
   
   const timestamp = Date.now();
-  const fileName = `memoria_calculo_${project.name.replace(/\s+/g, "_")}_${timestamp}.xls`;
+  const fileName = `memoria_calculo_${project.name.replace(/\s+/g, "_")}_${timestamp}.xlsx`;
   const fileKey = `memorias/${project.id}/${fileName}`;
   
-  const { url } = await storagePut(fileKey, xlsxBuffer, "application/vnd.ms-excel");
+  const { url } = await storagePut(fileKey, xlsxBuffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   
   // Save document reference
   await createGeneratedDocument({

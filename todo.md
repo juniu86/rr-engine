@@ -418,3 +418,31 @@
 - [x] Gerar PDF formatado com perguntas/respostas (usando TXT por simplicidade)
 - [x] Gerar TXT simples para documentação
 - [x] Testar exportação em ambos os formatos
+
+## v2.4.0 - Correções Críticas Validadas por Multi-Agentes
+### Prompt #3: Corrigir formato XLS → XLSX ✅
+- [x] Alterar extensão de .xls para .xlsx
+- [x] Alterar MIME type para application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+### Prompt #1: Corrigir campos opcionais (zero) ✅
+- [x] Adicionar campo allowZero no schema do Engenheiro
+- [x] Criar função validateFieldResponse em /server/utils/validation.ts
+- [x] Atualizar system prompt do Engenheiro para instruir sobre allowZero
+- [x] Criar testes em /server/utils/validation.test.ts
+
+### Prompt #2: Corrigir Board (margem 3.84%) ✅
+- [x] Expandir resumo com todos os dados financeiros (custoDireto, custoIndireto, custoLogistica, totalImpostos, precoFinal)
+- [x] Calcular margem antes de passar ao Board (margemBruta, margemLiquida, margemPercentual)
+- [x] Criar validação de dados faltantes no getUserPrompt
+- [x] Atualizar system prompt do Board com instruções para usar margem pré-calculada
+
+### Prompt #4: Corrigir duplicação de orçamentos ✅
+- [x] Adicionar campos isSummaryItem e parentGroupNumber no schema do Engenheiro
+- [x] Atualizar system prompt do Engenheiro para hierarquia de itens PAI/FILHO
+- [x] Atualizar system prompt do Orçamentista para filtrar itens resumo
+- [x] Criar /server/utils/hierarchy.ts com funções de validação e cálculo
+- [x] Criar testes em /server/utils/hierarchy.test.ts
+
+### Testes v2.4.0 ✅
+- [x] Executar todos os testes existentes - 209 testes passando (20 arquivos)
+- [x] Validar que as correções não quebraram funcionalidades

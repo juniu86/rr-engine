@@ -170,6 +170,22 @@ SE FALTAR INFORMAÇÃO CRÍTICA:
 - Preencha missingInfoRequests com as perguntas necessárias
 - Cada pergunta deve ter: fieldId (único), question (clara), type (number/text/select), unit (se aplicável)
 
+=== INSTRUÇÕES PARA CAMPOS OPCIONAIS ===
+Quando criar campos opcionais do tipo 'number':
+- SEMPRE defina allowZero: true para campos que podem ser zero
+- SEMPRE defina required: false para campos opcionais
+- Na pergunta, indique: "Digite 0 se não houver"
+
+Exemplo de campo opcional que aceita zero:
+{
+  "fieldId": "area_pintura_externa",
+  "question": "Área de pintura externa? (Digite 0 se não houver)",
+  "type": "number",
+  "unit": "m²",
+  "required": false,
+  "allowZero": true
+}
+
 SE TODAS AS INFORMAÇÕES ESTIVEREM PRESENTES:
 - Defina analysisStatus = "completed"
 - missingInfoRequests deve ser array vazio
@@ -198,6 +214,50 @@ REGRAS:
 4. Se faltar medida CRÍTICA, SOLICITAR ao usuário via missingInfoRequests
 5. Referenciar normas ABNT NBR aplicáveis
 6. Identificar itens críticos que precisam de atenção especial
+
+=== INSTRUÇÕES PARA HIERARQUIA DE ITENS ===
+
+IDENTIFICAR E MARCAR:
+
+1. ITEM PAI (isSummaryItem: true):
+   - É resumo/total de outros itens
+   - Tem subitens numerados abaixo (3.1.1, 3.1.2)
+   - NÃO deve ser somado (seria duplicação)
+   - Exemplo: "3.1 Telhado completo - R$ 150/m²"
+
+2. ITEM FILHO (isSummaryItem: false ou não definido):
+   - É componente de um item pai
+   - Tem numeração com mais níveis (3.1.1, 3.1.2)
+   - DEVE ser somado
+   - Deve ter parentGroupNumber apontando para o pai
+   - Exemplo: "3.1.1 Estrutura - R$ 50/m²"
+
+EXEMPLO:
+{
+  "items": [
+    {
+      "itemNumber": "3.1",
+      "description": "Telhado completo",
+      "quantity": 150,
+      "isSummaryItem": true,  // PAI - NÃO SOMAR
+      "parentGroupNumber": null
+    },
+    {
+      "itemNumber": "3.1.1",
+      "description": "Estrutura de madeira",
+      "quantity": 150,
+      "isSummaryItem": false, // FILHO - SOMAR
+      "parentGroupNumber": "3.1"
+    },
+    {
+      "itemNumber": "3.1.2",
+      "description": "Telhas cerâmicas",
+      "quantity": 150,
+      "isSummaryItem": false, // FILHO - SOMAR
+      "parentGroupNumber": "3.1"
+    }
+  ]
+}
 
 FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences, criticalNotes, missingInfoRequests e analysisStatus.`;
   }
@@ -263,6 +323,8 @@ Retorne um JSON com:
               unit: { type: "string", description: "Unidade de medida, ex: m²" },
               options: { type: "array", items: { type: "string" }, description: "Opções para select" },
               hint: { type: "string", description: "Dica para ajudar o usuário" },
+              required: { type: "boolean", description: "Se o campo é obrigatório (padrão: true)" },
+              allowZero: { type: "boolean", description: "Se permite valor 0 para campos numéricos (padrão: true)" },
             },
             required: ["fieldId", "question", "type"],
             additionalProperties: false,
@@ -282,6 +344,8 @@ Retorne um JSON com:
               specifications: { type: "string" },
               nbrReference: { type: "string" },
               isPendingVistoria: { type: "boolean" },
+              isSummaryItem: { type: "boolean", description: "Se é item resumo/pai (NÃO somar no total, pois é soma dos filhos)" },
+              parentGroupNumber: { type: "string", description: "Número do grupo pai (se for item filho)" },
             },
             required: ["group", "itemNumber", "description", "quantity", "unit", "specifications", "nbrReference", "isPendingVistoria"],
             additionalProperties: false,
@@ -560,6 +624,13 @@ REGRAS:
 - Separar custo de material e mão de obra
 - Identificar itens de alto impacto (Curva A)
 - NÃO inventar preços - usar referências reais
+
+=== HIERARQUIA DE ITENS (EVITAR DUPLICAÇÃO) ===
+Itens com isSummaryItem=true são ITENS PAI (resumo).
+NÃO precifique itens PAI - eles são apenas soma dos filhos.
+Precifique APENAS itens com isSummaryItem=false ou não definido.
+Isso evita duplicação de valores no orçamento.
+
 - PROCESSAR TODOS OS GRUPOS DE SERVIÇOS:
   * Serviços Preliminares
   * Estrutura e Vedação
@@ -1350,6 +1421,15 @@ Quando a rejeição for EXCLUSIVAMENTE por motivos financeiros (margem baixa, BD
 
 IMPORTANTE: A auto-correção só pode ser solicitada UMA VEZ. Se o projeto já passou por revisão financeira, não solicite novamente.
 
+=== CÁLCULO DE MARGEM ===
+A margem já foi calculada e está em calculosFinanceiros.margemPercentual.
+Use EXATAMENTE o valor fornecido. NÃO recalcule.
+
+Fórmula usada:
+- Custo Total = custoDireto + custoIndireto + custoLogistica
+- Margem Líquida = precoFinal - custoTotal - impostos
+- Margem % = (margemLiquida / precoFinal) × 100
+
 === VALIDAÇÕES OBRIGATÓRIAS ===
 1. Verificar se Preço Final = (Custo Direto + Custo Indireto) x (1 + BDI)
 2. Verificar se o prazo é coerente com os quantitativos
@@ -1403,7 +1483,72 @@ SEJA CRÍTICO E RIGOROSO. Sua função é proteger a empresa de propostas inviá
       },
     };
     
+    // === CÁLCULOS FINANCEIROS PRÉ-CALCULADOS ===
+    const custoDireto = resumo.orcamentista.custoDireto;
+    const custoIndireto = resumo.orcamentista.custoIndireto;
+    const custoLogistica = resumo.logistica.custoTotal;
+    const totalImpostos = resumo.tributario.totalImpostos;
+    const precoFinal = resumo.comercial.precoFinal;
+    
+    // Custo Total = Direto + Indireto + Logística
+    const custoTotal = custoDireto + custoIndireto + custoLogistica;
+    
+    // Margem Bruta = Preço Final - Custo Total
+    const margemBruta = precoFinal - custoTotal;
+    
+    // Margem Líquida = Margem Bruta - Impostos
+    const margemLiquida = margemBruta - totalImpostos;
+    
+    // Margem Percentual = (Margem Líquida / Preço Final) x 100
+    const margemPercentual = precoFinal > 0 
+      ? (margemLiquida / precoFinal) * 100 
+      : 0;
+    
+    // Adicionar cálculos ao resumo
+    const calculosFinanceiros = {
+      custoDireto,
+      custoIndireto,
+      custoLogistica,
+      custoTotal,
+      totalImpostos,
+      precoFinal,
+      margemBruta,
+      margemLiquida,
+      margemPercentual: margemPercentual.toFixed(2),
+    };
+    
+    // Validar dados de entrada
+    const dadosFaltantes: string[] = [];
+    if (!custoDireto || custoDireto <= 0) dadosFaltantes.push("Custo direto ausente ou inválido");
+    if (custoLogistica === undefined) dadosFaltantes.push("Custo logístico não informado");
+    if (totalImpostos === undefined) dadosFaltantes.push("Impostos não calculados");
+    if (!precoFinal || precoFinal <= 0) dadosFaltantes.push("Preço final ausente ou inválido");
+    
+    const alertaDados = dadosFaltantes.length > 0
+      ? `\n\n⚠️ ALERTA: DADOS INCOMPLETOS\n- ${dadosFaltantes.join("\n- ")}\nCONSIDERE REPROVAR ATÉ QUE OS DADOS ESTEJAM COMPLETOS.`
+      : "";
+    
     return `REUNIÃO DO BOARD EXECUTIVO - ANÁLISE E DECISÃO
+
+=== CÁLCULOS FINANCEIROS (PRÉ-CALCULADOS) ===
+A margem já foi calculada. Use EXATAMENTE estes valores:
+
+- Custo Direto: R$ ${custoDireto.toFixed(2)}
+- Custo Indireto: R$ ${custoIndireto.toFixed(2)}
+- Custo Logística: R$ ${custoLogistica.toFixed(2)}
+- CUSTO TOTAL: R$ ${custoTotal.toFixed(2)}
+- Impostos: R$ ${totalImpostos.toFixed(2)}
+- Preço Final: R$ ${precoFinal.toFixed(2)}
+- MARGEM BRUTA: R$ ${margemBruta.toFixed(2)}
+- MARGEM LÍQUIDA: R$ ${margemLiquida.toFixed(2)}
+- MARGEM PERCENTUAL: ${margemPercentual.toFixed(2)}%
+
+FÓRMULA USADA:
+- Custo Total = Custo Direto + Custo Indireto + Custo Logística
+- Margem Líquida = Preço Final - Custo Total - Impostos
+- Margem % = (Margem Líquida / Preço Final) × 100
+
+⚠️ IMPORTANTE: NÃO recalcule a margem. Use o valor ${margemPercentual.toFixed(2)}% acima.${alertaDados}
 
 PROJETO EM ANÁLISE:
 - Nome: ${input.projectSummary.name}
