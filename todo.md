@@ -459,3 +459,8 @@ Data: 04/02/2026
 ### Testes Executados
 - [x] 209 testes passando (20 arquivos de teste)
 - [x] Todas as implementações validadas conforme especificações da Etapa 9
+
+## Bug v2.4.1 - Arquivo XLSX corrompido ✅
+- [x] Excel não consegue abrir arquivo memoria_calculo gerado - CORRIGIDO
+- [x] Verificar geração do buffer XLSX - Era XML simples, não XLSX real
+- [x] Corrigir formato do arquivo - Implementado usando biblioteca SheetJS (xlsx)

@@ -1,6 +1,7 @@
 import { storagePut } from "../storage";
 import { createGeneratedDocument } from "../db";
 import type { Project, BudgetItem } from "../../drizzle/schema";
+import * as XLSX from "xlsx";
 
 // Interface para item com preço proporcional (sem mostrar custo aberto)
 interface ProportionalItem {
@@ -168,10 +169,8 @@ export async function generateMemoriaCalculo(
   cashFlowItems: any[],
   comercialOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
-  // Generate XLSX content using XML format (Excel 2003 XML)
-  const xlsxContent = generateMemoriaXLSX(project, budgetItems, logisticsCosts, cashFlowItems, comercialOutput);
-  
-  const xlsxBuffer = Buffer.from(xlsxContent, "utf-8");
+  // Generate real XLSX using SheetJS library
+  const xlsxBuffer = generateMemoriaXLSX(project, budgetItems, logisticsCosts, cashFlowItems, comercialOutput);
   
   const timestamp = Date.now();
   const fileName = `memoria_calculo_${project.name.replace(/\s+/g, "_")}_${timestamp}.xlsx`;
@@ -456,313 +455,155 @@ function toRoman(num: number): string {
   return result;
 }
 
-// Generate Excel 2003 XML format (compatible with Excel)
+// Generate real XLSX format using SheetJS library
 function generateMemoriaXLSX(
   project: Project,
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
   cashFlowItems: any[],
   comercialOutput?: any
-): string {
-  const escapeXml = (str: string) => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  
+): Buffer {
   // Calculate totals
   const totalDirect = budgetItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
   const totalTax = budgetItems.reduce((sum, item) => sum + Number(item.taxAmount || 0), 0);
   const totalLogistics = logisticsCosts.reduce((sum, cost) => sum + Number(cost.totalCost || 0), 0);
   
   // CORREÇÃO CRÍTICA: Usar o preço final do agente Comercial como fonte única de verdade
-  // O preço do Comercial já inclui: Custo Direto + Logística + BDI
   const custoBase = totalDirect + totalLogistics;
   const comercialFinalPrice = comercialOutput?.finalPrice || 0;
-  const comercialBdi = comercialOutput?.adjustedBdi || 0.30; // BDI padrão de 30%
+  const comercialBdi = comercialOutput?.adjustedBdi || 0.30;
   
-  // Se temos preço do comercial, usar ele; senão calcular com BDI padrão
   let totalFinal: number;
   let totalBdi: number;
   
   if (comercialFinalPrice > 0 && comercialFinalPrice >= custoBase) {
-    // Usar preço do agente comercial
     totalFinal = comercialFinalPrice;
     totalBdi = totalFinal - custoBase;
   } else {
-    // Fallback: calcular com BDI padrão sobre custo base (direto + logística)
     totalBdi = custoBase * comercialBdi;
     totalFinal = custoBase + totalBdi;
   }
   
-  // Calcular preços proporcionais para cada item (mesma lógica da proposta comercial)
-  // O markup é calculado sobre o custo DIRETO para distribuir o preço de venda total
+  // Calcular preços proporcionais
   const markupFactor = totalDirect > 0 ? totalFinal / totalDirect : 1;
   const itemsWithProportionalPrices = budgetItems.map(item => {
     const quantity = Number(item.quantity || 0);
     const unitCost = Number(item.unitCostTotal || 0);
     const itemTotalCost = quantity * unitCost;
-    // Preço proporcional = custo * markup (inclui logística + BDI distribuídos)
     const proportionalPrice = itemTotalCost * markupFactor;
-    // BDI proporcional = preço proporcional - custo
     const proportionalBdi = proportionalPrice - itemTotalCost;
-    return {
-      ...item,
-      proportionalPrice,
-      proportionalBdi,
-    };
+    return { ...item, proportionalPrice, proportionalBdi };
   });
   
   console.log('[Memória de Cálculo] Valores calculados:');
   console.log(`  - Custo Direto: R$ ${totalDirect.toFixed(2)}`);
   console.log(`  - Custo Logística: R$ ${totalLogistics.toFixed(2)}`);
-  console.log(`  - Custo Base: R$ ${custoBase.toFixed(2)}`);
-  console.log(`  - BDI: R$ ${totalBdi.toFixed(2)}`);
   console.log(`  - Preço Final: R$ ${totalFinal.toFixed(2)}`);
-  console.log(`  - Preço Comercial: R$ ${comercialFinalPrice.toFixed(2)}`);
-  console.log(`  - BDI Comercial: ${(comercialBdi * 100).toFixed(1)}%`);
-  console.log(`  - Markup Factor: ${markupFactor.toFixed(4)}`);
-  console.log(`  - Soma Preços Proporcionais: R$ ${itemsWithProportionalPrices.reduce((s, i) => s + i.proportionalPrice, 0).toFixed(2)}`);
   
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  // Criar workbook usando SheetJS
+  const wb = XLSX.utils.book_new();
   
-  <Styles>
-    <Style ss:ID="Header">
-      <Font ss:Bold="1" ss:Size="12"/>
-      <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
-      <Alignment ss:Horizontal="Center"/>
-    </Style>
-    <Style ss:ID="Title">
-      <Font ss:Bold="1" ss:Size="14" ss:Color="#D97706"/>
-    </Style>
-    <Style ss:ID="Currency">
-      <NumberFormat ss:Format="R$ #,##0.00"/>
-      <Alignment ss:Horizontal="Right"/>
-    </Style>
-    <Style ss:ID="Total">
-      <Font ss:Bold="1"/>
-      <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
-      <NumberFormat ss:Format="R$ #,##0.00"/>
-    </Style>
-  </Styles>
-
-  <!-- Planilha de Orçamento -->
-  <Worksheet ss:Name="Orçamento Detalhado">
-    <Table>
-      <Column ss:Width="40"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="250"/>
-      <Column ss:Width="60"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="100"/>
-      
-      <!-- Título -->
-      <Row>
-        <Cell ss:StyleID="Title"><Data ss:Type="String">MEMÓRIA DE CÁLCULO - ${escapeXml(project.name)}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell><Data ss:Type="String">Data: ${new Date().toLocaleDateString("pt-BR")}</Data></Cell>
-      </Row>
-      <Row/>
-      
-      <!-- Cabeçalho -->
-      <Row>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Item</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Código</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Unid.</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Qtd.</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Material</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo M.O.</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Logística</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Total</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Impostos</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">BDI</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Preço Final</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Fonte</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Cód. Fonte</Data></Cell>
-      </Row>
-      
-      <!-- Dados -->
-      ${itemsWithProportionalPrices.map((item, index) => `
-      <Row>
-        <Cell><Data ss:Type="Number">${index + 1}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(item.code || "")}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(item.description)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(item.unit || "")}</Data></Cell>
-        <Cell><Data ss:Type="Number">${Number(item.quantity || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostMaterial || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostLabor || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.unitCostLogistics || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.totalCost || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.taxAmount || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${item.proportionalBdi.toFixed(2)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${item.proportionalPrice.toFixed(2)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(item.source || "")}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(item.sourceCode || "")}</Data></Cell>
-      </Row>
-      `).join("")}
-      
-      <!-- Totais -->
-      <Row/>
-      <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTO DIRETO (Materiais + M.O.)</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalDirect}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">TOTAL CUSTOS LOGÍSTICOS</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">CUSTO BASE (Direto + Logística)</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${custoBase}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">BDI (Administração + Lucro + Tributos)</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalBdi}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell ss:MergeAcross="7" ss:StyleID="Total"><Data ss:Type="String">PREÇO FINAL DE VENDA</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalFinal}</Data></Cell>
-      </Row>
-    </Table>
-  </Worksheet>
-
-  <!-- Planilha de Custos Logísticos -->
-  <Worksheet ss:Name="Custos Logísticos">
-    <Table>
-      <Column ss:Width="120"/>
-      <Column ss:Width="250"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="100"/>
-      
-      <Row>
-        <Cell ss:StyleID="Title"><Data ss:Type="String">CUSTOS LOGÍSTICOS</Data></Cell>
-      </Row>
-      <Row/>
-      
-      <Row>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Categoria</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Qtd.</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Unid.</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Unit.</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Custo Total</Data></Cell>
-      </Row>
-      
-      ${logisticsCosts.map(cost => `
-      <Row>
-        <Cell><Data ss:Type="String">${escapeXml(cost.category || "")}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(cost.description || "")}</Data></Cell>
-        <Cell><Data ss:Type="Number">${Number(cost.quantity || 0)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(cost.unit || "")}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(cost.unitCost || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(cost.totalCost || 0)}</Data></Cell>
-      </Row>
-      `).join("")}
-      
-      <Row/>
-      <Row>
-        <Cell ss:MergeAcross="4" ss:StyleID="Total"><Data ss:Type="String">TOTAL LOGÍSTICA</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
-      </Row>
-    </Table>
-  </Worksheet>
-
-  <!-- Planilha de Fluxo de Caixa -->
-  <Worksheet ss:Name="Fluxo de Caixa">
-    <Table>
-      <Column ss:Width="80"/>
-      <Column ss:Width="120"/>
-      <Column ss:Width="120"/>
-      <Column ss:Width="120"/>
-      <Column ss:Width="80"/>
-      
-      <Row>
-        <Cell ss:StyleID="Title"><Data ss:Type="String">FLUXO DE CAIXA</Data></Cell>
-      </Row>
-      <Row/>
-      
-      <Row>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Semana</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Despesas</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Receitas</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Saldo Acumulado</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Alerta</Data></Cell>
-      </Row>
-      
-      ${cashFlowItems.map(item => `
-      <Row>
-        <Cell><Data ss:Type="Number">${item.weekNumber}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.plannedExpense || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.plannedIncome || 0)}</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(item.cashBalance || 0)}</Data></Cell>
-        <Cell><Data ss:Type="String">${item.hasAlert ? "SIM" : ""}</Data></Cell>
-      </Row>
-      `).join("")}
-    </Table>
-  </Worksheet>
-
-  <!-- Planilha de Resumo -->
-  <Worksheet ss:Name="Resumo">
-    <Table>
-      <Column ss:Width="200"/>
-      <Column ss:Width="150"/>
-      
-      <Row>
-        <Cell ss:StyleID="Title"><Data ss:Type="String">RESUMO DO ORÇAMENTO</Data></Cell>
-      </Row>
-      <Row>
-        <Cell><Data ss:Type="String">Projeto: ${escapeXml(project.name)}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell><Data ss:Type="String">Data: ${new Date().toLocaleDateString("pt-BR")}</Data></Cell>
-      </Row>
-      <Row/>
-      
-      <Row>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Descrição</Data></Cell>
-        <Cell ss:StyleID="Header"><Data ss:Type="String">Valor</Data></Cell>
-      </Row>
-      
-      <Row>
-        <Cell><Data ss:Type="String">Custo Direto (Materiais + M.O.)</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalDirect}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell><Data ss:Type="String">Custos Logísticos</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalLogistics}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell ss:StyleID="Total"><Data ss:Type="String">CUSTO BASE (Direto + Logística)</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${custoBase}</Data></Cell>
-      </Row>
-      <Row/>
-      <Row>
-        <Cell><Data ss:Type="String">Impostos (para referência fiscal)</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalTax}</Data></Cell>
-      </Row>
-      <Row>
-        <Cell><Data ss:Type="String">BDI (Administração + Lucro + Tributos)</Data></Cell>
-        <Cell ss:StyleID="Currency"><Data ss:Type="Number">${totalBdi}</Data></Cell>
-      </Row>
-      <Row/>
-      <Row>
-        <Cell ss:StyleID="Total"><Data ss:Type="String">PREÇO FINAL DE VENDA</Data></Cell>
-        <Cell ss:StyleID="Total"><Data ss:Type="Number">${totalFinal}</Data></Cell>
-      </Row>
-    </Table>
-  </Worksheet>
-</Workbook>`;
+  // === Planilha 1: Orçamento Detalhado ===
+  const orcamentoData = [
+    [`MEMÓRIA DE CÁLCULO - ${project.name}`],
+    [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+    [],
+    ["Item", "Código", "Descrição", "Unid.", "Qtd.", "Custo Material", "Custo M.O.", "Custo Logística", "Custo Total", "Impostos", "BDI", "Preço Final", "Fonte", "Cód. Fonte"],
+    ...itemsWithProportionalPrices.map((item, index) => [
+      index + 1,
+      item.code || "",
+      item.description,
+      item.unit || "",
+      Number(item.quantity || 0),
+      Number(item.unitCostMaterial || 0),
+      Number(item.unitCostLabor || 0),
+      Number(item.unitCostLogistics || 0),
+      Number(item.totalCost || 0),
+      Number(item.taxAmount || 0),
+      Number(item.proportionalBdi.toFixed(2)),
+      Number(item.proportionalPrice.toFixed(2)),
+      item.source || "",
+      item.sourceCode || "",
+    ]),
+    [],
+    ["TOTAL CUSTO DIRETO (Materiais + M.O.)", "", "", "", "", "", "", "", totalDirect],
+    ["TOTAL CUSTOS LOGÍSTICOS", "", "", "", "", "", "", "", totalLogistics],
+    ["CUSTO BASE (Direto + Logística)", "", "", "", "", "", "", "", custoBase],
+    ["BDI (Administração + Lucro + Tributos)", "", "", "", "", "", "", "", totalBdi],
+    ["PREÇO FINAL DE VENDA", "", "", "", "", "", "", "", totalFinal],
+  ];
+  const wsOrcamento = XLSX.utils.aoa_to_sheet(orcamentoData);
+  wsOrcamento["!cols"] = [
+    { wch: 6 }, { wch: 12 }, { wch: 40 }, { wch: 8 }, { wch: 8 },
+    { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
+    { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento Detalhado");
+  
+  // === Planilha 2: Custos Logísticos ===
+  const logisticaData = [
+    ["CUSTOS LOGÍSTICOS"],
+    [],
+    ["Categoria", "Descrição", "Qtd.", "Unid.", "Custo Unit.", "Custo Total"],
+    ...logisticsCosts.map(cost => [
+      cost.category || "",
+      cost.description || "",
+      Number(cost.quantity || 0),
+      cost.unit || "",
+      Number(cost.unitCost || 0),
+      Number(cost.totalCost || 0),
+    ]),
+    [],
+    ["TOTAL LOGÍSTICA", "", "", "", "", totalLogistics],
+  ];
+  const wsLogistica = XLSX.utils.aoa_to_sheet(logisticaData);
+  wsLogistica["!cols"] = [
+    { wch: 18 }, { wch: 40 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsLogistica, "Custos Logísticos");
+  
+  // === Planilha 3: Fluxo de Caixa ===
+  const fluxoData = [
+    ["FLUXO DE CAIXA"],
+    [],
+    ["Semana", "Despesas", "Receitas", "Saldo Acumulado", "Alerta"],
+    ...cashFlowItems.map(item => [
+      item.weekNumber,
+      Number(item.plannedExpense || 0),
+      Number(item.plannedIncome || 0),
+      Number(item.cashBalance || 0),
+      item.hasAlert ? "SIM" : "",
+    ]),
+  ];
+  const wsFluxo = XLSX.utils.aoa_to_sheet(fluxoData);
+  wsFluxo["!cols"] = [
+    { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 8 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsFluxo, "Fluxo de Caixa");
+  
+  // === Planilha 4: Resumo ===
+  const resumoData = [
+    ["RESUMO DO ORÇAMENTO"],
+    [`Projeto: ${project.name}`],
+    [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+    [],
+    ["Descrição", "Valor"],
+    ["Custo Direto (Materiais + M.O.)", totalDirect],
+    ["Custos Logísticos", totalLogistics],
+    ["CUSTO BASE (Direto + Logística)", custoBase],
+    [],
+    ["Impostos (para referência fiscal)", totalTax],
+    ["BDI (Administração + Lucro + Tributos)", totalBdi],
+    [],
+    ["PREÇO FINAL DE VENDA", totalFinal],
+  ];
+  const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
+  wsResumo["!cols"] = [{ wch: 35 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
+  
+  // Gerar buffer XLSX real
+  const xlsxBuffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  return Buffer.from(xlsxBuffer);
 }
 
 // Format currency for display
