@@ -470,3 +470,15 @@ Data: 04/02/2026
 - [x] Implementada inserção em chunks de 10 itens com fallback individual
 - [x] Criada função sanitizeBudgetItem para truncar strings e validar decimais
 - [x] Fallback: se chunk falhar, tenta inserir item a item com log de erro
+
+## v2.5.0 - Melhoria 1/8: Integração SINAPI + PINI ✅
+- [x] Expandir SINAPI de 15 para 170+ composições reais (Jan/2025, base SP)
+- [x] Expandir PINI de 15 para 80+ composições TCPO reais
+- [x] Adicionar categorias: Postos de Combustível, Climatização, Drywall, Acessibilidade
+- [x] Implementar ajuste regional automático por estado (SINAPI) e região (PINI)
+- [x] Implementar busca inteligente por descrição com score de relevância
+- [x] Implementar cache de 30 dias no banco de dados
+- [x] Atualizar system prompt do Orçamentista com referência ao banco expandido
+- [x] Criar testes para SINAPI e PINI expandidos (15 testes passando)
+- [x] Implementar função comparePrices para cruzar SINAPI x PINI
+- [x] 224 testes passando (21 arquivos)

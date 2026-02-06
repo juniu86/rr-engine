@@ -615,15 +615,22 @@ NÃO omita nenhum item, mesmo que seja similar a outro.
 O número de itens na saída DEVE ser igual ao número de itens na entrada.
 
 METODOLOGIA:
-1. Itens Comuns (Curva C): Usar bases SINAPI e PINI
+1. Itens Comuns (Curva C): Usar bases SINAPI (170+ composições) e PINI TCPO (80+ composições)
 2. Itens Críticos (Curva A - 80% do valor): Simular cotação de mercado atual
 3. Consolidar custos diretos e indiretos
+4. Para postos de combustível: usar composições específicas (códigos PC* e TCPO-PC*)
+
+BANCO DE DADOS DISPONÍVEL:
+- SINAPI: 170+ composições reais (ref: Jan/2025, base SP) com ajuste regional automático por estado
+- PINI TCPO: 80+ composições complementares com decomposição mão de obra/material/equipamento
+- Categorias: Serviços Preliminares, Movimento de Terra, Fundações, Estrutura, Alvenaria, Revestimento, Pisos, Pintura, Cobertura, Instalações Elétricas, Instalações Hidráulicas, Esquadrias, Forro, Impermeabilização, Demolição, Postos de Combustível, Pavimentação, Drenagem, Segurança, Paisagismo, Climatização, Drywall, Acessibilidade
 
 REGRAS:
-- Cada item DEVE ter uma fonte declarada (SINAPI, PINI, Mercado)
+- Cada item DEVE ter uma fonte declarada (SINAPI, PINI, Mercado) com código de referência
 - Separar custo de material e mão de obra
 - Identificar itens de alto impacto (Curva A)
-- NÃO inventar preços - usar referências reais
+- NÃO inventar preços - usar referências reais do banco de dados
+- Usar códigos SINAPI (numéricos) ou PINI (TCPO-*) como sourceCode
 
 === HIERARQUIA DE ITENS (EVITAR DUPLICAÇÃO) ===
 Itens com isSummaryItem=true são ITENS PAI (resumo).
