@@ -221,12 +221,66 @@ export async function updateAgentExecution(id: number, data: Partial<InsertAgent
 }
 
 // ==================== BUDGET ITEM QUERIES ====================
+
+// Sanitize a budget item to ensure all fields are valid for DB insertion
+function sanitizeBudgetItem(item: InsertBudgetItem): InsertBudgetItem {
+  const safeStr = (val: any, maxLen: number): string | null => {
+    if (val === null || val === undefined) return null;
+    const s = String(val).trim();
+    return s.length > maxLen ? s.substring(0, maxLen) : s;
+  };
+  const safeDecimal = (val: any): string => {
+    const n = Number(val);
+    if (isNaN(n) || !isFinite(n)) return "0";
+    return String(n);
+  };
+  return {
+    ...item,
+    category: safeStr(item.category, 100),
+    code: safeStr(item.code, 50),
+    description: item.description ? String(item.description).trim() : "Sem descrição",
+    unit: safeStr(item.unit, 20),
+    quantity: safeDecimal(item.quantity),
+    unitCostMaterial: safeDecimal(item.unitCostMaterial),
+    unitCostLabor: safeDecimal(item.unitCostLabor),
+    unitCostLogistics: safeDecimal(item.unitCostLogistics),
+    unitCostTotal: safeDecimal(item.unitCostTotal),
+    totalCost: safeDecimal(item.totalCost),
+    bdiAmount: safeDecimal(item.bdiAmount),
+    finalPrice: safeDecimal(item.finalPrice),
+    taxAmount: safeDecimal(item.taxAmount),
+    source: safeStr(item.source, 100),
+    sourceCode: safeStr(item.sourceCode, 50),
+    sourceDate: safeStr(item.sourceDate, 20),
+  };
+}
+
 export async function createBudgetItems(items: InsertBudgetItem[]): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  if (items.length > 0) {
-    await db.insert(budgetItems).values(items);
+  if (items.length === 0) return;
+  
+  // Sanitize all items before insertion
+  const sanitized = items.map(sanitizeBudgetItem);
+  
+  // Insert in chunks of 10 to avoid MySQL parameter limits
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < sanitized.length; i += CHUNK_SIZE) {
+    const chunk = sanitized.slice(i, i + CHUNK_SIZE);
+    try {
+      await db.insert(budgetItems).values(chunk);
+    } catch (err: any) {
+      console.error(`[DB] Failed to insert budget items chunk ${i / CHUNK_SIZE + 1} (items ${i + 1}-${i + chunk.length}):`, err.message);
+      // Try inserting one by one as fallback
+      for (const singleItem of chunk) {
+        try {
+          await db.insert(budgetItems).values([singleItem]);
+        } catch (innerErr: any) {
+          console.error(`[DB] Failed to insert single budget item (code: ${singleItem.code}, desc: ${singleItem.description?.substring(0, 50)}):`, innerErr.message);
+        }
+      }
+    }
   }
 }
 

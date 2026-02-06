@@ -464,3 +464,9 @@ Data: 04/02/2026
 - [x] Excel não consegue abrir arquivo memoria_calculo gerado - CORRIGIDO
 - [x] Verificar geração do buffer XLSX - Era XML simples, não XLSX real
 - [x] Corrigir formato do arquivo - Implementado usando biblioteca SheetJS (xlsx)
+
+## Bug v2.4.2 - Erro no Orçamentista ao inserir budget_items ✅
+- [x] Failed query: insert into budget_items com 46 itens - CORRIGIDO
+- [x] Implementada inserção em chunks de 10 itens com fallback individual
+- [x] Criada função sanitizeBudgetItem para truncar strings e validar decimais
+- [x] Fallback: se chunk falhar, tenta inserir item a item com log de erro
