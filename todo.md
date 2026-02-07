@@ -482,3 +482,33 @@ Data: 04/02/2026
 - [x] Criar testes para SINAPI e PINI expandidos (15 testes passando)
 - [x] Implementar função comparePrices para cruzar SINAPI x PINI
 - [x] 224 testes passando (21 arquivos)
+
+## v2.6.0 - Integração SINAPI/PINI em Tempo Real (Scraping)
+### Fase 1: Setup ✅
+- [x] Instalar Puppeteer, Winston
+- [x] Criar cache em memória (Map com TTL 30 dias) - /server/services/cacheService.ts
+- [x] Criar rate limiter (1 req a cada 3-5s) - /server/utils/rateLimiter.ts
+- [x] Criar logger com Winston - /server/utils/logger.ts
+
+### Fase 2: Scraper SINAPI (Orcamentor.com) ✅
+- [x] Criar sinapiScraper.ts com Puppeteer
+- [x] Extrair código, descrição, preço, unidade, referência, insumos
+- [x] Implementar cache e rate limiting
+
+### Fase 3: Scraper PINI (TCPOWeb com login) ✅
+- [x] Criar piniScraper.ts com login automatizado
+- [x] Gerenciamento de sessão (30 min TTL)
+- [x] Retry com delay crescente em caso de bloqueio (3 tentativas)
+
+### Fase 4: Refatorar serviços existentes ✅
+- [x] sinapi.ts: scraping primeiro, fallback para banco fixo
+- [x] pini.ts: scraping primeiro, fallback para banco fixo
+
+### Fase 5: Credenciais ✅
+- [x] Configurar PINI_USER e PINI_PASS como env vars
+
+### Fase 6: Testes ✅
+- [x] Testes unitários para cache, rate limiter - 10 testes em scraping-infra.test.ts
+- [x] Testes de integração para scrapers (guard em ambiente de teste)
+- [x] Validar fallback quando scraping falha
+- [x] 236 testes passando (23 arquivos)

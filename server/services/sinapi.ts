@@ -1,4 +1,6 @@
 import { setCachedPrice, getCachedPrice } from "../db";
+import { searchSinapiOnline } from "./sinapiScraper";
+import { logger, incrementStat } from "../utils/logger";
 
 export interface SinapiComposition {
   code: string;
@@ -398,6 +400,52 @@ export async function getSinapiComposition(code: string, state: string = "SP"): 
       };
     }
 
+    // Tentar scraping online primeiro
+    try {
+      const scraped = await searchSinapiOnline(code);
+      if (scraped && scraped.preco > 0) {
+        logger.info(`SINAPI online: ${code} - ${scraped.descricao} - R$ ${scraped.preco}`);
+        const onlineResult: SinapiComposition = {
+          code: scraped.codigo,
+          description: scraped.descricao,
+          unit: scraped.unidade,
+          price: adjustPrice(scraped.preco, state),
+          referenceDate: scraped.referencia || "01/2025",
+          state,
+          category: "Online",
+          components: scraped.insumos?.map(i => ({
+            code: i.codigo,
+            description: i.nome,
+            unit: i.unidade,
+            coefficient: i.quantidade,
+            unitPrice: i.custoUnitario,
+            totalPrice: i.custoTotal,
+          })),
+        };
+        // Cache resultado online por 30 dias
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        try {
+          await setCachedPrice({
+            source: "sinapi",
+            code: onlineResult.code,
+            description: onlineResult.description,
+            unit: onlineResult.unit,
+            price: onlineResult.price.toString() as any,
+            region: state,
+            referenceDate: onlineResult.referenceDate,
+            rawData: { category: onlineResult.category, components: onlineResult.components, source: "scraping" } as any,
+            expiresAt,
+          });
+        } catch { /* cache write failure is non-critical */ }
+        return onlineResult;
+      }
+    } catch (scrapeError) {
+      logger.warn(`SINAPI scraping falhou para ${code}, usando banco fixo`);
+      incrementStat('sinapiFallback');
+    }
+
+    // Fallback: banco fixo
     const composition = SINAPI_DB.find(item => item.code === code);
     if (!composition) return null;
 

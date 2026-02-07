@@ -1,4 +1,6 @@
 import { setCachedPrice, getCachedPrice } from "../db";
+import { searchPiniOnline } from "./piniScraper";
+import { logger, incrementStat } from "../utils/logger";
 
 export interface PiniComposition {
   code: string;
@@ -295,6 +297,39 @@ export async function getPiniComposition(code: string, region: string = "São Pa
       };
     }
 
+    // Tentar scraping online primeiro
+    try {
+      const scraped = await searchPiniOnline(code);
+      if (scraped && scraped.preco > 0) {
+        logger.info(`PINI online: ${code} - ${scraped.descricao} - R$ ${scraped.preco}`);
+        const onlineResult: PiniComposition = {
+          code: scraped.codigo,
+          description: scraped.descricao,
+          unit: scraped.unidade,
+          price: scraped.preco,
+          region,
+          referenceDate: new Date().toISOString().slice(0, 7),
+          laborCost: 0,
+          materialCost: 0,
+          equipmentCost: 0,
+          components: scraped.componentes?.map(c => ({
+            type: "material" as const,
+            code: "",
+            description: c.descricao,
+            unit: c.unidade,
+            coefficient: c.coeficiente,
+            unitPrice: c.custoUnitario,
+            totalPrice: c.custoTotal,
+          })),
+        };
+        return onlineResult;
+      }
+    } catch (scrapeError) {
+      logger.warn(`PINI scraping falhou para ${code}, usando banco fixo`);
+      incrementStat('piniFallback');
+    }
+
+    // Fallback: banco fixo
     const composition = PINI_DATABASE.find(item => item.code === code);
     if (!composition) return null;
 
