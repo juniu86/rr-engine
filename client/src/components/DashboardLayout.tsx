@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Plus, FolderOpen, Building2, Settings, BarChart3 } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Plus, FolderOpen, Building2, Settings, BarChart3, CreditCard } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -30,6 +30,7 @@ import { Button } from "./ui/button";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Plus, label: "Novo Orçamento", path: "/projects/new" },
+  { icon: CreditCard, label: "Planos e Pagamentos", path: "/planos" },
   { icon: Settings, label: "Configurações", path: "/settings" },
   { icon: BarChart3, label: "Admin", path: "/admin" },
 ];

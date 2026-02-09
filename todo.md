@@ -512,3 +512,37 @@ Data: 04/02/2026
 - [x] Testes de integração para scrapers (guard em ambiente de teste)
 - [x] Validar fallback quando scraping falha
 - [x] 236 testes passando (23 arquivos)
+
+## v2.7.0 - Integração Stripe (Pagamentos)
+### Fase 1: Setup Stripe ✅
+- [x] Adicionar feature Stripe via webdev_add_feature
+- [x] Configurar chave Stripe (STRIPE_SECRET_KEY, VITE_STRIPE_PUBLISHABLE_KEY) - auto-configurado
+
+### Fase 2: Schema e Produtos ✅
+- [x] Criar tabela subscriptions no banco
+- [x] Criar tabela budget_credits no banco
+- [x] Criar produtos no Stripe: Plano Mensal R$450 e Avulso R$89,90
+- [x] Implementar lógica de contagem de orçamentos por mês (canCreateBudget, consumeBudgetCredit)
+
+### Fase 3: Backend Stripe ✅
+- [x] Webhook handler para checkout.session.completed, subscription.updated, invoice.paid
+- [x] Checkout session para assinatura mensal
+- [x] Checkout session para orçamento avulso
+- [x] Portal de billing do Stripe (gerenciamento de assinatura)
+- [x] tRPC router com 6 procedures: getPlans, getPlanInfo, canCreateBudget, createSubscriptionCheckout, createSingleBudgetCheckout, createPortalSession
+
+### Fase 4: UI de Planos ✅
+- [x] Criar página de Planos e Preços (/planos)
+- [x] Card de status do plano atual com barra de uso
+- [x] Cards de plano mensal e avulso com checkout integrado
+- [x] Tabela comparativa de planos
+- [x] Seção de créditos avulsos disponíveis
+- [x] Link na sidebar do DashboardLayout
+
+### Fase 5: Controle de Acesso ✅
+- [x] Gate de pagamento na criação de projetos (canCreateBudget + consumeBudgetCredit)
+- [x] Alerta no NewProject quando sem créditos (com link para /planos)
+- [x] Info de créditos restantes no NewProject
+- [x] Admin bypass (administradores criam sem limite)
+- [x] 14 testes unitários para módulo Stripe
+- [x] 250 testes passando (24 arquivos)

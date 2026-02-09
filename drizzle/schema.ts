@@ -320,3 +320,51 @@ export const agentInteractions = mysqlTable("agent_interactions", {
 
 export type AgentInteraction = typeof agentInteractions.$inferSelect;
 export type InsertAgentInteraction = typeof agentInteractions.$inferInsert;
+
+
+// ==================== STRIPE: SUBSCRIPTIONS & PAYMENTS ====================
+// Armazena apenas IDs do Stripe + dados de negócio locais (seguindo princípio de não duplicar)
+export const subscriptions = mysqlTable("subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
+  
+  // Status local cacheado (atualizado via webhook)
+  status: mysqlEnum("status", ["active", "canceled", "past_due", "trialing", "incomplete"]).default("incomplete").notNull(),
+  
+  // Plano: "mensal" = R$450/mês (10 orçamentos) | "avulso" = pagamento por orçamento
+  plan: mysqlEnum("plan", ["mensal", "avulso", "free"]).default("free").notNull(),
+  
+  // Controle de uso mensal (para plano mensal)
+  quotaUsed: int("quotaUsed").default(0).notNull(), // Orçamentos usados no período atual
+  quotaLimit: int("quotaLimit").default(0).notNull(), // Limite do plano (10 para mensal)
+  currentPeriodStart: timestamp("currentPeriodStart"),
+  currentPeriodEnd: timestamp("currentPeriodEnd"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = typeof subscriptions.$inferInsert;
+
+// Créditos avulsos (pagamento por orçamento)
+export const budgetCredits = mysqlTable("budget_credits", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  stripeSessionId: varchar("stripeSessionId", { length: 255 }),
+  
+  // Quantidade de créditos comprados e usados
+  creditsTotal: int("creditsTotal").default(1).notNull(),
+  creditsUsed: int("creditsUsed").default(0).notNull(),
+  
+  // Status do pagamento (cacheado via webhook)
+  status: mysqlEnum("status", ["pending", "paid", "failed", "refunded"]).default("pending").notNull(),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BudgetCredit = typeof budgetCredits.$inferSelect;
+export type InsertBudgetCredit = typeof budgetCredits.$inferInsert;

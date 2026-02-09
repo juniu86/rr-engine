@@ -11,6 +11,7 @@ import ProjectDetails from "./pages/ProjectDetails";
 import Settings from "./pages/Settings";
 import AdminDashboard from "./pages/AdminDashboard";
 import CompareRevisions from "./pages/CompareRevisions";
+import Planos from "./pages/Planos";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/projects/new" component={NewProject} />
       <Route path="/projects/:id" component={ProjectDetails} />
       <Route path="/projects/:id/compare" component={CompareRevisions} />
+      <Route path="/planos" component={Planos} />
       <Route path="/settings" component={Settings} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

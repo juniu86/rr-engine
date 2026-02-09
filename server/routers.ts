@@ -11,9 +11,12 @@ import type { AgentType } from "../shared/agents";
 import { searchSinapi, getSinapiComposition } from "./services/sinapi";
 import { searchPini, getPiniComposition, comparePrices } from "./services/pini";
 import { generateProposalPDF, generateMemoriaCalculo, generateSchedulePDF } from "./services/documents";
+import { stripeRouter } from "./routers/stripe";
+import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
 
 export const appRouter = router({
   system: systemRouter,
+  stripe: stripeRouter,
   
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -36,6 +39,15 @@ export const appRouter = router({
         memorialDescritivo: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Gate de pagamento: verificar se usuário pode criar orçamento
+        const budgetCheck = await canCreateBudget(ctx.user.id);
+        if (!budgetCheck.allowed) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: budgetCheck.reason || "Sem plano ativo ou créditos disponíveis. Acesse a página de Planos.",
+          });
+        }
+
         // Buscar BDI das configurações da empresa do usuário
         const companySettings = await db.getCompanySettingsOrDefault(ctx.user.id);
         const bdiValue = companySettings.bdiPercentual ?? 25;
@@ -54,6 +66,9 @@ export const appRouter = router({
           bdiPreset: "padrao", // Sempre usar padrão pois BDI vem das configurações
           bdiPercentual: bdiValue.toString(),
         });
+
+        // Consumir crédito/quota após criação bem-sucedida
+        await consumeBudgetCredit(ctx.user.id);
         
         return { projectId };
       }),

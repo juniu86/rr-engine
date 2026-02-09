@@ -14,8 +14,12 @@ import {
   MapPin, 
   AlertTriangle,
   ArrowRight,
-  Loader2
+  Loader2,
+  CreditCard,
+  ShieldAlert
 } from "lucide-react";
+import { Link } from "wouter";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function NewProject() {
   const [, navigate] = useLocation();
@@ -26,6 +30,8 @@ export default function NewProject() {
     restrictions: "",
     memorialDescritivo: "",
   });
+
+  const { data: budgetCheck, isLoading: budgetCheckLoading } = trpc.stripe.canCreateBudget.useQuery();
 
   const createProject = trpc.project.create.useMutation({
     onSuccess: (data) => {
@@ -56,6 +62,44 @@ export default function NewProject() {
             Preencha as informações do projeto para iniciar o processamento
           </p>
         </div>
+
+        {/* Alerta de pagamento */}
+        {!budgetCheckLoading && budgetCheck && !budgetCheck.allowed && (
+          <Alert variant="destructive">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertTitle>Sem créditos disponíveis</AlertTitle>
+            <AlertDescription className="flex flex-col gap-2">
+              <span>{budgetCheck.reason}</span>
+              <Link href="/planos">
+                <Button size="sm" variant="outline" className="mt-1">
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  Ver Planos e Preços
+                </Button>
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Info de créditos restantes */}
+        {!budgetCheckLoading && budgetCheck && budgetCheck.allowed && (
+          <Alert>
+            <CreditCard className="h-4 w-4" />
+            <AlertTitle>
+              {budgetCheck.plan === "mensal"
+                ? `Plano Profissional — ${budgetCheck.quotaUsed}/${budgetCheck.quotaLimit} orçamentos usados`
+                : budgetCheck.plan === "avulso"
+                ? `${budgetCheck.creditsAvailable} crédito(s) avulso(s) disponível(is)`
+                : "Acesso administrativo"}
+            </AlertTitle>
+            <AlertDescription>
+              {budgetCheck.plan === "mensal"
+                ? "Cada orçamento criado consome 1 unidade da sua cota mensal."
+                : budgetCheck.plan === "avulso"
+                ? "Cada orçamento criado consome 1 crédito avulso."
+                : "Administradores podem criar orçamentos sem limite."}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Info */}
@@ -185,7 +229,7 @@ export default function NewProject() {
             <Button 
               type="submit" 
               className="bg-primary hover:bg-primary/90"
-              disabled={createProject.isPending}
+              disabled={createProject.isPending || (!budgetCheckLoading && budgetCheck && !budgetCheck.allowed)}
             >
               {createProject.isPending ? (
                 <>

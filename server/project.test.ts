@@ -2,6 +2,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
+// Mock Stripe service
+vi.mock("./stripe/stripeService", () => ({
+  canCreateBudget: vi.fn().mockResolvedValue({ allowed: true, plan: "admin" }),
+  consumeBudgetCredit: vi.fn().mockResolvedValue(true),
+  createSubscriptionCheckout: vi.fn(),
+  createSingleBudgetCheckout: vi.fn(),
+  getUserPlanInfo: vi.fn(),
+  createCustomerPortal: vi.fn(),
+}));
+
 // Mock database functions
 vi.mock("./db", () => ({
   createProject: vi.fn().mockResolvedValue(1),
@@ -30,6 +40,7 @@ vi.mock("./db", () => ({
 }));
 
 import * as db from "./db";
+import * as stripeService from "./stripe/stripeService";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
