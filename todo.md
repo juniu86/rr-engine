@@ -546,3 +546,22 @@ Data: 04/02/2026
 - [x] Admin bypass (administradores criam sem limite)
 - [x] 14 testes unitários para módulo Stripe
 - [x] 250 testes passando (24 arquivos)
+
+## v2.8.0 - Próximos Passos (Planos na Home + Histórico de Faturas)
+### Fase 1: Seção de Planos na Landing Page
+- [ ] Adicionar seção de preços na Home pública (antes do footer)
+- [ ] Cards de plano mensal e avulso com CTA para /planos
+- [ ] Tabela comparativa resumida
+- [ ] Animação de entrada ao scroll
+
+### Fase 2: Histórico de Faturas
+- [ ] Backend: procedure para listar pagamentos do usuário via Stripe API
+- [ ] UI: aba/seção na página de planos com lista de faturas
+- [ ] Exibir data, valor, status e link para recibo do Stripe
+
+## v2.8.1 - Correções de SEO
+- [x] Adicionar meta description (50-160 caracteres) no index.html
+- [x] Adicionar palavras-chave relevantes no conteúdo da Home
+- [x] Adicionar meta keywords no index.html
+- [x] Adicionar Open Graph tags para compartilhamento em redes sociais
+- [x] Adicionar meta robots e author
