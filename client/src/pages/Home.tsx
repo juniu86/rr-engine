@@ -464,6 +464,109 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Pricing Section */}
+        <section id="precos" className="py-24 relative">
+          <div className="absolute inset-0 bg-gradient-to-b from-[oklch(0.12_0.02_250)] via-[oklch(0.14_0.018_250)] to-[oklch(0.12_0.02_250)]" />
+          <div className="container relative">
+            <div className="text-center mb-16">
+              <p className="text-primary text-sm font-medium tracking-widest uppercase mb-3">
+                Planos e Preços
+              </p>
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                Escolha o Modelo Ideal
+              </h2>
+              <p className="text-slate-400 max-w-2xl mx-auto text-lg">
+                Assinatura mensal para operações recorrentes ou pagamento avulso por demanda.
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+              {/* Plano Mensal */}
+              <div className="relative rounded-2xl bg-[oklch(0.18_0.012_250)] border border-primary/30 p-8 flex flex-col">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  <span className="bg-primary text-white text-xs font-semibold px-3 py-1 rounded-full">
+                    Mais Popular
+                  </span>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-xl font-bold text-white mb-1">Plano Profissional</h3>
+                  <p className="text-slate-400 text-sm">Até 10 orçamentos por mês</p>
+                </div>
+                <div className="mb-6">
+                  <span className="text-4xl font-bold text-white">R$ 450</span>
+                  <span className="text-slate-400">/mês</span>
+                </div>
+                <ul className="space-y-3 mb-8 flex-1">
+                  {[
+                    "Até 10 orçamentos por mês",
+                    "10 agentes de IA especializados",
+                    "Integração SINAPI + PINI em tempo real",
+                    "Exportação XLSX e PDF",
+                    "Suporte prioritário",
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-slate-300 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500 mb-1">Custo por orçamento: <span className="text-primary font-medium">R$ 45,00</span></p>
+                </div>
+              </div>
+
+              {/* Plano Avulso */}
+              <div className="rounded-2xl bg-[oklch(0.18_0.012_250)] border border-white/10 p-8 flex flex-col">
+                <div className="mb-6">
+                  <h3 className="text-xl font-bold text-white mb-1">Orçamento Avulso</h3>
+                  <p className="text-slate-400 text-sm">Pagamento único por demanda</p>
+                </div>
+                <div className="mb-6">
+                  <span className="text-4xl font-bold text-white">R$ 89</span>
+                  <span className="text-lg text-white">,90</span>
+                  <span className="text-slate-400"> /orçamento</span>
+                </div>
+                <ul className="space-y-3 mb-8 flex-1">
+                  {[
+                    "1 orçamento completo",
+                    "10 agentes de IA especializados",
+                    "Integração SINAPI + PINI",
+                    "Exportação XLSX e PDF",
+                    "Histórico de interações",
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-slate-300 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Sem compromisso mensal</p>
+                </div>
+              </div>
+            </div>
+
+            {/* CTA para planos */}
+            <div className="text-center mt-12">
+              {isAuthenticated ? (
+                <Link href="/planos">
+                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8">
+                    Ver Detalhes e Assinar
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Button>
+                </Link>
+              ) : (
+                <a href={getLoginUrl()}>
+                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8">
+                    Começar Agora
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Button>
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* CTA Section */}
         <section className="container py-16">
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-[oklch(0.38_0.10_220)] p-12 text-center">

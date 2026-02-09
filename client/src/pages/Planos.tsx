@@ -14,7 +14,9 @@ import {
   Loader2,
   AlertCircle,
   BarChart3,
-  FileText
+  FileText,
+  Receipt,
+  Clock
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -362,7 +364,109 @@ export default function Planos() {
             </CardContent>
           </Card>
         )}
+
+        {/* Histórico de Faturas */}
+        <PaymentHistorySection />
       </div>
     </DashboardLayout>
+  );
+}
+
+function PaymentHistorySection() {
+  const { data: payments, isLoading } = trpc.stripe.getPaymentHistory.useQuery();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Receipt className="h-5 w-5" />
+          Histórico de Pagamentos
+        </CardTitle>
+        <CardDescription>
+          Todos os pagamentos realizados na plataforma.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : !payments || payments.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Clock className="h-10 w-10 mx-auto mb-3 opacity-50" />
+            <p className="font-medium">Nenhum pagamento registrado</p>
+            <p className="text-sm mt-1">Seus pagamentos aparecerão aqui após a primeira compra.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-3 px-2 font-medium">Data</th>
+                  <th className="text-left py-3 px-2 font-medium">Descrição</th>
+                  <th className="text-right py-3 px-2 font-medium">Valor</th>
+                  <th className="text-center py-3 px-2 font-medium">Status</th>
+                  <th className="text-center py-3 px-2 font-medium">Recibo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((payment) => (
+                  <tr key={payment.id} className="border-b last:border-0 hover:bg-muted/50">
+                    <td className="py-3 px-2 text-muted-foreground">
+                      {new Date(payment.date * 1000).toLocaleDateString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                    </td>
+                    <td className="py-3 px-2">
+                      <div className="flex items-center gap-2">
+                        {payment.type === "subscription" ? (
+                          <Crown className="h-4 w-4 text-primary shrink-0" />
+                        ) : (
+                          <Zap className="h-4 w-4 text-amber-500 shrink-0" />
+                        )}
+                        <span>{payment.description}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2 text-right font-medium">
+                      {(payment.amount / 100).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: payment.currency.toUpperCase(),
+                      })}
+                    </td>
+                    <td className="py-3 px-2 text-center">
+                      <Badge
+                        variant={payment.status === "succeeded" ? "default" : "secondary"}
+                        className={payment.status === "succeeded" ? "bg-green-500/10 text-green-600 border-green-500/20" : ""}
+                      >
+                        {payment.status === "succeeded" ? "Pago" : payment.status === "pending" ? "Pendente" : payment.status}
+                      </Badge>
+                    </td>
+                    <td className="py-3 px-2 text-center">
+                      {payment.receiptUrl ? (
+                        <a
+                          href={payment.receiptUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Ver
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -548,16 +548,19 @@ Data: 04/02/2026
 - [x] 250 testes passando (24 arquivos)
 
 ## v2.8.0 - Próximos Passos (Planos na Home + Histórico de Faturas)
-### Fase 1: Seção de Planos na Landing Page
-- [ ] Adicionar seção de preços na Home pública (antes do footer)
-- [ ] Cards de plano mensal e avulso com CTA para /planos
-- [ ] Tabela comparativa resumida
-- [ ] Animação de entrada ao scroll
+### Fase 1: Seção de Planos na Landing Page ✅
+- [x] Adicionar seção de preços na Home pública (antes do CTA/footer)
+- [x] Cards de plano mensal (R$450/mês) e avulso (R$89,90) com features
+- [x] Badge "Mais Popular" no plano mensal
+- [x] CTA dinâmico (logado: /planos, visitante: login)
 
-### Fase 2: Histórico de Faturas
-- [ ] Backend: procedure para listar pagamentos do usuário via Stripe API
-- [ ] UI: aba/seção na página de planos com lista de faturas
-- [ ] Exibir data, valor, status e link para recibo do Stripe
+### Fase 2: Histórico de Faturas ✅
+- [x] Backend: getPaymentHistory via Stripe Charges API (até 50 últimos)
+- [x] tRPC procedure stripe.getPaymentHistory
+- [x] UI: seção na página /planos com tabela de pagamentos
+- [x] Exibir data, descrição, valor, status (badge) e link para recibo
+- [x] Empty state quando não há pagamentos
+- [x] 4 novos testes unitários (254 testes passando)
 
 ## v2.8.1 - Correções de SEO
 - [x] Adicionar meta description (50-160 caracteres) no index.html

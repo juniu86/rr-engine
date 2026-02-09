@@ -449,4 +449,57 @@ export async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 }
 
+// ==================== PAYMENT HISTORY ====================
+
+export async function getPaymentHistory(userId: number): Promise<Array<{
+  id: string;
+  date: number;
+  amount: number;
+  currency: string;
+  status: string;
+  description: string;
+  type: "subscription" | "avulso";
+  receiptUrl: string | null;
+}>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Buscar o stripeCustomerId do usuário
+  const [sub] = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .limit(1);
+
+  if (!sub?.stripeCustomerId) {
+    return [];
+  }
+
+  try {
+    // Buscar charges do Stripe para esse customer
+    const charges = await stripe.charges.list({
+      customer: sub.stripeCustomerId,
+      limit: 50,
+    });
+
+    return charges.data.map((charge) => {
+      const chargeAny = charge as any;
+      const isSubscription = !!chargeAny.invoice;
+      return {
+        id: charge.id,
+        date: charge.created,
+        amount: charge.amount,
+        currency: charge.currency,
+        status: charge.status,
+        description: charge.description || (isSubscription ? "Plano Profissional - Mensal" : "Orçamento Avulso"),
+        type: isSubscription ? "subscription" as const : "avulso" as const,
+        receiptUrl: charge.receipt_url || null,
+      };
+    });
+  } catch (err: any) {
+    console.error("[Stripe] Error fetching payment history:", err.message);
+    return [];
+  }
+}
+
 export { stripe };

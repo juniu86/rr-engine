@@ -7,6 +7,7 @@ import {
   canCreateBudget,
   getUserPlanInfo,
   createCustomerPortal,
+  getPaymentHistory,
 } from "../stripe/stripeService";
 import { PLANS } from "../stripe/products";
 
@@ -65,6 +66,11 @@ export const stripeRouter = router({
       );
       return { url: session.url };
     }),
+
+  // Retorna histórico de pagamentos do usuário
+  getPaymentHistory: protectedProcedure.query(async ({ ctx }) => {
+    return getPaymentHistory(ctx.user.id);
+  }),
 
   // Cria sessão do portal de billing do Stripe
   createPortalSession: protectedProcedure.mutation(async ({ ctx }) => {
