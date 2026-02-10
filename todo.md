@@ -568,3 +568,6 @@ Data: 04/02/2026
 - [x] Adicionar meta keywords no index.html
 - [x] Adicionar Open Graph tags para compartilhamento em redes sociais
 - [x] Adicionar meta robots e author
+
+## Bugs
+- [x] Fix: redirect_uri inválido ao retornar do Stripe Checkout (domínio run.app não autorizado no OAuth) — usar ctx.req.headers.origin em vez de ctx.req.get("host")

@@ -38,7 +38,7 @@ export const stripeRouter = router({
 
   // Cria sessão de checkout para assinatura mensal
   createSubscriptionCheckout: protectedProcedure.mutation(async ({ ctx }) => {
-    const origin = `${ctx.req.protocol}://${ctx.req.get("host")}`;
+    const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
     const session = await createSubscriptionCheckout(
       ctx.user.id,
       ctx.user.email || "",
@@ -56,7 +56,7 @@ export const stripeRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const origin = `${ctx.req.protocol}://${ctx.req.get("host")}`;
+      const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
       const session = await createSingleBudgetCheckout(
         ctx.user.id,
         ctx.user.email || "",
@@ -74,7 +74,7 @@ export const stripeRouter = router({
 
   // Cria sessão do portal de billing do Stripe
   createPortalSession: protectedProcedure.mutation(async ({ ctx }) => {
-    const origin = `${ctx.req.protocol}://${ctx.req.get("host")}`;
+    const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
     try {
       const session = await createCustomerPortal(ctx.user.id, origin);
       return { url: session.url };
