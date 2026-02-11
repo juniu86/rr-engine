@@ -593,3 +593,13 @@ Data: 04/02/2026
 
 ### Testes
 - [x] 34 testes unitários para as 12 correções (289 testes passando, 25 arquivos)
+
+## v2.10.0 - Correção do Agente Financeiro (Cálculo Determinístico)
+### Problema: Agente Financeiro calcula obras como prejuízo (preço de venda usado como custo pela LLM)
+- [x] Passo 1: Adicionar totalCost e cashFlow pré-calculado ao FinanceiroInput (shared/agents.ts)
+- [x] Passo 2: Criar função calculateDeterministicCashFlow (server/services/deterministicCashFlow.ts)
+- [x] Passo 3: Substituir output da LLM em 4 locais (executeSingle, executeAll, pipeline, revisão)
+- [x] Passo 4: Simplificar FinanceiroAgent para análise qualitativa (server/agents/index.ts)
+- [x] Passo 5: buildDeterministicFinanceiroOutput com margens bruta/líquida
+- [x] Passo 6: 18 testes unitários para cálculo determinístico (307 testes passando, 26 arquivos)
+- [x] Passo 7: Validação TypeScript OK (0 erros)

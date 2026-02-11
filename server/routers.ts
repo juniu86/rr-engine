@@ -343,26 +343,44 @@ export const appRouter = router({
             await db.createScheduleItems(scheduleToSave);
           }
           
-          if (input.agentType === 'financeiro' && output && (output as any).cashFlow) {
-            await db.deleteCashFlowItemsByProjectId(input.projectId);
-            const rawCashFlow = (output as any).cashFlow;
-            let cumulativeBalance = 0;
-            const cashFlowToSave = rawCashFlow.map((item: any) => {
-              const expense = Number(item.expense || item.outflow || 0);
-              const income = Number(item.income || item.inflow || 0);
-              cumulativeBalance += income - expense;
-              return {
-                projectId: input.projectId,
-                weekNumber: item.week,
-                plannedExpense: String(expense),
-                plannedIncome: String(income),
-                actualExpense: null,
-                actualIncome: null,
-                cashBalance: String(cumulativeBalance),
-                hasAlert: cumulativeBalance < 0,
-              };
+          // v2.10: Fluxo de caixa determinístico (substitui output da LLM)
+          if (input.agentType === 'financeiro') {
+            const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
+            const finInput = agentInput as any;
+            const tributarioExec = executions.find(e => e.agentType === 'tributario');
+            const totalTaxes = tributarioExec?.output ? Number((tributarioExec.output as any).totalTaxes) || 0 : 0;
+            
+            const deterministicResult = calculateDeterministicCashFlow({
+              totalCost: finInput.totalCost || 0,
+              totalPrice: finInput.totalPrice || 0,
+              totalDuration: finInput.cashFlow?.length || 4,
+              totalTaxes,
             });
+            
+            const deterministicOutput = buildDeterministicFinanceiroOutput(deterministicResult, output);
+            
+            // Substituir output da LLM pelo determinístico
+            await db.updateAgentExecution(execution.id, {
+              status: "completed",
+              output: deterministicOutput as any,
+              completedAt: new Date(),
+            });
+            
+            // Persistir fluxo de caixa
+            await db.deleteCashFlowItemsByProjectId(input.projectId);
+            const cashFlowToSave = deterministicResult.cashFlow.map((item) => ({
+              projectId: input.projectId,
+              weekNumber: item.week,
+              plannedExpense: String(item.expense),
+              plannedIncome: String(item.income),
+              actualExpense: null,
+              actualIncome: null,
+              cashBalance: String(item.balance),
+              hasAlert: item.balance < 0,
+            }));
             await db.createCashFlowItems(cashFlowToSave);
+            
+            console.log(`[Financeiro] Output determinístico aplicado: Saldo final R$ ${deterministicResult.cashFlow[deterministicResult.cashFlow.length - 1]?.balance.toFixed(2)}`);
           }
           
           const nextAgentOrder = AGENT_ORDER[input.agentType] + 1;
@@ -412,7 +430,7 @@ export const appRouter = router({
           try {
             const agentInput = await buildAgentInput(agentType, project, executions, ctx.user.id);
             const agent = agents[agentType];
-            const output = await agent.execute(agentInput);
+            let output = await agent.execute(agentInput);
             
             results[agentType] = output;
             
@@ -542,64 +560,55 @@ export const appRouter = router({
               await db.createScheduleItems(scheduleToSave);
             }
             
-            // Salvar fluxo de caixa após execução do agente financeiro
-            // P0-4 FIX: Limpar dados antigos antes de inserir novos
-            if (agentType === 'financeiro' && output && (output as any).cashFlow) {
-              await db.deleteCashFlowItemsByProjectId(input.projectId);
-              const rawCashFlow = (output as any).cashFlow;
-              let cumulativeBalance = 0;
-              const cashFlowToSave = rawCashFlow.map((item: any) => {
-                const expense = Number(item.expense || item.outflow || 0);
-                const income = Number(item.income || item.inflow || 0);
-                cumulativeBalance += income - expense;
-                return {
-                  projectId: input.projectId,
-                  weekNumber: item.week,
-                  plannedExpense: String(expense),
-                  plannedIncome: String(income),
-                  actualExpense: null,
-                  actualIncome: null,
-                  cashBalance: String(cumulativeBalance),
-                  hasAlert: cumulativeBalance < 0,
-                };
-              });
-              await db.createCashFlowItems(cashFlowToSave);
+            // v2.10: Fluxo de caixa determinístico (substitui output da LLM)
+            if (agentType === 'financeiro') {
+              const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
               
-              // === CÁLCULO PROGRAMÁTICO DE MARGEM LÍQUIDA ===
-              // Buscar dados dos agentes anteriores para cálculo correto
+              const orcamentistaOut = results.orcamentista as any;
+              const logisticaOut = results.logistica as any;
               const comercialOut = results.comercial as any;
               const tributarioOut = results.tributario as any;
-              const logisticaOut = results.logistica as any;
-              const orcamentistaOut = results.orcamentista as any;
+              const gestaoOut = results.gestao_projetos as any;
               
-              if (comercialOut && tributarioOut) {
-                const totalPrice = Number(comercialOut.finalPrice) || 0;
-                const totalDirectCost = Number(orcamentistaOut?.totalDirectCost) || 0;
-                const totalLogisticsCost = Number(logisticaOut?.totalCost) || 0;
-                const totalTaxes = Number(tributarioOut?.totalTaxes) || 0;
-                const totalBaseCost = totalDirectCost + totalLogisticsCost;
-                
-                // Margem bruta: Preço - Custo base (sem impostos)
-                const grossMargin = totalPrice - totalBaseCost;
-                const grossMarginPercent = totalPrice > 0 ? (grossMargin / totalPrice) * 100 : 0;
-                
-                // Margem líquida: Preço - Custo base - Impostos
-                const netMargin = totalPrice - totalBaseCost - totalTaxes;
-                const netMarginPercent = totalPrice > 0 ? (netMargin / totalPrice) * 100 : 0;
-                
-                // Adicionar campos calculados ao output do financeiro
-                (output as any).grossMargin = Math.round(grossMargin * 100) / 100;
-                (output as any).grossMarginPercent = Math.round(grossMarginPercent * 100) / 100;
-                (output as any).netMargin = Math.round(netMargin * 100) / 100;
-                (output as any).netMarginPercent = Math.round(netMarginPercent * 100) / 100;
-                
-                console.log(`[Financeiro] Margens calculadas programaticamente:`);
-                console.log(`  - Preço de Venda: R$ ${totalPrice.toFixed(2)}`);
-                console.log(`  - Custo Base: R$ ${totalBaseCost.toFixed(2)}`);
-                console.log(`  - Impostos: R$ ${totalTaxes.toFixed(2)}`);
-                console.log(`  - Margem Bruta: R$ ${grossMargin.toFixed(2)} (${grossMarginPercent.toFixed(2)}%)`);
-                console.log(`  - Margem Líquida: R$ ${netMargin.toFixed(2)} (${netMarginPercent.toFixed(2)}%)`);
-              }
+              const directCostAll = Number(orcamentistaOut?.totalDirectCost) || 0;
+              const logisticsCostAll = Number(logisticaOut?.totalLogisticsCost ?? logisticaOut?.totalCost) || 0;
+              const totalCostAll = directCostAll + logisticsCostAll;
+              const totalPriceAll = Number(comercialOut?.finalPrice) || 0;
+              const totalTaxesAll = Number(tributarioOut?.totalTaxes) || 0;
+              
+              // Calcular duração
+              const scheduleItemsAll = gestaoOut?.scheduleItems || [];
+              const totalDurationAll = scheduleItemsAll.length > 0
+                ? Math.max(...scheduleItemsAll.map((s: any) => {
+                    const endDay = s.endDay || s.endWeek || 4;
+                    return endDay > 52 ? Math.ceil(endDay / 7) : endDay;
+                  }))
+                : 4;
+              
+              const deterministicResult = calculateDeterministicCashFlow({
+                totalCost: totalCostAll,
+                totalPrice: totalPriceAll,
+                totalDuration: totalDurationAll,
+                totalTaxes: totalTaxesAll,
+              });
+              
+              output = buildDeterministicFinanceiroOutput(deterministicResult, output);
+              
+              // Persistir fluxo de caixa
+              await db.deleteCashFlowItemsByProjectId(input.projectId);
+              const cashFlowToSave = deterministicResult.cashFlow.map((item) => ({
+                projectId: input.projectId,
+                weekNumber: item.week,
+                plannedExpense: String(item.expense),
+                plannedIncome: String(item.income),
+                actualExpense: null,
+                actualIncome: null,
+                cashBalance: String(item.balance),
+                hasAlert: item.balance < 0,
+              }));
+              await db.createCashFlowItems(cashFlowToSave);
+              
+              console.log(`[Financeiro] Determinístico (executeAll): Custo R$ ${totalCostAll.toFixed(2)}, Venda R$ ${totalPriceAll.toFixed(2)}, Saldo final R$ ${deterministicResult.cashFlow[deterministicResult.cashFlow.length - 1]?.balance.toFixed(2)}`);
             }
             
             await db.updateAgentExecution(execution.id, {
@@ -713,7 +722,7 @@ export const appRouter = router({
                 }
                 
                 const agent = agents[agentType];
-                const output = await agent.execute(agentInput);
+                let output = await agent.execute(agentInput);
                 
                 revisedResults[agentType] = output;
                 
@@ -780,51 +789,54 @@ export const appRouter = router({
                   }
                 }
                 
-                if (agentType === 'financeiro' && output && (output as any).cashFlow) {
-                  const rawCashFlow = (output as any).cashFlow;
-                  let cumulativeBalance = 0;
-                  const cashFlowToSave = rawCashFlow.map((item: any) => {
-                    const expense = Number(item.expense || item.outflow || 0);
-                    const income = Number(item.income || item.inflow || 0);
-                    cumulativeBalance += income - expense;
-                    return {
-                      projectId: input.projectId,
-                      weekNumber: item.week,
-                      plannedExpense: String(expense),
-                      plannedIncome: String(income),
-                      actualExpense: null,
-                      actualIncome: null,
-                      cashBalance: String(cumulativeBalance),
-                      hasAlert: cumulativeBalance < 0,
-                    };
-                  });
-                  await db.createCashFlowItems(cashFlowToSave);
+                // v2.10: Fluxo de caixa determinístico (revisão financeira)
+                if (agentType === 'financeiro') {
+                  const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
                   
-                  // === CÁLCULO PROGRAMÁTICO DE MARGEM LÍQUIDA (REVISÃO) ===
                   const comercialRevOut = revisedResults.comercial as any;
                   const tributarioRevOut = revisedResults.tributario as any;
                   const logisticaRevOut = revisedResults.logistica as any;
                   const orcamentistaRevOut = revisedResults.orcamentista as any;
+                  const gestaoRevOut = revisedResults.gestao_projetos as any;
                   
-                  if (comercialRevOut && tributarioRevOut) {
-                    const totalPrice = Number(comercialRevOut.finalPrice) || 0;
-                    const totalDirectCost = Number(orcamentistaRevOut?.totalDirectCost) || 0;
-                    const totalLogisticsCost = Number(logisticaRevOut?.totalCost) || 0;
-                    const totalTaxes = Number(tributarioRevOut?.totalTaxes) || 0;
-                    const totalBaseCost = totalDirectCost + totalLogisticsCost;
-                    
-                    const grossMargin = totalPrice - totalBaseCost;
-                    const grossMarginPercent = totalPrice > 0 ? (grossMargin / totalPrice) * 100 : 0;
-                    const netMargin = totalPrice - totalBaseCost - totalTaxes;
-                    const netMarginPercent = totalPrice > 0 ? (netMargin / totalPrice) * 100 : 0;
-                    
-                    (output as any).grossMargin = Math.round(grossMargin * 100) / 100;
-                    (output as any).grossMarginPercent = Math.round(grossMarginPercent * 100) / 100;
-                    (output as any).netMargin = Math.round(netMargin * 100) / 100;
-                    (output as any).netMarginPercent = Math.round(netMarginPercent * 100) / 100;
-                    
-                    console.log(`[Financeiro Revisão] Margens calculadas: Bruta ${grossMarginPercent.toFixed(2)}%, Líquida ${netMarginPercent.toFixed(2)}%`);
-                  }
+                  const directCostRev = Number(orcamentistaRevOut?.totalDirectCost) || 0;
+                  const logisticsCostRev = Number(logisticaRevOut?.totalLogisticsCost ?? logisticaRevOut?.totalCost) || 0;
+                  const totalCostRev = directCostRev + logisticsCostRev;
+                  const totalPriceRev = Number(comercialRevOut?.finalPrice) || 0;
+                  const totalTaxesRev = Number(tributarioRevOut?.totalTaxes) || 0;
+                  
+                  const scheduleItemsRev = gestaoRevOut?.scheduleItems || [];
+                  const totalDurationRev = scheduleItemsRev.length > 0
+                    ? Math.max(...scheduleItemsRev.map((s: any) => {
+                        const endDay = s.endDay || s.endWeek || 4;
+                        return endDay > 52 ? Math.ceil(endDay / 7) : endDay;
+                      }))
+                    : 4;
+                  
+                  const deterministicResultRev = calculateDeterministicCashFlow({
+                    totalCost: totalCostRev,
+                    totalPrice: totalPriceRev,
+                    totalDuration: totalDurationRev,
+                    totalTaxes: totalTaxesRev,
+                  });
+                  
+                  output = buildDeterministicFinanceiroOutput(deterministicResultRev, output);
+                  revisedResults[agentType] = output;
+                  
+                  await db.deleteCashFlowItemsByProjectId(input.projectId);
+                  const cashFlowToSaveRev = deterministicResultRev.cashFlow.map((item) => ({
+                    projectId: input.projectId,
+                    weekNumber: item.week,
+                    plannedExpense: String(item.expense),
+                    plannedIncome: String(item.income),
+                    actualExpense: null,
+                    actualIncome: null,
+                    cashBalance: String(item.balance),
+                    hasAlert: item.balance < 0,
+                  }));
+                  await db.createCashFlowItems(cashFlowToSaveRev);
+                  
+                  console.log(`[Financeiro Revisão] Determinístico: Saldo final R$ ${deterministicResultRev.cashFlow[deterministicResultRev.cashFlow.length - 1]?.balance.toFixed(2)}`);
                 }
                 
                 await db.updateAgentExecution(exec.id, {
@@ -1804,7 +1816,7 @@ async function executeRemainingAgents(
     try {
       const agentInput = await buildAgentInput(agentType, project, executions, userId);
       const agent = agents[agentType];
-      const output = await agent.execute(agentInput);
+      let output = await agent.execute(agentInput);
       
       // Salvar itens de orçamento após execução do orçamentista
       // P0-4 FIX: Limpar dados antigos antes de inserir novos
@@ -1896,28 +1908,37 @@ async function executeRemainingAgents(
         await db.createScheduleItems(scheduleToSave);
       }
       
-      // Salvar fluxo de caixa
-      // P0-4 FIX: Limpar dados antigos
-      if (agentType === 'financeiro' && output && (output as any).cashFlow) {
-        await db.deleteCashFlowItemsByProjectId(projectId);
-        const rawCashFlow = (output as any).cashFlow;
-        let cumulativeBalance = 0;
-        const cashFlowToSave = rawCashFlow.map((item: any) => {
-          const expense = Number(item.expense || item.outflow || 0);
-          const income = Number(item.income || item.inflow || 0);
-          cumulativeBalance += income - expense;
-          return {
-            projectId: projectId,
-            weekNumber: item.week,
-            plannedExpense: String(expense),
-            plannedIncome: String(income),
-            actualExpense: null,
-            actualIncome: null,
-            cashBalance: String(cumulativeBalance),
-            hasAlert: cumulativeBalance < 0,
-          };
+      // v2.10: Fluxo de caixa determinístico (pipeline function)
+      if (agentType === 'financeiro') {
+        const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
+        const finInputPipe = agentInput as any;
+        const tributarioExecPipe = executions.find(e => e.agentType === 'tributario');
+        const totalTaxesPipe = tributarioExecPipe?.output ? Number((tributarioExecPipe.output as any).totalTaxes) || 0 : 0;
+        
+        const deterministicResultPipe = calculateDeterministicCashFlow({
+          totalCost: finInputPipe.totalCost || 0,
+          totalPrice: finInputPipe.totalPrice || 0,
+          totalDuration: finInputPipe.cashFlow?.length || 4,
+          totalTaxes: totalTaxesPipe,
         });
-        await db.createCashFlowItems(cashFlowToSave);
+        
+        output = buildDeterministicFinanceiroOutput(deterministicResultPipe, output);
+        
+        // Persistir fluxo de caixa
+        await db.deleteCashFlowItemsByProjectId(projectId);
+        const cashFlowToSavePipe = deterministicResultPipe.cashFlow.map((item) => ({
+          projectId: projectId,
+          weekNumber: item.week,
+          plannedExpense: String(item.expense),
+          plannedIncome: String(item.income),
+          actualExpense: null,
+          actualIncome: null,
+          cashBalance: String(item.balance),
+          hasAlert: item.balance < 0,
+        }));
+        await db.createCashFlowItems(cashFlowToSavePipe);
+        
+        console.log(`[Financeiro] Determinístico (pipeline): Saldo final R$ ${deterministicResultPipe.cashFlow[deterministicResultPipe.cashFlow.length - 1]?.balance.toFixed(2)}`);
       }
       
       await db.updateAgentExecution(execution.id, {
@@ -2096,13 +2117,58 @@ async function buildAgentInput(
     case "financeiro":
       const gestaoOutput = getOutput("gestao_projetos");
       const comercialOutput = getOutput("comercial");
+      const orcamentistaOutputFin = getOutput("orcamentista");
+      const logisticaOutputFin = getOutput("logistica");
       // P2-11 FIX: Usar parcelas dinâmicas do Comercial quando disponíveis
       const dynamicPaymentTerms = comercialOutput.paymentTerms || comercialOutput.paymentConditions || "30/60/90 dias após medição";
+      
+      // v2.10: Cálculo determinístico de custo total e fluxo de caixa
+      const directCost = Number(orcamentistaOutputFin.totalDirectCost) || 0;
+      const logisticsCostFin = Number(logisticaOutputFin.totalLogisticsCost ?? logisticaOutputFin.totalCost) || 0;
+      const totalCostFin = directCost + logisticsCostFin;
+      const totalPriceFin = Number(comercialOutput.finalPrice) || 0;
+      
+      // Calcular duração total em semanas
+      const scheduleItemsFin = gestaoOutput.scheduleItems || [];
+      const totalDurationFin = scheduleItemsFin.length > 0
+        ? Math.max(...scheduleItemsFin.map((s: any) => {
+            const endDay = s.endDay || s.endWeek || 4;
+            return endDay > 52 ? Math.ceil(endDay / 7) : endDay;
+          }))
+        : 4;
+      
+      // Distribuir custos uniformemente por semana
+      const weeklyExpenseFin = totalCostFin / totalDurationFin;
+      
+      // Receitas: 40% semana 1, 60% última semana
+      const adiantamentoFin = totalPriceFin * 0.40;
+      const saldoFinalFin = totalPriceFin * 0.60;
+      
+      // Calcular fluxo de caixa semanal determinístico
+      const deterministicCashFlow: Array<{week: number, expense: number, income: number, balance: number}> = [];
+      let cumulativeBalanceFin = 0;
+      
+      for (let week = 1; week <= totalDurationFin; week++) {
+        const expense = Math.round(weeklyExpenseFin * 100) / 100;
+        const income = week === 1 ? adiantamentoFin : (week === totalDurationFin ? saldoFinalFin : 0);
+        cumulativeBalanceFin += income - expense;
+        deterministicCashFlow.push({
+          week,
+          expense: Math.round(expense * 100) / 100,
+          income: Math.round(income * 100) / 100,
+          balance: Math.round(cumulativeBalanceFin * 100) / 100,
+        });
+      }
+      
+      console.log(`[Financeiro] Cálculo determinístico: Custo R$ ${totalCostFin.toFixed(2)}, Venda R$ ${totalPriceFin.toFixed(2)}, Duração ${totalDurationFin} semanas`);
+      
       return {
-        scheduleItems: gestaoOutput.scheduleItems || [],
-        budgetItems: getOutput("orcamentista").budgetItems || [],
-        totalPrice: comercialOutput.finalPrice || 0,
+        scheduleItems: scheduleItemsFin,
+        budgetItems: orcamentistaOutputFin.budgetItems || [],
+        totalPrice: totalPriceFin,
+        totalCost: totalCostFin,
         paymentTerms: dynamicPaymentTerms,
+        cashFlow: deterministicCashFlow,
       };
       
     case "juridico":

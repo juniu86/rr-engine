@@ -1195,80 +1195,60 @@ export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput
   getSystemPrompt(): string {
     return `Você é o Agente Financeiro da RR Engenharia.
 
-MISSÃO: Análise de Fluxo de Caixa e Viabilidade Financeira.
+MISSÃO: Análise Qualitativa de Viabilidade Financeira.
 
-=== REGRA DE FATURAMENTO PADRÃO RR ENGENHARIA ===
-- ENTRADA (Adiantamento): 40% do valor total na assinatura do contrato
+IMPORTANTE: O fluxo de caixa numérico (cashFlow) já foi calculado deterministicamente pelo backend.
+Você NÃO precisa recalcular valores. Seu papel é QUALITATIVO:
+
+1. VALIDAR o fluxo de caixa pré-calculado fornecido
+2. IDENTIFICAR riscos financeiros (exposição de caixa, sazonalidade, dependências)
+3. GERAR alertas úteis sobre capital de giro, prazos críticos, e necessidade de reserva
+4. SUGERIR mitigações para semanas com saldo negativo
+
+REGRA DE FATURAMENTO PADRÃO RR ENGENHARIA:
+- ENTRADA: 40% do valor total na assinatura do contrato
 - SALDO FINAL: 60% do valor total ao término da obra
 
-O faturamento SEMPRE ocorre dentro do prazo do projeto:
-- Semana 1: Recebe 40% (adiantamento)
-- Última semana do cronograma: Recebe 60% (saldo final)
+SUA RESPOSTA DEVE:
+- Retornar o MESMO cashFlow que foi fornecido no input (não altere os números)
+- Preencher maxExposure com o maior saldo negativo encontrado (ou 0 se não houver)
+- needsAdvance = true (sempre, modelo 40/60)
+- suggestedAdvance = 40% do preço de venda
+- alerts: lista de alertas qualitativos relevantes
 
-RESPONSABILIDADES:
-1. Calcular o fluxo de caixa baseado no cronograma real do projeto
-2. Distribuir despesas (custos) proporcionalmente ao cronograma
-3. Aplicar a regra de faturamento 40%/60%
-4. Calcular saldo acumulado semana a semana
-5. Verificar se o projeto é financeiramente viável
-
-REGRAS DE CÁLCULO DO FLUXO DE CAIXA:
-1. DESPESAS (expense): Distribua os custos totais proporcionalmente ao cronograma
-2. RECEITAS (income):
-   - Semana 1: 40% do preço de venda (adiantamento)
-   - Última semana: 60% do preço de venda (saldo final)
-3. SALDO (balance): SALDO ACUMULADO = Saldo anterior + Receitas - Despesas
-
-EXEMPLO:
-- Preço de venda: R$ 100.000
-- Duração: 3 semanas
-- Custo total: R$ 65.000
-
-Fluxo de Caixa:
-- Semana 1: Receita R$ 40.000 (40%), Despesa R$ 25.000, Saldo R$ 15.000
-- Semana 2: Receita R$ 0, Despesa R$ 20.000, Saldo R$ -5.000
-- Semana 3: Receita R$ 60.000 (60%), Despesa R$ 20.000, Saldo R$ 35.000 (lucro)
-
-IMPORTANTE:
-- needsAdvance: SEMPRE true (usamos 40% de entrada como padrão)
-- suggestedAdvance: SEMPRE 40% do preço de venda
-- O saldo final deve ser POSITIVO (representa o lucro do projeto)
-- Se o saldo ficar negativo durante a obra, alertar sobre necessidade de capital de giro`;
+NÃO invente números. Use EXATAMENTE os valores do cashFlow fornecido.`;
   }
   
   getUserPrompt(input: FinanceiroInput): string {
-    // Calcular valores de faturamento
     const adiantamento = input.totalPrice * 0.40;
-    const saldoFinal = input.totalPrice * 0.60;
-    const totalDuration = input.scheduleItems.length > 0 
-      ? Math.max(...input.scheduleItems.map(s => s.endWeek || 4))
-      : 4;
+    const marginBruta = input.totalPrice - input.totalCost;
+    const marginPercent = input.totalPrice > 0 ? (marginBruta / input.totalPrice * 100).toFixed(1) : '0';
     
-    return `Analise o fluxo de caixa do projeto:
+    // Se o cashFlow já foi pré-calculado, enviar para validação
+    const cashFlowInfo = input.cashFlow 
+      ? `\n\nFLUXO DE CAIXA PRÉ-CALCULADO (use EXATAMENTE estes valores):\n${JSON.stringify(input.cashFlow, null, 2)}`
+      : '';
+    
+    return `Analise a viabilidade financeira do projeto:
+
+RESUMO FINANCEIRO:
+- Preço de Venda: R$ ${input.totalPrice.toFixed(2)}
+- Custo Total (direto + logística): R$ ${input.totalCost.toFixed(2)}
+- Margem Bruta: R$ ${marginBruta.toFixed(2)} (${marginPercent}%)
+- Adiantamento (40%): R$ ${adiantamento.toFixed(2)}
+- Condições de Pagamento: ${input.paymentTerms}
 
 CRONOGRAMA:
-${JSON.stringify(input.scheduleItems, null, 2)}
+${JSON.stringify(input.scheduleItems.slice(0, 10), null, 2)}
+${input.scheduleItems.length > 10 ? `... e mais ${input.scheduleItems.length - 10} itens` : ''}
 
-DURAÇÃO TOTAL DO PROJETO: ${totalDuration} semanas
-
-ITENS DO ORÇAMENTO (resumo):
-Total de itens: ${input.budgetItems.length}
-Valor total da proposta (preço de venda): R$ ${input.totalPrice.toFixed(2)}
-
-=== REGRA DE FATURAMENTO (OBRIGATÓRIO) ===
-- SEMANA 1: Receber R$ ${adiantamento.toFixed(2)} (40% de adiantamento)
-- SEMANA ${totalDuration}: Receber R$ ${saldoFinal.toFixed(2)} (60% saldo final)
+ITENS DO ORÇAMENTO: ${input.budgetItems.length} itens${cashFlowInfo}
 
 INSTRUÇÕES:
-1. Distribua as despesas (custos) ao longo das ${totalDuration} semanas do cronograma
-2. RECEITAS:
-   - Semana 1: R$ ${adiantamento.toFixed(2)} (40%)
-   - Semana ${totalDuration}: R$ ${saldoFinal.toFixed(2)} (60%)
-3. O saldo (balance) deve ser ACUMULADO: saldo_semana_N = saldo_semana_N-1 + receitas - despesas
-4. needsAdvance = true (sempre usamos adiantamento)
-5. suggestedAdvance = ${adiantamento.toFixed(2)} (40% do valor)
-
-Projete o fluxo de caixa semanal com saldo acumulado.`;
+1. Retorne o cashFlow EXATAMENTE como fornecido acima (não altere valores)
+2. needsAdvance = true
+3. suggestedAdvance = ${adiantamento.toFixed(2)}
+4. Gere alertas qualitativos sobre riscos, capital de giro e recomendações`;
   }
   
   getOutputSchema(): object {

@@ -297,7 +297,15 @@ export interface FinanceiroInput {
   scheduleItems: GestaoProjOutput["scheduleItems"];
   budgetItems: BudgetItemDetail[];
   totalPrice: number;
+  totalCost: number; // Custo direto + logística (calculado no backend)
   paymentTerms: string;
+  // Fluxo de caixa pré-calculado deterministicamente no backend
+  cashFlow?: {
+    week: number;
+    expense: number;
+    income: number;
+    balance: number;
+  }[];
 }
 
 export interface FinanceiroOutput {
