@@ -603,3 +603,12 @@ Data: 04/02/2026
 - [x] Passo 5: buildDeterministicFinanceiroOutput com margens bruta/líquida
 - [x] Passo 6: 18 testes unitários para cálculo determinístico (307 testes passando, 26 arquivos)
 - [x] Passo 7: Validação TypeScript OK (0 erros)
+
+## v2.11.0 - Correção de Incoerência de Prazo (Logística vs Gestão)
+### Problema: Board bloqueia propostas por incoerência de prazo (Gestão 3 semanas vs Logística 8 semanas hardcoded)
+- [x] Remover estimatedDuration hardcoded (8) do buildAgentInput para logistica (routers.ts)
+- [x] Remover estimatedDuration da interface LogisticaInput (shared/agents.ts)
+- [x] Atualizar prompt do LogisticaAgent para estimar prazo por quantitativos + índices Hh/m²
+- [x] Incluir resumo de budgetItems no prompt para auxiliar estimação
+- [x] 8 testes unitários validando remoção completa (315 testes passando, 27 arquivos)
+- [x] Validação TypeScript OK (0 erros)

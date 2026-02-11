@@ -2023,7 +2023,7 @@ async function buildAgentInput(
         items: engenheiroOutput.items || [],
         location: project.location || "",
         restrictions: project.restrictions || "",
-        estimatedDuration: 8,
+        // estimatedDuration removido (v2.11) - Agente Gestão calcula prazo real, Logística estima por quantitativos
         // Passar informações do orçamento para ajudar a estimar logística
         budgetItems: orcamentistaOutput.budgetItems || [],
       };

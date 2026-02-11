@@ -198,7 +198,8 @@ export interface LogisticaInput {
   items: MemorialItem[];
   location: string;
   restrictions: string;
-  estimatedDuration: number;
+  // estimatedDuration removido (v2.11) - Logística estima prazo por quantitativos
+  budgetItems?: any[];
 }
 
 export interface LogisticaOutput {

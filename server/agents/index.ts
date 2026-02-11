@@ -540,16 +540,31 @@ IMPORTANTE:
   }
   
   getUserPrompt(input: LogisticaInput): string {
+    // Resumo dos itens orçados para ajudar a estimar prazo
+    const budgetSummary = input.budgetItems && input.budgetItems.length > 0
+      ? `\nITENS ORÇADOS (resumo):\n${input.budgetItems.slice(0, 15).map((b: any) => `- ${b.description}: ${b.quantity} ${b.unit}`).join('\n')}${input.budgetItems.length > 15 ? `\n... e mais ${input.budgetItems.length - 15} itens` : ''}`
+      : '';
+    
     return `Analise os itens da obra e calcule os custos logísticos:
 
 ITENS DA OBRA:
 ${JSON.stringify(input.items, null, 2)}
+${budgetSummary}
 
 LOCALIZAÇÃO: ${input.location}
 RESTRIÇÕES: ${input.restrictions}
-DURAÇÃO ESTIMADA: ${input.estimatedDuration} semanas
 
-Calcule todos os custos indiretos operacionais necessários.`;
+Calcule todos os custos indiretos operacionais necessários.
+
+IMPORTANTE: Estime a duração da obra baseado nos quantitativos dos itens para calcular custos de locação (andaimes, caçambas, container, etc.).
+Use índices de produtividade para estimar o prazo:
+- Alvenaria: 0,8-1,2 Hh/m²
+- Revestimento: 1,5-2,0 Hh/m²
+- Pintura: 0,3-0,5 Hh/m²
+- Estrutura metálica: 2,0-3,0 Hh/m²
+- Instalações: 1,0-1,5 Hh/ponto
+
+Fórmula: Duração (semanas) = (Quantitativo × Índice Hh) ÷ (8h/dia × 5dias/semana × Nº profissionais)`;
   }
   
   getOutputSchema(): object {
