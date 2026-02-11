@@ -775,9 +775,15 @@ export async function getAdminProjects() {
 
 
 // Função para verificar se o usuário já salvou configurações personalizadas
+// P2-10 FIX: Verificar se settings tem dados reais (não apenas se existe)
 export async function hasCustomCompanySettings(userId: number): Promise<boolean> {
   const settings = await getCompanySettingsByUserId(userId);
-  return settings !== null;
+  if (!settings) return false;
+  // Verificar se pelo menos um campo relevante foi preenchido
+  return Boolean(
+    settings.companyName ||
+    settings.cnpj
+  );
 }
 
 

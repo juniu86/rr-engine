@@ -262,6 +262,109 @@ export const appRouter = router({
             completedAt: new Date(),
           });
           
+          // P0-3 FIX: Persistir dados derivados conforme tipo de agente
+          const companySettingsSingle = await db.getCompanySettingsOrDefault(ctx.user.id);
+          const singleBdiValue = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) / 100 : (parseFloat(companySettingsSingle.bdiPercentual as string) / 100 || 0.25);
+          
+          if (input.agentType === 'orcamentista' && output && (output as any).budgetItems) {
+            await db.deleteBudgetItemsByProjectId(input.projectId);
+            const rawItems = (output as any).budgetItems;
+            const budgetItemsToSave = rawItems.map((item: any) => {
+              const quantity = Number(item.quantity) || 0;
+              const unitCostTotal = Number(item.unitCostTotal) || 0;
+              const totalCost = quantity * unitCostTotal;
+              const bdiAmount = totalCost * singleBdiValue;
+              const finalPrice = totalCost + bdiAmount;
+              return {
+                projectId: input.projectId,
+                category: item.category || 'Geral',
+                code: item.code || '',
+                description: item.description,
+                unit: item.unit,
+                quantity: String(quantity),
+                unitCostMaterial: String(item.unitCostMaterial || 0),
+                unitCostLabor: String(item.unitCostLabor || 0),
+                unitCostLogistics: String(item.unitCostLogistics || 0),
+                unitCostTotal: String(unitCostTotal),
+                totalCost: String(totalCost),
+                bdiAmount: String(bdiAmount),
+                finalPrice: String(finalPrice),
+                taxAmount: String(item.taxAmount || 0),
+                source: item.source || 'Estimativa',
+                sourceCode: item.sourceCode || null,
+                sourceDate: item.sourceDate || null,
+              };
+            });
+            await db.createBudgetItems(budgetItemsToSave);
+          }
+          
+          if (input.agentType === 'logistica' && output && (output as any).costs) {
+            await db.deleteLogisticsCostsByProjectId(input.projectId);
+            const rawCosts = (output as any).costs;
+            const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
+            const costsToSave = rawCosts.map((cost: any) => {
+              let category: typeof validCategories[number] = 'outros';
+              const rawCategory = (cost.category || '').toLowerCase();
+              if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
+              else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
+              else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
+              else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
+              else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
+              else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
+              return {
+                projectId: input.projectId,
+                category,
+                description: String(cost.description || 'Custo logístico').substring(0, 1000),
+                quantity: String(Number(cost.quantity) || 1),
+                unit: String(cost.unit || 'un').substring(0, 20),
+                unitCost: String(Number(cost.unitCost) || 0),
+                totalCost: String(Number(cost.totalCost) || 0),
+              };
+            });
+            await db.createLogisticsCosts(costsToSave);
+          }
+          
+          if (input.agentType === 'gestao_projetos' && output && (output as any).schedule) {
+            await db.deleteScheduleItemsByProjectId(input.projectId);
+            const rawSchedule = (output as any).schedule;
+            const scheduleToSave = rawSchedule.map((item: any) => {
+              const startDay = item.startDay || item.startWeek || 1;
+              const endDay = item.endDay || item.endWeek || startDay;
+              const startWeek = Math.ceil(startDay / 7) || 1;
+              const endWeek = Math.ceil(endDay / 7) || startWeek;
+              return {
+                projectId: input.projectId,
+                description: item.activity || item.description || item.phase || 'Atividade',
+                startWeek,
+                duration: endWeek - startWeek + 1,
+                dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
+              };
+            });
+            await db.createScheduleItems(scheduleToSave);
+          }
+          
+          if (input.agentType === 'financeiro' && output && (output as any).cashFlow) {
+            await db.deleteCashFlowItemsByProjectId(input.projectId);
+            const rawCashFlow = (output as any).cashFlow;
+            let cumulativeBalance = 0;
+            const cashFlowToSave = rawCashFlow.map((item: any) => {
+              const expense = Number(item.expense || item.outflow || 0);
+              const income = Number(item.income || item.inflow || 0);
+              cumulativeBalance += income - expense;
+              return {
+                projectId: input.projectId,
+                weekNumber: item.week,
+                plannedExpense: String(expense),
+                plannedIncome: String(income),
+                actualExpense: null,
+                actualIncome: null,
+                cashBalance: String(cumulativeBalance),
+                hasAlert: cumulativeBalance < 0,
+              };
+            });
+            await db.createCashFlowItems(cashFlowToSave);
+          }
+          
           const nextAgentOrder = AGENT_ORDER[input.agentType] + 1;
           if (nextAgentOrder <= 9) {
             await db.updateProject(input.projectId, { currentAgentId: nextAgentOrder });
@@ -292,6 +395,12 @@ export const appRouter = router({
         ];
         
         const results: Record<string, any> = {};
+        
+        // P0-2 FIX: Buscar BDI dinâmico do projeto/empresa (em vez de hardcoded 55%)
+        const companySettings = await db.getCompanySettingsOrDefault(ctx.user.id);
+        const projectBdiValue = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) / 100 : null;
+        const companyBdiValue = parseFloat(companySettings.bdiPercentual as string) / 100 || 0.25;
+        const effectiveBdiPercent = projectBdiValue ?? companyBdiValue;
         
         for (const agentType of agentTypes) {
           const executions = await db.getAgentExecutionsByProjectId(input.projectId);
@@ -342,15 +451,16 @@ export const appRouter = router({
             }
             
             // Salvar itens de orçamento após execução do orçamentista
+            // P0-4 FIX: Limpar dados antigos antes de inserir novos
             if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
+              await db.deleteBudgetItemsByProjectId(input.projectId);
               const rawItems = (output as any).budgetItems;
               const budgetItemsToSave = rawItems.map((item: any) => {
                 const quantity = Number(item.quantity) || 0;
                 const unitCostTotal = Number(item.unitCostTotal) || 0;
                 const totalCost = quantity * unitCostTotal;
-                // Aplicar BDI padrão de 55% para obras
-                const bdiPercent = 0.55;
-                const bdiAmount = totalCost * bdiPercent;
+                // P0-2 FIX: Usar BDI dinâmico do projeto/empresa
+                const bdiAmount = totalCost * effectiveBdiPercent;
                 const finalPrice = totalCost + bdiAmount;
                 
                 return {
@@ -367,6 +477,7 @@ export const appRouter = router({
                   totalCost: String(totalCost),
                   bdiAmount: String(bdiAmount),
                   finalPrice: String(finalPrice),
+                  taxAmount: String(item.taxAmount || 0),
                   source: item.source || 'Estimativa',
                   sourceCode: item.sourceCode || null,
                   sourceDate: item.sourceDate || null,
@@ -376,12 +487,13 @@ export const appRouter = router({
             }
             
             // Salvar custos logísticos após execução do agente de logística
+            // P0-4 FIX: Limpar dados antigos antes de inserir novos
             if (agentType === 'logistica' && output && (output as any).costs) {
               try {
+                await db.deleteLogisticsCostsByProjectId(input.projectId);
                 const rawCosts = (output as any).costs;
                 const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
                 const costsToSave = rawCosts.map((cost: any) => {
-                  // Mapear categoria para valor válido do enum
                   let category: typeof validCategories[number] = 'outros';
                   const rawCategory = (cost.category || '').toLowerCase();
                   if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
@@ -405,25 +517,35 @@ export const appRouter = router({
                 await db.createLogisticsCosts(costsToSave);
               } catch (logisticsError) {
                 console.error('[Logistica] Error saving costs:', logisticsError);
-                // Não interromper o fluxo, apenas logar o erro
               }
             }
             
             // Salvar cronograma após execução do agente de gestão
+            // P0-4 FIX: Limpar dados antigos + P1-7 FIX: Converter dias para semanas
             if (agentType === 'gestao_projetos' && output && (output as any).schedule) {
+              await db.deleteScheduleItemsByProjectId(input.projectId);
               const rawSchedule = (output as any).schedule;
-              const scheduleToSave = rawSchedule.map((item: any) => ({
-                projectId: input.projectId,
-                description: item.activity || item.description || 'Atividade',
-                startWeek: item.startWeek,
-                duration: item.endWeek - item.startWeek + 1,
-                dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
-              }));
+              const scheduleToSave = rawSchedule.map((item: any) => {
+                // P1-7 FIX: Agente retorna startDay/endDay, converter para semanas
+                const startDay = item.startDay || item.startWeek || 1;
+                const endDay = item.endDay || item.endWeek || startDay;
+                const startWeek = Math.ceil(startDay / 7) || 1;
+                const endWeek = Math.ceil(endDay / 7) || startWeek;
+                return {
+                  projectId: input.projectId,
+                  description: item.activity || item.description || item.phase || 'Atividade',
+                  startWeek,
+                  duration: endWeek - startWeek + 1,
+                  dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
+                };
+              });
               await db.createScheduleItems(scheduleToSave);
             }
             
             // Salvar fluxo de caixa após execução do agente financeiro
+            // P0-4 FIX: Limpar dados antigos antes de inserir novos
             if (agentType === 'financeiro' && output && (output as any).cashFlow) {
+              await db.deleteCashFlowItemsByProjectId(input.projectId);
               const rawCashFlow = (output as any).cashFlow;
               let cumulativeBalance = 0;
               const cashFlowToSave = rawCashFlow.map((item: any) => {
@@ -602,8 +724,8 @@ export const appRouter = router({
                     const quantity = Number(item.quantity) || 0;
                     const unitCostTotal = Number(item.unitCostTotal) || 0;
                     const totalCost = quantity * unitCostTotal;
-                    const bdiPercent = 0.55;
-                    const bdiAmount = totalCost * bdiPercent;
+                    // P0-2 FIX: Usar BDI dinâmico
+                    const bdiAmount = totalCost * effectiveBdiPercent;
                     const finalPrice = totalCost + bdiAmount;
                     
                     return {
@@ -906,6 +1028,28 @@ export const appRouter = router({
             };
           });
           await db.createLogisticsCosts(costsToSave);
+        }
+        
+        // P1-8 FIX: Reexecutar agentes dependentes (Comercial e Financeiro) após mudança nos custos
+        const dependentAgents: AgentType[] = ['comercial', 'financeiro'];
+        for (const depAgent of dependentAgents) {
+          const depExec = executions.find(e => e.agentType === depAgent);
+          if (depExec && depExec.status === 'completed') {
+            try {
+              const updatedExecs = await db.getAgentExecutionsByProjectId(input.projectId);
+              const depInput = await buildAgentInput(depAgent, project, updatedExecs, ctx.user.id);
+              const agent = agents[depAgent];
+              const depOutput = await agent.execute(depInput);
+              await db.updateAgentExecution(depExec.id, {
+                status: 'completed',
+                output: depOutput as any,
+                completedAt: new Date(),
+              });
+              console.log(`[P1-8] Reexecutado ${depAgent} após seleção de opcionais`);
+            } catch (err) {
+              console.error(`[P1-8] Erro ao reexecutar ${depAgent}:`, err);
+            }
+          }
         }
         
         return { 
@@ -1646,6 +1790,10 @@ async function executeRemainingAgents(
   
   const completedAgents: string[] = [];
   
+  // P0-2 FIX: Buscar BDI dinâmico do projeto/empresa
+  const pipelineCompanySettings = await db.getCompanySettingsOrDefault(userId);
+  const pipelineBdiValue = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) / 100 : (parseFloat(pipelineCompanySettings.bdiPercentual as string) / 100 || 0.25);
+  
   for (const agentType of remainingAgents) {
     const executions = await db.getAgentExecutionsByProjectId(projectId);
     const execution = executions.find(e => e.agentType === agentType);
@@ -1659,14 +1807,16 @@ async function executeRemainingAgents(
       const output = await agent.execute(agentInput);
       
       // Salvar itens de orçamento após execução do orçamentista
+      // P0-4 FIX: Limpar dados antigos antes de inserir novos
       if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
+        await db.deleteBudgetItemsByProjectId(projectId);
         const rawItems = (output as any).budgetItems;
         const budgetItemsToSave = rawItems.map((item: any) => {
           const quantity = Number(item.quantity) || 0;
           const unitCostTotal = Number(item.unitCostTotal) || 0;
           const totalCost = quantity * unitCostTotal;
-          const bdiPercent = 0.55;
-          const bdiAmount = totalCost * bdiPercent;
+          // P0-2 FIX: Usar BDI dinâmico
+          const bdiAmount = totalCost * pipelineBdiValue;
           const finalPrice = totalCost + bdiAmount;
           
           return {
@@ -1683,6 +1833,7 @@ async function executeRemainingAgents(
             totalCost: String(totalCost),
             bdiAmount: String(bdiAmount),
             finalPrice: String(finalPrice),
+            taxAmount: String(item.taxAmount || 0),
             source: item.source || 'Estimativa',
             sourceCode: item.sourceCode || null,
             sourceDate: item.sourceDate || null,
@@ -1692,8 +1843,10 @@ async function executeRemainingAgents(
       }
       
       // Salvar custos logísticos
+      // P0-4 FIX: Limpar dados antigos
       if (agentType === 'logistica' && output && (output as any).costs) {
         try {
+          await db.deleteLogisticsCostsByProjectId(projectId);
           const rawCosts = (output as any).costs;
           const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
           const costsToSave = rawCosts.map((cost: any) => {
@@ -1723,20 +1876,30 @@ async function executeRemainingAgents(
       }
       
       // Salvar cronograma
+      // P0-4 FIX: Limpar dados antigos + P1-7 FIX: Converter dias para semanas
       if (agentType === 'gestao_projetos' && output && (output as any).schedule) {
+        await db.deleteScheduleItemsByProjectId(projectId);
         const rawSchedule = (output as any).schedule;
-        const scheduleToSave = rawSchedule.map((item: any) => ({
-          projectId: projectId,
-          description: item.activity || item.description || 'Atividade',
-          startWeek: item.startWeek,
-          duration: item.endWeek - item.startWeek + 1,
-          dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
-        }));
+        const scheduleToSave = rawSchedule.map((item: any) => {
+          const startDay = item.startDay || item.startWeek || 1;
+          const endDay = item.endDay || item.endWeek || startDay;
+          const startWeek = Math.ceil(startDay / 7) || 1;
+          const endWeek = Math.ceil(endDay / 7) || startWeek;
+          return {
+            projectId: projectId,
+            description: item.activity || item.description || item.phase || 'Atividade',
+            startWeek,
+            duration: endWeek - startWeek + 1,
+            dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
+          };
+        });
         await db.createScheduleItems(scheduleToSave);
       }
       
       // Salvar fluxo de caixa
+      // P0-4 FIX: Limpar dados antigos
       if (agentType === 'financeiro' && output && (output as any).cashFlow) {
+        await db.deleteCashFlowItemsByProjectId(projectId);
         const rawCashFlow = (output as any).cashFlow;
         let cumulativeBalance = 0;
         const cashFlowToSave = rawCashFlow.map((item: any) => {
@@ -1933,22 +2096,26 @@ async function buildAgentInput(
     case "financeiro":
       const gestaoOutput = getOutput("gestao_projetos");
       const comercialOutput = getOutput("comercial");
+      // P2-11 FIX: Usar parcelas dinâmicas do Comercial quando disponíveis
+      const dynamicPaymentTerms = comercialOutput.paymentTerms || comercialOutput.paymentConditions || "30/60/90 dias após medição";
       return {
         scheduleItems: gestaoOutput.scheduleItems || [],
         budgetItems: getOutput("orcamentista").budgetItems || [],
         totalPrice: comercialOutput.finalPrice || 0,
-        paymentTerms: "30/60/90 dias após medição",
+        paymentTerms: dynamicPaymentTerms,
       };
       
     case "juridico":
       const finOutput = getOutput("financeiro");
       const gestOutput = getOutput("gestao_projetos");
       const comOutput = getOutput("comercial");
+      // P2-11 FIX: Usar parcelas dinâmicas do Comercial quando disponíveis
+      const juridPaymentTerms = comOutput.paymentTerms || comOutput.paymentConditions || "30/60/90 dias após medição";
       return {
         projectName: project.name,
         contractType: project.contractType,
         totalPrice: comOutput.finalPrice || 0,
-        paymentTerms: "30/60/90 dias após medição",
+        paymentTerms: juridPaymentTerms,
         // CORRIGIDO: Usar totalDays do Gestão (em dias, não semanas)
         durationDays: gestOutput.totalDays || 30,
         restrictions: getOutput("logistica").restrictions || [],
@@ -1978,6 +2145,14 @@ async function buildAgentInput(
     case "auditor":
       // Auditor recebe todos os outputs para validação cruzada
       const projectBdiAuditor = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) : 25;
+      // P2-12 FIX: Usar BDI ajustado do Comercial (prioridade) em vez de apenas project.bdi
+      const comercialOutputForAudit = getOutput("comercial");
+      const adjustedBdiFromComercial = comercialOutputForAudit.adjustedBdi 
+        ? (Number(comercialOutputForAudit.adjustedBdi) > 1 
+            ? Number(comercialOutputForAudit.adjustedBdi) 
+            : Number(comercialOutputForAudit.adjustedBdi) * 100)
+        : null;
+      const effectiveBdiForAudit = adjustedBdiFromComercial ?? projectBdiAuditor;
       // Verificar se o usuário já salvou configurações personalizadas
       const hasCustomSettings = await db.hasCustomCompanySettings(userId);
       return {
@@ -1986,7 +2161,7 @@ async function buildAgentInput(
           logistica: getOutput("logistica"),
           orcamentista: getOutput("orcamentista"),
           tributario: getOutput("tributario"),
-          comercial: getOutput("comercial"),
+          comercial: comercialOutputForAudit,
           gestao: getOutput("gestao_projetos"),
           financeiro: getOutput("financeiro"),
           juridico: getOutput("juridico"),
@@ -1994,7 +2169,8 @@ async function buildAgentInput(
         },
         projectConfig: {
           name: project.name,
-          bdiPercentual: projectBdiAuditor,
+          bdiPercentual: effectiveBdiForAudit,
+          bdiSource: adjustedBdiFromComercial ? 'comercial' : 'projeto',
           contractType: project.contractType,
         },
         hasCustomSettings,
@@ -2044,7 +2220,8 @@ export function validateAgentCoherence(results: Record<string, any>): {
   
   // Valores base
   const totalDirectCost = Number(orcamentista.totalDirectCost) || 0;
-  const totalLogisticsCost = Number(logistica.totalCost) || 0;
+  // P1-6 FIX: Aceitar ambos os nomes de campo (totalLogisticsCost ou totalCost)
+  const totalLogisticsCost = Number(logistica.totalLogisticsCost ?? logistica.totalCost) || 0;
   const totalTaxes = Number(tributario.totalTaxes) || 0;
   const bdi = Number(comercial.adjustedBdi) || 0;
   const finalPrice = Number(comercial.finalPrice) || 0;

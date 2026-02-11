@@ -571,3 +571,25 @@ Data: 04/02/2026
 
 ## Bugs
 - [x] Fix: redirect_uri inválido ao retornar do Stripe Checkout (domínio run.app não autorizado no OAuth) — usar ctx.req.headers.origin em vez de ctx.req.get("host")
+
+## v2.9.0 - Correções CODEX (12 Críticas Validadas)
+### P0 - Críticos ✅
+- [x] P0-1: Proposta respeita preço Comercial válido (BDI dinâmico em documents.ts)
+- [x] P0-2: budget_items usa BDI dinâmico do projeto/empresa (3 ocorrências corrigidas)
+- [x] P0-3: executeSingle persiste budgetItems, logisticsCosts, scheduleItems, cashFlow
+- [x] P0-4: executeAll limpa dados anteriores (delete antes de insert)
+
+### P1 - Altos ✅
+- [x] P1-5: taxAmount adicionado em todos os budget_items (3 locais)
+- [x] P1-6: Aceita totalLogisticsCost e totalCost como fallback
+- [x] P1-7: Conversão automática dia → semana (Math.ceil(day/7)) em 3 locais
+- [x] P1-8: selectOptionalItems reexecuta Comercial e Financeiro
+- [x] P1-9: UI aceita budgetItems/classifiedItems/items + cost.totalCost/cost.value
+
+### P2 - Médios ✅
+- [x] P2-10: hasCustomCompanySettings verifica companyName/cnpj (não apenas != null)
+- [x] P2-11: Financeiro e Jurídico usam paymentTerms dinâmico do Comercial
+- [x] P2-12: Auditor prioriza adjustedBdi do Comercial, com fallback para project.bdi
+
+### Testes
+- [x] 34 testes unitários para as 12 correções (289 testes passando, 25 arquivos)

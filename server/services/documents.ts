@@ -106,29 +106,31 @@ export async function generateProposalPDF(
   // 2. Preço dos items salvos (já com BDI de 55%)
   // 3. Recalcular com BDI padrão de 55%
   
+  // P0-1 FIX: Usar BDI dinâmico (configurado pela empresa) em vez de hardcoded 30%/100%
   let totalSalePrice: number;
-  const minExpectedPrice = totalBaseCost * 1.30; // Mínimo: BDI de 30%
-  const maxExpectedPrice = totalBaseCost * 2.00; // Máximo: BDI de 100%
+  const minExpectedPrice = totalBaseCost * (1 + bdiConfigurado); // BDI mínimo = BDI configurado
+  const maxExpectedPrice = totalBaseCost * (1 + bdiConfigurado * 3); // Máximo = 3x o BDI configurado
   
-  if (comercialPrice >= minExpectedPrice && comercialPrice <= maxExpectedPrice) {
-    // Preço comercial está dentro do range esperado
+  if (comercialPrice > 0 && comercialPrice >= minExpectedPrice && comercialPrice <= maxExpectedPrice) {
+    // Preço comercial está dentro do range esperado - PRIORIDADE MÁXIMA
     totalSalePrice = comercialPrice;
     console.log(`  - Usando preço comercial (dentro do range): R$ ${totalSalePrice.toFixed(2)}`);
-  } else if (totalFromItems >= minExpectedPrice && totalFromItems <= maxExpectedPrice) {
-    // Preço dos items está dentro do range esperado
-    totalSalePrice = totalFromItems;
-    console.log(`  - Usando preço dos items (dentro do range): R$ ${totalSalePrice.toFixed(2)}`);
-  } else if (comercialPrice > maxExpectedPrice) {
+  } else if (comercialPrice > 0 && comercialPrice > maxExpectedPrice) {
     // Preço comercial muito alto (possível duplicação) - recalcular com BDI configurado
     totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
     console.log(`  - ALERTA: Preço comercial muito alto (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI ${(bdiConfigurado * 100).toFixed(1)}%: R$ ${totalSalePrice.toFixed(2)}`);
   } else if (comercialPrice > 0 && comercialPrice < minExpectedPrice) {
-    // Preço comercial muito baixo - recalcular com BDI configurado
-    totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
-    console.log(`  - ALERTA: Preço comercial muito baixo (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI ${(bdiConfigurado * 100).toFixed(1)}%: R$ ${totalSalePrice.toFixed(2)}`);
+    // Preço comercial abaixo do BDI configurado - usar o preço comercial mesmo assim
+    // O agente Comercial pode ter razões válidas para precificar abaixo (competitividade)
+    totalSalePrice = comercialPrice;
+    console.log(`  - AVISO: Preço comercial abaixo do BDI configurado (R$ ${comercialPrice.toFixed(2)} < R$ ${minExpectedPrice.toFixed(2)}), usando preço comercial mesmo assim`);
+  } else if (totalFromItems > 0) {
+    // Sem preço comercial válido - usar preço dos items
+    totalSalePrice = totalFromItems;
+    console.log(`  - Usando preço dos items: R$ ${totalSalePrice.toFixed(2)}`);
   } else {
-    // Sem preço comercial válido - usar preço dos items ou recalcular com BDI configurado
-    totalSalePrice = totalFromItems > 0 ? totalFromItems : totalBaseCost * (1 + bdiConfigurado);
+    // Fallback: recalcular com BDI configurado
+    totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
     console.log(`  - Usando fallback (BDI ${(bdiConfigurado * 100).toFixed(1)}%): R$ ${totalSalePrice.toFixed(2)}`);
   }
   

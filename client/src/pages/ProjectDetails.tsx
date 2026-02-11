@@ -1791,9 +1791,11 @@ function getAgentDescription(type: string): string {
 function renderAgentSummary(type: string, output: any): React.ReactNode {
   switch (type) {
     case "engenheiro_tecnico":
+      // P1-9 FIX: Aceitar items, classifiedItems ou budgetItems
+      const engItems = output.items || output.classifiedItems || [];
       return (
         <>
-          <p><strong>{output.items?.length || 0}</strong> itens identificados</p>
+          <p><strong>{engItems.length}</strong> itens identificados</p>
           <p><strong>{output.pendingItems?.length || 0}</strong> pendentes de vistoria</p>
         </>
       );
@@ -1893,12 +1895,14 @@ function renderAgentSummary(type: string, output: any): React.ReactNode {
 function renderAgentDetails(type: string, output: any): React.ReactNode {
   switch (type) {
     case "engenheiro_tecnico":
+      // P1-9 FIX: Aceitar items, classifiedItems ou budgetItems
+      const engDetailItems = output.items || output.classifiedItems || [];
       return (
         <div className="space-y-4">
           <div>
-            <h4 className="font-semibold mb-2">Itens Identificados ({output.items?.length || 0})</h4>
+            <h4 className="font-semibold mb-2">Itens Identificados ({engDetailItems.length})</h4>
             <div className="space-y-2">
-              {output.items?.map((item: any, i: number) => (
+              {engDetailItems.map((item: any, i: number) => (
                 <div key={i} className="p-3 bg-muted rounded-lg">
                   <p className="font-medium">{item.description}</p>
                   <p className="text-sm text-muted-foreground">
@@ -1940,7 +1944,7 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
                     <p className="font-medium">{cost.description}</p>
                     <p className="text-xs text-muted-foreground">{cost.category}</p>
                   </div>
-                  <p className="font-semibold">R$ {(cost.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  <p className="font-semibold">R$ {(cost.totalCost || cost.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
               ))}
             </div>
@@ -1955,12 +1959,14 @@ function renderAgentDetails(type: string, output: any): React.ReactNode {
       );
 
     case "orcamentista":
+      // P1-9 FIX: Aceitar budgetItems, items ou classifiedItems
+      const orcItems = output.budgetItems || output.items || output.classifiedItems || [];
       return (
         <div className="space-y-4">
           <div>
-            <h4 className="font-semibold mb-2">Itens Orçados ({output.items?.length || 0})</h4>
+            <h4 className="font-semibold mb-2">Itens Orçados ({orcItems.length})</h4>
             <div className="space-y-2">
-              {output.items?.map((item: any, i: number) => (
+              {orcItems.map((item: any, i: number) => (
                 <div key={i} className="p-3 bg-muted rounded-lg">
                   <div className="flex justify-between items-start">
                     <div>
