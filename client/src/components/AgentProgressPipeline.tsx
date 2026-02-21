@@ -1,22 +1,7 @@
-import { 
-  FileText, 
-  Calculator, 
-  Truck, 
-  Receipt, 
-  TrendingUp, 
-  Calendar, 
-  DollarSign, 
-  Scale, 
-  Users,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  XCircle,
-  AlertCircle,
-  ClipboardCheck
-} from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { agentConfig, pipelineStatusConfig } from "@/lib/constants";
 
 interface AgentExecution {
   id: number;
@@ -32,147 +17,12 @@ interface AgentProgressPipelineProps {
   className?: string;
 }
 
-const agentConfig = [
-  { 
-    type: "engenheiro_tecnico", 
-    name: "Engenheiro Técnico", 
-    icon: FileText,
-    description: "Extrai e especifica itens do memorial",
-    details: "Interpreta o memorial descritivo, identificando todos os serviços com especificações técnicas e quantitativos.",
-    color: "text-sky-400",
-    bgColor: "bg-sky-500/10"
-  },
-  { 
-    type: "orcamentista", 
-    name: "Orçamentista", 
-    icon: Calculator,
-    description: "Precifica com bases SINAPI e PINI",
-    details: "Consulta bases oficiais para obter composições de custos atualizadas de material e mão de obra.",
-    color: "text-emerald-400",
-    bgColor: "bg-emerald-500/10"
-  },
-  { 
-    type: "logistica", 
-    name: "Logística", 
-    icon: Truck,
-    description: "Calcula custos indiretos",
-    details: "Estima custos de mobilização, frete, caçambas e aluguel de equipamentos.",
-    color: "text-amber-400",
-    bgColor: "bg-primary/10"
-  },
-  { 
-    type: "tributario", 
-    name: "Tributário", 
-    icon: Receipt,
-    description: "Classifica incidência fiscal",
-    details: "Analisa cada item quanto à incidência de ISS, ICMS, PIS, COFINS e demais tributos.",
-    color: "text-purple-400",
-    bgColor: "bg-purple-500/10"
-  },
-  { 
-    type: "comercial", 
-    name: "Comercial", 
-    icon: TrendingUp,
-    description: "Aplica BDI e preço de venda",
-    details: "Aplica o BDI configurado sobre o custo base e define o preço de venda final.",
-    color: "text-green-400",
-    bgColor: "bg-green-500/10"
-  },
-  { 
-    type: "gestao_projetos", 
-    name: "Gestão de Projetos", 
-    icon: Calendar,
-    description: "Cria cronograma físico",
-    details: "Calcula prazo de execução baseado em índices de produtividade SINAPI.",
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/10"
-  },
-  { 
-    type: "financeiro", 
-    name: "Financeiro", 
-    icon: DollarSign,
-    description: "Analisa fluxo de caixa",
-    details: "Projeta fluxo de caixa com faturamento 40% entrada e 60% ao final.",
-    color: "text-teal-400",
-    bgColor: "bg-teal-500/10"
-  },
-  { 
-    type: "juridico", 
-    name: "Jurídico", 
-    icon: Scale,
-    description: "Redige cláusulas contratuais",
-    details: "Elabora proposta comercial com cláusulas de objeto, preço e condições.",
-    color: "text-indigo-400",
-    bgColor: "bg-indigo-500/10"
-  },
-  { 
-    type: "board", 
-    name: "Board", 
-    icon: Users,
-    description: "Aprova e emite parecer",
-    details: "Revisa todos os outputs e emite parecer final de aprovação.",
-    color: "text-rose-400",
-    bgColor: "bg-rose-500/10"
-  },
-  { 
-    type: "auditor", 
-    name: "Auditor", 
-    icon: ClipboardCheck,
-    description: "Validação matemática",
-    details: "Executa auditoria de consistência entre todos os documentos e valores calculados. Emite selo de aprovação.",
-    color: "text-cyan-400",
-    bgColor: "bg-cyan-500/10"
-  },
-];
-
-const statusConfig = {
-  pending: { 
-    statusColor: "text-slate-500", 
-    statusBgColor: "bg-slate-500/10", 
-    borderColor: "border-slate-500/30",
-    icon: Clock,
-    label: "Pendente"
-  },
-  running: { 
-    statusColor: "text-primary", 
-    statusBgColor: "bg-primary/20", 
-    borderColor: "border-primary",
-    icon: Loader2,
-    label: "Executando"
-  },
-  completed: { 
-    statusColor: "text-emerald-500", 
-    statusBgColor: "bg-emerald-500/20", 
-    borderColor: "border-emerald-500",
-    icon: CheckCircle2,
-    label: "Concluído"
-  },
-  failed: { 
-    statusColor: "text-red-500", 
-    statusBgColor: "bg-red-500/20", 
-    borderColor: "border-red-500",
-    icon: XCircle,
-    label: "Falhou"
-  },
-  needs_review: { 
-    statusColor: "text-primary", 
-    statusBgColor: "bg-primary/20", 
-    borderColor: "border-primary",
-    icon: AlertCircle,
-    label: "Revisão"
-  },
-};
+const statusConfig = pipelineStatusConfig;
 
 export default function AgentProgressPipeline({ executions, className }: AgentProgressPipelineProps) {
   // Criar mapa de execuções por tipo de agente
   const executionMap = new Map(executions.map(e => [e.agentType, e]));
   
-  // Encontrar o agente atualmente em execução
-  const runningAgent = executions.find(e => e.status === "running");
-  const runningIndex = runningAgent 
-    ? agentConfig.findIndex(a => a.type === runningAgent.agentType)
-    : -1;
-
   // Calcular progresso
   const completedCount = executions.filter(e => e.status === "completed").length;
   const totalAgents = agentConfig.length;

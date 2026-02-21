@@ -5,31 +5,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
-import { 
-  Plus, 
-  FileText, 
-  Clock, 
-  CheckCircle2, 
+import {
+  Plus,
+  FileText,
+  Clock,
+  CheckCircle2,
   AlertCircle,
   ArrowRight,
   Building2,
   Calculator,
-  TrendingUp
+  TrendingUp,
+  Settings
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Settings } from "lucide-react";
 
-const statusConfig = {
-  draft: { label: "Rascunho", color: "bg-slate-500", icon: FileText },
-  processing: { label: "Processando", color: "bg-blue-500", icon: Clock },
-  review: { label: "Em Revisão", color: "bg-primary", icon: AlertCircle },
-  approved: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
-  rejected: { label: "Rejeitado", color: "bg-red-500", icon: AlertCircle },
-  blocked: { label: "Bloqueado", color: "bg-red-600", icon: AlertCircle },
-  pending_confirmation: { label: "Aguardando Confirmação", color: "bg-orange-500", icon: AlertCircle },
-  waiting_for_input: { label: "Aguardando Dados", color: "bg-amber-500", icon: AlertCircle },
-};
+import { projectStatusConfig } from "@/lib/constants";
+
+const statusConfig = projectStatusConfig;
 
 export default function Dashboard() {
   const { user } = useAuth();

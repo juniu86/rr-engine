@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { 
   Play, 
@@ -47,42 +47,14 @@ import { Streamdown } from "streamdown";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { MissingInfoRequest } from "../../../shared/agents";
+import { agentIcons, agentStatusConfig, projectStatusConfig } from "@/lib/constants";
 
-const agentIcons: Record<string, any> = {
-  engenheiro_tecnico: FileText,
-  logistica: Truck,
-  orcamentista: Calculator,
-  tributario: Receipt,
-  comercial: TrendingUp,
-  gestao_projetos: Calendar,
-  financeiro: DollarSign,
-  juridico: Scale,
-  board: Users,
-  auditor: CheckCircle2,
-};
-
-const statusConfig = {
-  pending: { label: "Pendente", color: "bg-slate-500", icon: Clock },
-  running: { label: "Executando", color: "bg-blue-500", icon: Loader2 },
-  completed: { label: "Concluído", color: "bg-green-500", icon: CheckCircle2 },
-  failed: { label: "Falhou", color: "bg-red-500", icon: XCircle },
-  needs_review: { label: "Revisão", color: "bg-primary", icon: AlertCircle },
-  waiting_for_user_input: { label: "Aguardando Dados", color: "bg-orange-500", icon: AlertCircle },
-  // Status de projeto
-  draft: { label: "Rascunho", color: "bg-slate-500", icon: Clock },
-  processing: { label: "Processando", color: "bg-blue-500", icon: Loader2 },
-  review: { label: "Em Revisão", color: "bg-primary", icon: AlertCircle },
-  approved: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
-  rejected: { label: "Rejeitado", color: "bg-red-500", icon: XCircle },
-  blocked: { label: "Bloqueado", color: "bg-red-600", icon: XCircle },
-  pending_confirmation: { label: "Aguardando Confirmação", color: "bg-orange-500", icon: AlertCircle },
-};
+const statusConfig = { ...agentStatusConfig, ...projectStatusConfig };
 
 export default function ProjectDetails() {
   const params = useParams<{ id: string }>();
@@ -114,7 +86,16 @@ export default function ProjectDetails() {
   
   const { data: details, isLoading, refetch } = trpc.project.getDetails.useQuery(
     { id: projectId },
-    { enabled: projectId > 0, refetchInterval: 5000 }
+    {
+      enabled: projectId > 0,
+      refetchInterval: (query) => {
+        const status = query.state.data?.project?.status;
+        if (status === "approved" || status === "rejected" || status === "completed") {
+          return false;
+        }
+        return 5000;
+      },
+    }
   );
   
   // Query para obter próximo número de revisão
@@ -1712,23 +1693,15 @@ export default function ProjectDetails() {
             >
               Cancelar
             </Button>
-            <Button 
+            <Button
               onClick={() => {
-                console.log('[DEBUG] Botão clicado');
-                console.log('[DEBUG] waitingAgentType:', waitingAgentType);
-                console.log('[DEBUG] userResponses:', JSON.stringify(userResponses));
-                console.log('[DEBUG] missingInfoRequests:', JSON.stringify(missingInfoRequests));
-                
                 if (!waitingAgentType) {
-                  console.log('[DEBUG] waitingAgentType is null, returning');
                   return;
                 }
-                
+
                 // Validar campos obrigatórios
                 const requiredFields = missingInfoRequests.filter(r => r.required);
-                console.log('[DEBUG] requiredFields:', JSON.stringify(requiredFields));
                 const missingRequired = requiredFields.filter(r => !userResponses[r.fieldId]);
-                console.log('[DEBUG] missingRequired:', JSON.stringify(missingRequired));
                 
                 if (missingRequired.length > 0) {
                   toast.error(`Por favor, preencha os campos obrigatórios: ${missingRequired.map(r => r.question).join(", ")}`);

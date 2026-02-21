@@ -82,7 +82,7 @@ export async function generateProposalPDF(
   // Custo base total (direto + logística)
   const totalBaseCost = totalDirectCost + totalLogisticsCost;
   
-  // Calcular preço de venda já salvo nos items (com BDI de 55%)
+  // Calcular preço de venda já salvo nos items (com BDI configurado)
   const totalFromItems = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
   
   // Preço do agente comercial

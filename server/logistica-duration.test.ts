@@ -144,11 +144,13 @@ describe("LogisticaInput - Remoção de estimatedDuration", () => {
     // Este teste valida que a remoção foi completa
     // Verificar que o shared/agents.ts não tem estimatedDuration como campo obrigatório
     const fs = await import("fs");
-    const agentsContent = fs.readFileSync("/home/ubuntu/rr-engine/shared/agents.ts", "utf-8");
-    
+    const path = await import("path");
+    const agentsPath = path.resolve(__dirname, "../shared/agents.ts");
+    const agentsContent = fs.readFileSync(agentsPath, "utf-8");
+
     // Não deve ter estimatedDuration como campo da interface (pode ter como comentário)
     const lines = agentsContent.split("\n");
-    const interfaceLines = lines.filter(l => 
+    const interfaceLines = lines.filter(l =>
       l.includes("estimatedDuration") && !l.trim().startsWith("//")
     );
     expect(interfaceLines).toHaveLength(0);
@@ -156,7 +158,9 @@ describe("LogisticaInput - Remoção de estimatedDuration", () => {
 
   it("routers.ts não deve ter estimatedDuration no buildAgentInput para logistica", async () => {
     const fs = await import("fs");
-    const routersContent = fs.readFileSync("/home/ubuntu/rr-engine/server/routers.ts", "utf-8");
+    const path = await import("path");
+    const routersPath = path.resolve(__dirname, "routers.ts");
+    const routersContent = fs.readFileSync(routersPath, "utf-8");
     
     // Buscar a seção do buildAgentInput para logistica
     const logisticaSection = routersContent.split('case "logistica"')[1]?.split("case ")[0] || "";

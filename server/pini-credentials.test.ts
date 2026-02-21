@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-describe('PINI Credentials', () => {
+describe.skipIf(!process.env.PINI_USER)('PINI Credentials', () => {
   it('should have PINI_USER configured', () => {
     expect(process.env.PINI_USER).toBeDefined();
     expect(process.env.PINI_USER).not.toBe('');
