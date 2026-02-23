@@ -615,3 +615,8 @@ Data: 04/02/2026
 
 ## Bugs v2.12.1
 - [ ] Fix: project.getDetails retorna 404 - página de detalhes do projeto não carrega (loading infinito)
+
+## v2.12.3 - Correção Auditor (Claude Code)
+- [x] Adicionar "auditor" ao enum Zod do executeSingle (permitir re-execução individual)
+- [x] Corrigir nextAgentOrder <= 9 para <= 10 (incluir auditor na progressão)
+- [x] Incluir "auditor" na lista de agentes resetados após revisão financeira
