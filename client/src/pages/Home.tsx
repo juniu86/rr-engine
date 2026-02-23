@@ -3,15 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getLoginUrl } from "@/const";
-import { 
-  FileText, 
-  Calculator, 
-  Users, 
-  TrendingUp, 
-  Shield, 
+import RRLogo from "@/components/RRLogo";
+import {
+  FileText,
+  Calculator,
+  Users,
+  TrendingUp,
+  Shield,
   Clock,
   ArrowRight,
-  Building2,
   Zap,
   ChevronRight,
   CheckCircle2,
@@ -48,6 +48,57 @@ function useInView(options = {}) {
   }, []);
 
   return { ref, isInView };
+}
+
+function MobileAgentList({ agents, agentsInView }: { agents: any[]; agentsInView: boolean }) {
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+
+  return (
+    <div className="lg:hidden space-y-2">
+      {agents.map((agent, idx) => {
+        const isExpanded = expandedAgent === agent.num;
+        return (
+          <div key={agent.num}>
+            <button
+              type="button"
+              onClick={() => setExpandedAgent(isExpanded ? null : agent.num)}
+              className={`w-full group flex items-center gap-3 p-4 rounded-xl bg-[oklch(0.18_0.012_250)] border border-white/5 hover:border-primary/30 transition-all duration-500 text-left ${
+                agentsInView
+                  ? 'opacity-100 translate-x-0'
+                  : 'opacity-0 -translate-x-8'
+              } ${isExpanded ? 'rounded-b-none border-primary/20' : ''}`}
+              style={{ transitionDelay: `${idx * 60}ms` }}
+            >
+              <div className={`w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${agent.color}`}>
+                <agent.icon className="w-5 h-5" />
+              </div>
+              <div className="text-xl font-light text-slate-600 tabular-nums w-8 text-center">
+                {agent.num}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-white font-medium text-sm">
+                  {agent.name}
+                </h3>
+                <p className="text-slate-500 text-sm line-clamp-1">
+                  {agent.desc}
+                </p>
+              </div>
+              <ChevronRight className={`h-4 w-4 text-slate-700 shrink-0 transition-transform ${isExpanded ? 'rotate-90 text-primary' : ''}`} />
+            </button>
+            {isExpanded && (
+              <div className="p-4 rounded-b-xl bg-[oklch(0.16_0.012_250)] border border-t-0 border-primary/20 space-y-2">
+                <p className="text-sm text-slate-300">{agent.details}</p>
+                <div className="flex items-center gap-2 text-xs text-primary pt-2 border-t border-white/10">
+                  <ArrowRight className="h-3 w-3" />
+                  <span>{agent.output}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -186,10 +237,7 @@ export default function Home() {
         {/* Header */}
         <header className="border-b border-white/5 bg-[oklch(0.12_0.02_250)]/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="container flex h-16 items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-8 w-8 text-primary" />
-              <span className="text-xl font-bold text-white">RR-Engine</span>
-            </div>
+            <RRLogo size="md" />
             <nav className="flex items-center gap-4">
               {isAuthenticated ? (
                 <>
@@ -219,35 +267,35 @@ export default function Home() {
               <Zap className="h-4 w-4" />
               <span className="text-sm font-medium">Powered by AI</span>
             </div>
-            <h1 className="mb-6 text-5xl font-bold tracking-tight text-white md:text-6xl">
-              Sistema de Engenharia e{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[oklch(0.70_0.14_195)] to-[oklch(0.65_0.17_160)]">
+            <h1 className="mb-6 text-5xl font-bold tracking-tight text-white md:text-7xl font-display">
+              Engenharia e{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[oklch(0.70_0.14_195)] via-[oklch(0.65_0.17_160)] to-[oklch(0.75_0.15_70)]">
                 Viabilidade Econômica
               </span>
             </h1>
-            <p className="mb-8 text-xl text-slate-400 max-w-2xl mx-auto">
-              Transforme memoriais descritivos em propostas comerciais completas com 
-              inteligência artificial. Precisão técnica, conformidade com NBRs e 
+            <p className="mb-10 text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
+              Transforme memoriais descritivos em propostas comerciais completas com
+              inteligência artificial. Precisão técnica, conformidade com NBRs e
               total transparência.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {isAuthenticated ? (
                 <Link href="/projects/new">
-                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8">
+                  <Button size="lg" className="gradient-brand text-white border-0 text-lg px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
                     Novo Orçamento
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </Link>
               ) : (
                 <a href={getLoginUrl()}>
-                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8">
+                  <Button size="lg" className="gradient-brand text-white border-0 text-lg px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
                     Começar Agora
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </a>
               )}
               <a href="#agentes">
-                <Button size="lg" variant="outline" className="text-lg px-8 border-slate-700 text-slate-300 hover:bg-slate-800/50">
+                <Button size="lg" variant="outline" className="text-lg px-8 border-slate-700 text-slate-300 hover:bg-slate-800/50 hover:border-primary/30 transition-all">
                   Ver Agentes
                 </Button>
               </a>
@@ -398,63 +446,52 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Mobile/Tablet: Vertical List with Animations */}
-            <div className="lg:hidden space-y-2">
-              {agents.map((agent, idx) => (
-                <Tooltip key={agent.num}>
-                  <TooltipTrigger asChild>
-                    <div 
-                      className={`group flex items-center gap-4 p-4 rounded-xl bg-[oklch(0.18_0.012_250)] border border-white/5 hover:border-primary/30 transition-all duration-500 cursor-pointer ${
-                        agentsInView 
-                          ? 'opacity-100 translate-x-0' 
-                          : 'opacity-0 -translate-x-8'
-                      }`}
-                      style={{ transitionDelay: `${idx * 60}ms` }}
-                    >
-                      <div className={`w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${agent.color}`}>
-                        <agent.icon className="w-5 h-5" />
-                      </div>
-                      <div className="text-2xl font-light text-slate-600 tabular-nums w-10 text-center group-hover:text-primary/70 transition-colors">
-                        {agent.num}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-white font-medium mb-0.5 truncate">
-                          {agent.name}
-                        </h3>
-                        <p className="text-slate-500 text-sm truncate">
-                          {agent.desc}
-                        </p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-slate-700 group-hover:text-primary transition-colors shrink-0" />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent 
-                    side="left" 
-                    className="max-w-xs bg-[oklch(0.22_0.012_250)] border-white/10 p-4"
-                  >
-                    <div className="space-y-2">
-                      <p className="text-sm text-slate-300">{agent.details}</p>
-                      <div className="flex items-center gap-2 text-xs text-primary pt-2 border-t border-white/10">
-                        <ArrowRight className="h-3 w-3" />
-                        <span>{agent.output}</span>
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              ))}
+            {/* Mobile/Tablet: Expandable card list (no tooltip dependency) */}
+            <MobileAgentList agents={agents} agentsInView={agentsInView} />
+
+            {/* Before/After Comparison */}
+            <div className={`mt-20 max-w-4xl mx-auto transition-all duration-700 ${
+              agentsInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`} style={{ transitionDelay: '900ms' }}>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="rounded-2xl bg-red-500/5 border border-red-500/20 p-6">
+                  <p className="text-red-400 text-xs font-medium tracking-widest uppercase mb-4">Sem RR Engine</p>
+                  <div className="space-y-3 text-sm text-slate-400">
+                    <p>3 a 5 dias para montar um orcamento</p>
+                    <p>Consulta manual de tabelas SINAPI</p>
+                    <p>Risco de erros em calculos complexos</p>
+                    <p>Proposta comercial feita no Word</p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-red-500/10">
+                    <span className="text-3xl font-light text-red-400">3-5 dias</span>
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/20 p-6">
+                  <p className="text-emerald-400 text-xs font-medium tracking-widest uppercase mb-4">Com RR Engine</p>
+                  <div className="space-y-3 text-sm text-slate-300">
+                    <p>Orcamento completo em minutos</p>
+                    <p>Consulta automatica SINAPI + PINI</p>
+                    <p>Auditoria matematica automatizada</p>
+                    <p>Proposta e planilha gerados automaticamente</p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-emerald-500/10">
+                    <span className="text-3xl font-light text-emerald-400">~5 minutos</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Stats with Animation */}
-            <div className={`mt-20 grid grid-cols-3 gap-8 max-w-3xl mx-auto transition-all duration-700 ${
+            <div className={`mt-12 grid grid-cols-3 gap-8 max-w-3xl mx-auto transition-all duration-700 ${
               agentsInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-            }`} style={{ transitionDelay: '1000ms' }}>
+            }`} style={{ transitionDelay: '1100ms' }}>
               <div className="text-center">
                 <div className="text-4xl font-light text-white mb-2">100%</div>
-                <div className="text-slate-500 text-sm">Automático</div>
+                <div className="text-slate-500 text-sm">Automatico</div>
               </div>
               <div className="text-center border-x border-white/10">
                 <div className="text-4xl font-light text-white mb-2">SINAPI</div>
-                <div className="text-slate-500 text-sm">Base de Preços</div>
+                <div className="text-slate-500 text-sm">Base de Precos</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl font-light text-white mb-2">NBR</div>
@@ -603,10 +640,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="border-t border-white/5 py-8">
           <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-primary" />
-              <span className="font-semibold text-white">RR Engenharia</span>
-            </div>
+            <RRLogo size="sm" />
             <p className="text-sm text-slate-600">
               © 2026 RR Engenharia. Todos os direitos reservados.
             </p>

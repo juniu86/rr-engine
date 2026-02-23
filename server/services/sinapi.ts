@@ -1,6 +1,7 @@
 import { setCachedPrice, getCachedPrice } from "../db";
 import { searchSinapiOnline } from "./sinapiScraper";
 import { logger, incrementStat } from "../utils/logger";
+import { adjustPriceForRegion } from "../../shared/regionFactors";
 
 export interface SinapiComposition {
   code: string;
@@ -29,22 +30,8 @@ export interface SinapiSearchResult {
   state: string;
 }
 
-// State adjustment factors (base: SP = 1.0, ref: SINAPI Jan/2025)
-const STATE_FACTORS: Record<string, number> = {
-  AC: 1.18, AL: 0.89, AM: 1.12, AP: 1.15, BA: 0.88,
-  CE: 0.87, DF: 1.02, ES: 0.94, GO: 0.90, MA: 0.91,
-  MG: 0.92, MS: 0.96, MT: 0.97, PA: 1.08, PB: 0.86,
-  PE: 0.87, PI: 0.88, PR: 0.93, RJ: 1.05, RN: 0.87,
-  RO: 1.10, RR: 1.20, RS: 0.95, SC: 0.94, SE: 0.89,
-  SP: 1.00, TO: 1.05,
-};
-
-function getStateFactor(state: string): number {
-  return STATE_FACTORS[state.toUpperCase()] || 1.0;
-}
-
 function adjustPrice(basePrice: number, state: string): number {
-  return Math.round(basePrice * getStateFactor(state) * 100) / 100;
+  return adjustPriceForRegion(basePrice, state);
 }
 
 // ==================== SINAPI DATABASE (Ref: SP, Jan/2025) ====================

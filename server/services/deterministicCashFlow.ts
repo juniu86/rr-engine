@@ -13,11 +13,17 @@
 
 import type { FinanceiroOutput } from "../../shared/agents";
 
+export interface BillingInstallment {
+  name: string;
+  percentage: number; // 0-100
+}
+
 export interface DeterministicCashFlowInput {
   totalCost: number;      // Custo direto + logística
   totalPrice: number;     // Preço de venda (do Comercial)
   totalDuration: number;  // Duração em semanas
   totalTaxes?: number;    // Impostos (para cálculo de margem líquida)
+  billingInstallments?: BillingInstallment[]; // Parcelas de faturamento (default: 40% entrada + 60% final)
 }
 
 export interface CashFlowItem {
@@ -46,17 +52,33 @@ export interface DeterministicCashFlowResult {
  * Custos distribuídos uniformemente ao longo das semanas.
  */
 export function calculateDeterministicCashFlow(input: DeterministicCashFlowInput): DeterministicCashFlowResult {
-  const { totalCost, totalPrice, totalDuration, totalTaxes = 0 } = input;
-  
+  const { totalCost, totalPrice, totalDuration, totalTaxes = 0, billingInstallments } = input;
+
   // Garantir duração mínima de 1 semana
   const duration = Math.max(1, totalDuration);
-  
+
   // Distribuir custos uniformemente por semana
   const weeklyExpense = totalCost / duration;
-  
-  // Receitas: 40% semana 1, 60% última semana
-  const adiantamento = totalPrice * 0.40;
-  const saldoFinal = totalPrice * 0.60;
+
+  // Receitas distribuídas conforme parcelas configuradas
+  // Default: 40% semana 1, 60% última semana
+  const installments = (billingInstallments && billingInstallments.length >= 2)
+    ? billingInstallments
+    : [{ name: "Entrada", percentage: 40 }, { name: "Final", percentage: 60 }];
+
+  // Distribuir parcelas uniformemente ao longo das semanas
+  const incomeByWeek = new Map<number, number>();
+  installments.forEach((inst, idx) => {
+    // First installment → week 1, last → last week, middle → evenly distributed
+    let week: number;
+    if (idx === 0) week = 1;
+    else if (idx === installments.length - 1) week = duration;
+    else week = Math.max(1, Math.round((idx / (installments.length - 1)) * duration));
+    const amount = totalPrice * (inst.percentage / 100);
+    incomeByWeek.set(week, (incomeByWeek.get(week) || 0) + amount);
+  });
+
+  const adiantamento = incomeByWeek.get(1) || 0;
   
   // Calcular fluxo de caixa semanal
   const cashFlow: CashFlowItem[] = [];
@@ -65,7 +87,7 @@ export function calculateDeterministicCashFlow(input: DeterministicCashFlowInput
   
   for (let week = 1; week <= duration; week++) {
     const expense = Math.round(weeklyExpense * 100) / 100;
-    const income = week === 1 ? adiantamento : (week === duration ? saldoFinal : 0);
+    const income = incomeByWeek.get(week) || 0;
     cumulativeBalance += income - expense;
     
     cashFlow.push({
@@ -99,16 +121,15 @@ export function calculateDeterministicCashFlow(input: DeterministicCashFlowInput
   }
   
   // Calcular margens
-  const totalBaseCost = totalCost;
-  const grossMargin = totalPrice - totalBaseCost;
+  const grossMargin = totalPrice - totalCost;
   const grossMarginPercent = totalPrice > 0 ? (grossMargin / totalPrice) * 100 : 0;
-  const netMargin = totalPrice - totalBaseCost - totalTaxes;
+  const netMargin = totalPrice - totalCost - totalTaxes;
   const netMarginPercent = totalPrice > 0 ? (netMargin / totalPrice) * 100 : 0;
   
   return {
     cashFlow,
     maxExposure: Math.round(Math.abs(maxExposure) * 100) / 100,
-    needsAdvance: true, // Sempre true (modelo 40/60)
+    needsAdvance: maxExposure < 0, // True se há exposição negativa de caixa
     suggestedAdvance: Math.round(adiantamento * 100) / 100,
     alerts,
     grossMargin: Math.round(grossMargin * 100) / 100,

@@ -3,6 +3,17 @@ import { createGeneratedDocument } from "../db";
 import type { Project, BudgetItem } from "../../drizzle/schema";
 import * as XLSX from "xlsx";
 
+/** Escape HTML special characters to prevent XSS in generated documents */
+function escapeHtml(str: string | null | undefined): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Interface para item com preço proporcional (sem mostrar custo aberto)
 interface ProportionalItem {
   description: string;
@@ -327,10 +338,10 @@ function generateProposalHTML(
   </div>
 
   <div class="header">
-    <div class="logo">${companyName.toUpperCase()}</div>
+    <div class="logo">${escapeHtml(companyName).toUpperCase()}</div>
     <h1>PROPOSTA COMERCIAL</h1>
     <p class="subtitle">Soluções em Construção Civil e Infraestrutura</p>
-    ${companyCnpj ? `<p class="subtitle">CNPJ: ${companyCnpj}</p>` : ''}
+    ${companyCnpj ? `<p class="subtitle">CNPJ: ${escapeHtml(companyCnpj)}</p>` : ''}
   </div>
 
   <div class="section">
@@ -338,7 +349,7 @@ function generateProposalHTML(
     <table>
       <tr>
         <th style="width: 30%;">Projeto</th>
-        <td>${project.name}</td>
+        <td>${escapeHtml(project.name)}</td>
       </tr>
       <tr>
         <th>Tipo de Contrato</th>
@@ -346,7 +357,7 @@ function generateProposalHTML(
       </tr>
       <tr>
         <th>Localização</th>
-        <td>${project.location || "A definir em contrato"}</td>
+        <td>${escapeHtml(project.location) || "A definir em contrato"}</td>
       </tr>
       <tr>
         <th>Prazo de Execução</th>
@@ -357,7 +368,7 @@ function generateProposalHTML(
 
   <div class="section">
     <h2>2. ESCOPO DOS SERVIÇOS</h2>
-    <p>${project.description || "Conforme memorial descritivo anexo à presente proposta."}</p>
+    <p>${escapeHtml(project.description) || "Conforme memorial descritivo anexo à presente proposta."}</p>
   </div>
 
   <div class="section">
@@ -377,7 +388,7 @@ function generateProposalHTML(
         ${items.map((item, index) => `
         <tr>
           <td>${index + 1}</td>
-          <td>${item.description}</td>
+          <td>${escapeHtml(item.description)}</td>
           <td>${item.unit}</td>
           <td style="text-align: center;">${item.quantity.toFixed(2)}</td>
           <td class="price">R$ ${item.unitPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>

@@ -72,11 +72,10 @@ describe("calculateDeterministicCashFlow", () => {
     });
     
     expect(result.cashFlow).toHaveLength(1);
-    // Semana 1 recebe 40% + 60% = 100% (é a primeira E última semana)
-    expect(result.cashFlow[0].income).toBe(6000); // 40% de 15k (semana 1)
+    // Semana 1 é primeira E última: recebe 40% + 60% = 100%
+    expect(result.cashFlow[0].income).toBe(15000); // 100% de 15k
     expect(result.cashFlow[0].expense).toBe(10000);
-    // Na verdade, para duração 1, semana 1 = última semana, então income = 40% (semana 1)
-    // Mas o saldo final deve ser positivo
+    // Saldo: 15000 - 10000 = 5000 (lucro bruto)
   });
 
   it("should handle zero duration gracefully", () => {

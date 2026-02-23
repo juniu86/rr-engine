@@ -59,8 +59,8 @@ export type TaxType = "iss" | "icms" | "both" | "none";
 // Budget Item Sources
 export type PriceSource = "sinapi" | "pini" | "mercado";
 
-// Project Status
-export type ProjectStatus = "draft" | "processing" | "review" | "approved" | "rejected";
+// Project Status (must match schema.ts mysqlEnum)
+export type ProjectStatus = "draft" | "processing" | "review" | "approved" | "rejected" | "blocked" | "pending_confirmation" | "waiting_for_input";
 
 // Agent Execution Status
 export type AgentStatus = "pending" | "running" | "completed" | "failed" | "needs_review" | "waiting_for_user_input";
