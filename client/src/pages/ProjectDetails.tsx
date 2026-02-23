@@ -55,6 +55,7 @@ import type { MissingInfoRequest } from "../../../shared/agents";
 import { agentIcons, agentStatusConfig, projectStatusConfig } from "@/lib/constants";
 import EmptyState from "@/components/EmptyState";
 import MoneyValue from "@/components/MoneyValue";
+import Breadcrumbs from "@/components/Breadcrumbs";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 const statusConfig = { ...agentStatusConfig, ...projectStatusConfig };
@@ -365,6 +366,12 @@ export default function ProjectDetails() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Breadcrumbs */}
+        <Breadcrumbs items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: project?.name || "Projeto" },
+        ]} />
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -380,7 +387,7 @@ export default function ProjectDetails() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline">
-              {project?.contractType === "obra" ? "Obra" : "Manutenção"}
+              {project?.contractType === "obra" ? "Obra" : "Manutencao"}
             </Badge>
             <Badge className={statusConfig[project?.status as keyof typeof statusConfig]?.color || "bg-slate-500"}>
               {statusConfig[project?.status as keyof typeof statusConfig]?.label || project?.status}
@@ -388,11 +395,59 @@ export default function ProjectDetails() {
             {project?.financialRevisionCycle && project.financialRevisionCycle > 0 && (
               <Badge className="bg-purple-600 text-white">
                 <RefreshCw className="mr-1 h-3 w-3" />
-                Revisão Financeira #{project.financialRevisionCycle}
+                Revisao Financeira #{project.financialRevisionCycle}
               </Badge>
             )}
           </div>
         </div>
+
+        {/* Project lifecycle stepper */}
+        {(() => {
+          const phases = [
+            { id: "draft", label: "Criado", statuses: ["draft"] },
+            { id: "processing", label: "Processando", statuses: ["processing", "waiting_for_input"] },
+            { id: "review", label: "Revisao", statuses: ["review", "pending_confirmation"] },
+            { id: "approved", label: "Aprovado", statuses: ["approved"] },
+          ];
+          const currentStatus = project?.status || "draft";
+          const currentPhaseIdx = phases.findIndex(p => p.statuses.includes(currentStatus));
+          const isRejected = currentStatus === "rejected" || currentStatus === "blocked";
+
+          return (
+            <div className="flex items-center gap-1 px-2 overflow-x-auto">
+              {phases.map((phase, idx) => {
+                const isActive = idx === currentPhaseIdx;
+                const isCompleted = idx < currentPhaseIdx;
+                return (
+                  <div key={phase.id} className="flex items-center">
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
+                      isActive ? "bg-primary/15 text-primary border border-primary/30" :
+                      isCompleted ? "text-emerald-400" :
+                      isRejected && idx > currentPhaseIdx ? "text-red-400/50" :
+                      "text-muted-foreground"
+                    }`}>
+                      {isCompleted && <CheckCircle2 className="h-3.5 w-3.5" />}
+                      {isActive && <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
+                      {phase.label}
+                    </div>
+                    {idx < phases.length - 1 && (
+                      <div className={`w-6 h-px mx-1 ${isCompleted ? "bg-emerald-500" : "bg-border"}`} />
+                    )}
+                  </div>
+                );
+              })}
+              {isRejected && (
+                <div className="flex items-center">
+                  <div className="w-6 h-px mx-1 bg-red-500/50" />
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400 border border-red-500/30">
+                    <XCircle className="h-3.5 w-3.5" />
+                    {currentStatus === "blocked" ? "Bloqueado" : "Rejeitado"}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Card de Revisão Financeira (se aplicável) */}
         {project?.financialRevisionCycle && project.financialRevisionCycle > 0 && (
@@ -673,7 +728,10 @@ export default function ProjectDetails() {
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Visual Agent Pipeline */}
-            <AgentProgressPipeline executions={agentExecutions} />
+            <AgentProgressPipeline
+              executions={agentExecutions}
+              onRetry={(agentType) => executeSingle.mutate({ projectId, agentType: agentType as any })}
+            />
             
             {/* Progress bar */}
             <div className="pt-4 border-t border-slate-800">
@@ -1020,14 +1078,26 @@ export default function ProjectDetails() {
                         </div>
                       )}
                       {execution.status === "failed" && (
-                        <p className="text-xs text-red-500">
-                          {(execution.errors as any)?.message || "Erro desconhecido"}
-                        </p>
+                        <div className="space-y-2">
+                          <p className="text-xs text-red-500">
+                            {(execution.errors as any)?.message || "Erro no processamento. Tente novamente."}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full text-red-500 border-red-500/30 hover:bg-red-500/10"
+                            onClick={() => executeSingle.mutate({ projectId, agentType: execution.agentType as any })}
+                            disabled={executeSingle.isPending}
+                          >
+                            <RefreshCw className="mr-1 h-3 w-3" />
+                            Tentar Novamente
+                          </Button>
+                        </div>
                       )}
                       {execution.status === "pending" && (
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
+                        <Button
+                          size="sm"
+                          variant="outline"
                           className="mt-2 w-full"
                           onClick={() => executeSingle.mutate({ projectId, agentType: execution.agentType as any })}
                           disabled={executeSingle.isPending}
