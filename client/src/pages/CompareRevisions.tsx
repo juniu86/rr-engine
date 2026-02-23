@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { formatCurrency } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -133,14 +134,6 @@ export default function CompareRevisions() {
     return null;
   }
 
-  const formatCurrency = (value: number | string | null) => {
-    if (!value) return "R$ 0,00";
-    const num = typeof value === "string" ? parseFloat(value) : value;
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(num);
-  };
 
   const getLeftPrice = () => {
     const comercial = leftAgents?.find(a => a.agentType === "comercial");

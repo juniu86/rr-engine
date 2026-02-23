@@ -4,9 +4,19 @@ import { subscriptions, budgetCredits, users } from "../../drizzle/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { PLANS } from "./products";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-01-27.acacia" as any,
-});
+let _stripe: Stripe | null = null;
+
+function getStripeClient(): Stripe {
+  if (!_stripe) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error("STRIPE_SECRET_KEY is not configured");
+    }
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-01-27.acacia" as any,
+    });
+  }
+  return _stripe;
+}
 
 // ==================== CHECKOUT ====================
 
@@ -18,7 +28,7 @@ export async function createSubscriptionCheckout(
 ) {
   const customerId = await getOrCreateStripeCustomer(userId, userEmail, userName);
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripeClient().checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
     line_items: [
@@ -59,7 +69,7 @@ export async function createSingleBudgetCheckout(
 ) {
   const customerId = await getOrCreateStripeCustomer(userId, userEmail, userName);
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripeClient().checkout.sessions.create({
     customer: customerId,
     mode: "payment",
     line_items: [
@@ -111,7 +121,7 @@ async function getOrCreateStripeCustomer(
     return existing.stripeCustomerId;
   }
 
-  const customer = await stripe.customers.create({
+  const customer = await getStripeClient().customers.create({
     email,
     name,
     metadata: { user_id: userId.toString() },
@@ -227,11 +237,19 @@ export async function consumeBudgetCredit(userId: number): Promise<boolean> {
     .limit(1);
 
   if (sub && sub.quotaUsed < sub.quotaLimit) {
-    await db
+    // Atomic update with condition to prevent race conditions
+    const result = await db
       .update(subscriptions)
-      .set({ quotaUsed: sub.quotaUsed + 1 })
-      .where(eq(subscriptions.id, sub.id));
-    return true;
+      .set({ quotaUsed: sql`${subscriptions.quotaUsed} + 1` })
+      .where(
+        and(
+          eq(subscriptions.id, sub.id),
+          sql`${subscriptions.quotaUsed} < ${subscriptions.quotaLimit}`
+        )
+      );
+    if ((result as any)[0]?.affectedRows > 0) {
+      return true;
+    }
   }
 
   // 2. Tentar consumir crédito avulso (mais antigo primeiro)
@@ -247,11 +265,19 @@ export async function consumeBudgetCredit(userId: number): Promise<boolean> {
 
   for (const credit of credits) {
     if (credit.creditsUsed < credit.creditsTotal) {
-      await db
+      // Atomic update with condition to prevent race conditions
+      const result = await db
         .update(budgetCredits)
-        .set({ creditsUsed: credit.creditsUsed + 1 })
-        .where(eq(budgetCredits.id, credit.id));
-      return true;
+        .set({ creditsUsed: sql`${budgetCredits.creditsUsed} + 1` })
+        .where(
+          and(
+            eq(budgetCredits.id, credit.id),
+            sql`${budgetCredits.creditsUsed} < ${budgetCredits.creditsTotal}`
+          )
+        );
+      if ((result as any)[0]?.affectedRows > 0) {
+        return true;
+      }
     }
   }
 
@@ -325,7 +351,7 @@ export async function createCustomerPortal(userId: number, origin: string) {
     throw new Error("Nenhuma assinatura encontrada");
   }
 
-  const session = await stripe.billingPortal.sessions.create({
+  const session = await getStripeClient().billingPortal.sessions.create({
     customer: sub.stripeCustomerId,
     return_url: `${origin}/planos`,
   });
@@ -348,7 +374,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   const plan = session.metadata?.plan;
 
   if (plan === "mensal" && session.subscription) {
-    const stripeSub = await stripe.subscriptions.retrieve(session.subscription as string);
+    const stripeSub = await getStripeClient().subscriptions.retrieve(session.subscription as string);
 
     const [existing] = await db
       .select()
@@ -477,7 +503,7 @@ export async function getPaymentHistory(userId: number): Promise<Array<{
 
   try {
     // Buscar charges do Stripe para esse customer
-    const charges = await stripe.charges.list({
+    const charges = await getStripeClient().charges.list({
       customer: sub.stripeCustomerId,
       limit: 50,
     });
@@ -502,4 +528,4 @@ export async function getPaymentHistory(userId: number): Promise<Array<{
   }
 }
 
-export { stripe };
+export { getStripeClient };
