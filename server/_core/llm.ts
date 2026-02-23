@@ -216,7 +216,7 @@ const resolveApiUrl = () =>
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
   }
 };
 
@@ -330,6 +330,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const result = (await response.json()) as InvokeResult;
-  console.log('[LLM] Response received:', JSON.stringify(result, null, 2).substring(0, 500));
+  // Log only metadata, not response content (may contain sensitive user data)
+  console.log(`[LLM] Response received: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`);
   return result;
 }

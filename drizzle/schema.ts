@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean, index } from "drizzle-orm/mysql-core";
 
 // ==================== USERS ====================
 export const users = mysqlTable("users", {
@@ -19,7 +19,7 @@ export type InsertUser = typeof users.$inferInsert;
 // ==================== PROJECTS ====================
 export const projects = mysqlTable("projects", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: int("userId").notNull().references(() => users.id),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   contractType: mysqlEnum("contractType", ["manutencao", "obra"]).notNull(),
@@ -51,7 +51,10 @@ export const projects = mysqlTable("projects", {
   financialRevisionInstructions: json("financialRevisionInstructions"), // Instruções detalhadas para cada agente
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("projects_userId_idx").on(table.userId),
+  index("projects_status_idx").on(table.status),
+]);
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = typeof projects.$inferInsert;
@@ -59,7 +62,7 @@ export type InsertProject = typeof projects.$inferInsert;
 // ==================== AGENT EXECUTIONS ====================
 export const agentExecutions = mysqlTable("agent_executions", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
   agentType: mysqlEnum("agentType", [
     "engenheiro_tecnico",
     "logistica",
@@ -84,7 +87,10 @@ export const agentExecutions = mysqlTable("agent_executions", {
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("agent_executions_projectId_idx").on(table.projectId),
+  index("agent_executions_agentType_idx").on(table.agentType),
+]);
 
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
@@ -92,7 +98,7 @@ export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
 // ==================== BUDGET ITEMS ====================
 export const budgetItems = mysqlTable("budget_items", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
   parentId: int("parentId"),
   category: varchar("category", { length: 100 }),
   code: varchar("code", { length: 50 }),
@@ -115,7 +121,9 @@ export const budgetItems = mysqlTable("budget_items", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("budget_items_projectId_idx").on(table.projectId),
+]);
 
 export type BudgetItem = typeof budgetItems.$inferSelect;
 export type InsertBudgetItem = typeof budgetItems.$inferInsert;
@@ -123,7 +131,7 @@ export type InsertBudgetItem = typeof budgetItems.$inferInsert;
 // ==================== LOGISTICS COSTS ====================
 export const logisticsCosts = mysqlTable("logistics_costs", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
   category: mysqlEnum("category", ["frete", "bota_fora", "deslocamento", "hospedagem", "alimentacao", "equipamentos", "outros"]).notNull(),
   description: text("description").notNull(),
   quantity: decimal("quantity", { precision: 15, scale: 4 }),
@@ -133,7 +141,9 @@ export const logisticsCosts = mysqlTable("logistics_costs", {
   source: varchar("source", { length: 100 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("logistics_costs_projectId_idx").on(table.projectId),
+]);
 
 export type LogisticsCost = typeof logisticsCosts.$inferSelect;
 export type InsertLogisticsCost = typeof logisticsCosts.$inferInsert;
@@ -141,7 +151,7 @@ export type InsertLogisticsCost = typeof logisticsCosts.$inferInsert;
 // ==================== SCHEDULE ITEMS ====================
 export const scheduleItems = mysqlTable("schedule_items", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
   budgetItemId: int("budgetItemId"),
   phase: varchar("phase", { length: 100 }),
   description: text("description").notNull(),
@@ -151,7 +161,9 @@ export const scheduleItems = mysqlTable("schedule_items", {
   percentComplete: decimal("percentComplete", { precision: 5, scale: 2 }).default("0"),
   dependencies: json("dependencies"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("schedule_items_projectId_idx").on(table.projectId),
+]);
 
 export type ScheduleItem = typeof scheduleItems.$inferSelect;
 export type InsertScheduleItem = typeof scheduleItems.$inferInsert;
@@ -159,7 +171,7 @@ export type InsertScheduleItem = typeof scheduleItems.$inferInsert;
 // ==================== CASH FLOW ====================
 export const cashFlowItems = mysqlTable("cash_flow_items", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
   weekNumber: int("weekNumber").notNull(),
   plannedExpense: decimal("plannedExpense", { precision: 15, scale: 2 }),
   plannedIncome: decimal("plannedIncome", { precision: 15, scale: 2 }),
@@ -169,7 +181,9 @@ export const cashFlowItems = mysqlTable("cash_flow_items", {
   hasAlert: boolean("hasAlert").default(false),
   alertMessage: text("alertMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("cash_flow_items_projectId_idx").on(table.projectId),
+]);
 
 export type CashFlowItem = typeof cashFlowItems.$inferSelect;
 export type InsertCashFlowItem = typeof cashFlowItems.$inferInsert;
@@ -177,14 +191,16 @@ export type InsertCashFlowItem = typeof cashFlowItems.$inferInsert;
 // ==================== GENERATED DOCUMENTS ====================
 export const generatedDocuments = mysqlTable("generated_documents", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
   documentType: mysqlEnum("documentType", ["proposta_comercial", "memoria_calculo", "cronograma"]).notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileUrl: varchar("fileUrl", { length: 1000 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }).notNull(),
   version: int("version").default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("generated_documents_projectId_idx").on(table.projectId),
+]);
 
 export type GeneratedDocument = typeof generatedDocuments.$inferSelect;
 export type InsertGeneratedDocument = typeof generatedDocuments.$inferInsert;
@@ -286,8 +302,8 @@ export type InsertCompanySettings = typeof companySettings.$inferInsert;
 // Armazena o histórico completo de interações entre agentes e usuários
 export const agentInteractions = mysqlTable("agent_interactions", {
   id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
-  agentExecutionId: int("agentExecutionId").notNull(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  agentExecutionId: int("agentExecutionId").notNull().references(() => agentExecutions.id),
   agentType: mysqlEnum("agentType", [
     "engenheiro_tecnico",
     "logistica",
@@ -316,7 +332,10 @@ export const agentInteractions = mysqlTable("agent_interactions", {
   respondedAt: timestamp("respondedAt"), // Quando o usuário respondeu (null se ainda não respondeu)
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("agent_interactions_projectId_idx").on(table.projectId),
+  index("agent_interactions_executionId_idx").on(table.agentExecutionId),
+]);
 
 export type AgentInteraction = typeof agentInteractions.$inferSelect;
 export type InsertAgentInteraction = typeof agentInteractions.$inferInsert;
@@ -326,7 +345,7 @@ export type InsertAgentInteraction = typeof agentInteractions.$inferInsert;
 // Armazena apenas IDs do Stripe + dados de negócio locais (seguindo princípio de não duplicar)
 export const subscriptions = mysqlTable("subscriptions", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: int("userId").notNull().references(() => users.id),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
   
@@ -344,7 +363,9 @@ export const subscriptions = mysqlTable("subscriptions", {
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  index("subscriptions_userId_idx").on(table.userId),
+]);
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
@@ -352,7 +373,7 @@ export type InsertSubscription = typeof subscriptions.$inferInsert;
 // Créditos avulsos (pagamento por orçamento)
 export const budgetCredits = mysqlTable("budget_credits", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: int("userId").notNull().references(() => users.id),
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
   stripeSessionId: varchar("stripeSessionId", { length: 255 }),
   
@@ -364,7 +385,9 @@ export const budgetCredits = mysqlTable("budget_credits", {
   status: mysqlEnum("status", ["pending", "paid", "failed", "refunded"]).default("pending").notNull(),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => [
+  index("budget_credits_userId_idx").on(table.userId),
+]);
 
 export type BudgetCredit = typeof budgetCredits.$inferSelect;
 export type InsertBudgetCredit = typeof budgetCredits.$inferInsert;

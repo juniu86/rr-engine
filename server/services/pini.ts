@@ -1,6 +1,7 @@
 import { setCachedPrice, getCachedPrice } from "../db";
 import { searchPiniOnline } from "./piniScraper";
 import { logger, incrementStat } from "../utils/logger";
+import { adjustPriceForRegion, getRegionFactor } from "../../shared/regionFactors";
 
 export interface PiniComposition {
   code: string;
@@ -31,43 +32,8 @@ export interface PiniSearchResult {
   region: string;
 }
 
-// Regional adjustment factors (base: São Paulo = 1.0)
-const REGION_FACTORS: Record<string, number> = {
-  "São Paulo": 1.0,
-  "Rio de Janeiro": 1.05,
-  "Minas Gerais": 0.92,
-  "Bahia": 0.88,
-  "Rio Grande do Sul": 0.95,
-  "Paraná": 0.93,
-  "Santa Catarina": 0.94,
-  "Goiás": 0.90,
-  "Distrito Federal": 1.02,
-  "Pernambuco": 0.87,
-  "Ceará": 0.86,
-  "Espírito Santo": 0.94,
-  "Mato Grosso": 0.97,
-  "Mato Grosso do Sul": 0.96,
-  "Pará": 1.08,
-  "Amazonas": 1.12,
-  "Maranhão": 0.91,
-  "Tocantins": 1.05,
-  "Sergipe": 0.89,
-  "Alagoas": 0.89,
-  "Piauí": 0.88,
-  "Rio Grande do Norte": 0.87,
-  "Paraíba": 0.86,
-  "Rondônia": 1.10,
-  "Acre": 1.18,
-  "Amapá": 1.15,
-  "Roraima": 1.20,
-};
-
-function getRegionFactor(region: string): number {
-  return REGION_FACTORS[region] || 1.0;
-}
-
 function adjustPrice(basePrice: number, region: string): number {
-  return Math.round(basePrice * getRegionFactor(region) * 100) / 100;
+  return adjustPriceForRegion(basePrice, region);
 }
 
 // ==================== PINI TCPO DATABASE (Ref: SP, 01/2025) ====================
@@ -406,9 +372,7 @@ export async function comparePrices(description: string, region: string = "São 
   return { sinapi: sinapiResult, pini: piniResult, recommendation, recommendedPrice };
 }
 
-export function getRegionalFactor(region: string): number {
-  return REGION_FACTORS[region] || 1.0;
-}
+export { getRegionFactor as getRegionalFactor } from "../../shared/regionFactors";
 
 export function getPiniCount(): number {
   return PINI_DATABASE.length;

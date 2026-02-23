@@ -58,11 +58,12 @@ export async function scrapeSinapi(codigo: string): Promise<SinapiScrapedData | 
 
   let browser;
   try {
+    const isContainer = process.env.DOCKER === 'true' || process.env.RUNNING_IN_DOCKER === 'true';
     browser = await puppeteer.launch({
       headless: true,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
+        // Only disable sandbox in containerized environments where it cannot run
+        ...(isContainer ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--single-process',

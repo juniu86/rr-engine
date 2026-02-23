@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -13,6 +13,7 @@ import { searchPini, getPiniComposition, comparePrices } from "./services/pini";
 import { generateProposalPDF, generateMemoriaCalculo, generateSchedulePDF } from "./services/documents";
 import { stripeRouter } from "./routers/stripe";
 import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
+import { persistAgentOutput, persistBudgetItems, persistLogisticsCosts, persistScheduleItems, persistCashFlowItems } from "./services/agentPersistence";
 
 export const appRouter = router({
   system: systemRouter,
@@ -51,8 +52,18 @@ export const appRouter = router({
         // Buscar BDI das configurações da empresa do usuário
         const companySettings = await db.getCompanySettingsOrDefault(ctx.user.id);
         const bdiValue = companySettings.bdiPercentual ?? 25;
-        
-        // Usar transação atômica: se qualquer operação falhar, tudo é revertido
+
+        // Consumir crédito/quota ANTES de criar o projeto (atômico via SQL WHERE)
+        // Se não houver crédito, consumeBudgetCredit retorna false e o projeto não é criado
+        const creditConsumed = await consumeBudgetCredit(ctx.user.id);
+        if (!creditConsumed) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Falha ao consumir crédito. Verifique seu plano ou créditos disponíveis.",
+          });
+        }
+
+        // Criar projeto somente após crédito consumido com sucesso
         const projectId = await db.createProjectWithAgents({
           userId: ctx.user.id,
           name: input.name,
@@ -66,9 +77,6 @@ export const appRouter = router({
           bdiPreset: "padrao", // Sempre usar padrão pois BDI vem das configurações
           bdiPercentual: bdiValue.toString(),
         });
-
-        // Consumir crédito/quota após criação bem-sucedida
-        await consumeBudgetCredit(ctx.user.id);
         
         return { projectId };
       }),
@@ -256,132 +264,21 @@ export const appRouter = router({
           const agent = agents[input.agentType];
           const output = await agent.execute(agentInput);
           
-          await db.updateAgentExecution(execution.id, {
-            status: "completed",
-            output: output as any,
-            completedAt: new Date(),
-          });
-          
-          // P0-3 FIX: Persistir dados derivados conforme tipo de agente
+          // Persistir dados derivados conforme tipo de agente
           const companySettingsSingle = await db.getCompanySettingsOrDefault(ctx.user.id);
           const singleBdiValue = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) / 100 : (parseFloat(companySettingsSingle.bdiPercentual as string) / 100 || 0.25);
-          
-          if (input.agentType === 'orcamentista' && output && (output as any).budgetItems) {
-            await db.deleteBudgetItemsByProjectId(input.projectId);
-            const rawItems = (output as any).budgetItems;
-            const budgetItemsToSave = rawItems.map((item: any) => {
-              const quantity = Number(item.quantity) || 0;
-              const unitCostTotal = Number(item.unitCostTotal) || 0;
-              const totalCost = quantity * unitCostTotal;
-              const bdiAmount = totalCost * singleBdiValue;
-              const finalPrice = totalCost + bdiAmount;
-              return {
-                projectId: input.projectId,
-                category: item.category || 'Geral',
-                code: item.code || '',
-                description: item.description,
-                unit: item.unit,
-                quantity: String(quantity),
-                unitCostMaterial: String(item.unitCostMaterial || 0),
-                unitCostLabor: String(item.unitCostLabor || 0),
-                unitCostLogistics: String(item.unitCostLogistics || 0),
-                unitCostTotal: String(unitCostTotal),
-                totalCost: String(totalCost),
-                bdiAmount: String(bdiAmount),
-                finalPrice: String(finalPrice),
-                taxAmount: String(item.taxAmount || 0),
-                source: item.source || 'Estimativa',
-                sourceCode: item.sourceCode || null,
-                sourceDate: item.sourceDate || null,
-              };
-            });
-            await db.createBudgetItems(budgetItemsToSave);
-          }
-          
-          if (input.agentType === 'logistica' && output && (output as any).costs) {
-            await db.deleteLogisticsCostsByProjectId(input.projectId);
-            const rawCosts = (output as any).costs;
-            const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
-            const costsToSave = rawCosts.map((cost: any) => {
-              let category: typeof validCategories[number] = 'outros';
-              const rawCategory = (cost.category || '').toLowerCase();
-              if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
-              else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
-              else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
-              else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
-              else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
-              else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
-              return {
-                projectId: input.projectId,
-                category,
-                description: String(cost.description || 'Custo logístico').substring(0, 1000),
-                quantity: String(Number(cost.quantity) || 1),
-                unit: String(cost.unit || 'un').substring(0, 20),
-                unitCost: String(Number(cost.unitCost) || 0),
-                totalCost: String(Number(cost.totalCost) || 0),
-              };
-            });
-            await db.createLogisticsCosts(costsToSave);
-          }
-          
-          if (input.agentType === 'gestao_projetos' && output && (output as any).schedule) {
-            await db.deleteScheduleItemsByProjectId(input.projectId);
-            const rawSchedule = (output as any).schedule;
-            const scheduleToSave = rawSchedule.map((item: any) => {
-              const startDay = item.startDay || item.startWeek || 1;
-              const endDay = item.endDay || item.endWeek || startDay;
-              const startWeek = Math.ceil(startDay / 7) || 1;
-              const endWeek = Math.ceil(endDay / 7) || startWeek;
-              return {
-                projectId: input.projectId,
-                description: item.activity || item.description || item.phase || 'Atividade',
-                startWeek,
-                duration: endWeek - startWeek + 1,
-                dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
-              };
-            });
-            await db.createScheduleItems(scheduleToSave);
-          }
-          
-          // v2.10: Fluxo de caixa determinístico (substitui output da LLM)
-          if (input.agentType === 'financeiro') {
-            const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
-            const finInput = agentInput as any;
-            const tributarioExec = executions.find(e => e.agentType === 'tributario');
-            const totalTaxes = tributarioExec?.output ? Number((tributarioExec.output as any).totalTaxes) || 0 : 0;
-            
-            const deterministicResult = calculateDeterministicCashFlow({
-              totalCost: finInput.totalCost || 0,
-              totalPrice: finInput.totalPrice || 0,
-              totalDuration: finInput.cashFlow?.length || 4,
-              totalTaxes,
-            });
-            
-            const deterministicOutput = buildDeterministicFinanceiroOutput(deterministicResult, output);
-            
-            // Substituir output da LLM pelo determinístico
-            await db.updateAgentExecution(execution.id, {
-              status: "completed",
-              output: deterministicOutput as any,
-              completedAt: new Date(),
-            });
-            
-            // Persistir fluxo de caixa
-            await db.deleteCashFlowItemsByProjectId(input.projectId);
-            const cashFlowToSave = deterministicResult.cashFlow.map((item) => ({
-              projectId: input.projectId,
-              weekNumber: item.week,
-              plannedExpense: String(item.expense),
-              plannedIncome: String(item.income),
-              actualExpense: null,
-              actualIncome: null,
-              cashBalance: String(item.balance),
-              hasAlert: item.balance < 0,
-            }));
-            await db.createCashFlowItems(cashFlowToSave);
-            
-            console.log(`[Financeiro] Output determinístico aplicado: Saldo final R$ ${deterministicResult.cashFlow[deterministicResult.cashFlow.length - 1]?.balance.toFixed(2)}`);
-          }
+
+          const finalOutput = await persistAgentOutput(input.agentType, input.projectId, output, {
+            bdiPercent: singleBdiValue,
+            executions,
+            agentInput,
+          });
+
+          await db.updateAgentExecution(execution.id, {
+            status: "completed",
+            output: finalOutput as any,
+            completedAt: new Date(),
+          });
           
           const nextAgentOrder = AGENT_ORDER[input.agentType] + 1;
           if (nextAgentOrder <= 9) {
@@ -468,155 +365,19 @@ export const appRouter = router({
               }
             }
             
-            // Salvar itens de orçamento após execução do orçamentista
-            // P0-4 FIX: Limpar dados antigos antes de inserir novos
-            if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
-              await db.deleteBudgetItemsByProjectId(input.projectId);
-              const rawItems = (output as any).budgetItems;
-              const budgetItemsToSave = rawItems.map((item: any) => {
-                const quantity = Number(item.quantity) || 0;
-                const unitCostTotal = Number(item.unitCostTotal) || 0;
-                const totalCost = quantity * unitCostTotal;
-                // P0-2 FIX: Usar BDI dinâmico do projeto/empresa
-                const bdiAmount = totalCost * effectiveBdiPercent;
-                const finalPrice = totalCost + bdiAmount;
-                
-                return {
-                  projectId: input.projectId,
-                  category: item.category || 'Geral',
-                  code: item.code || '',
-                  description: item.description,
-                  unit: item.unit,
-                  quantity: String(quantity),
-                  unitCostMaterial: String(item.unitCostMaterial || 0),
-                  unitCostLabor: String(item.unitCostLabor || 0),
-                  unitCostLogistics: String(item.unitCostLogistics || 0),
-                  unitCostTotal: String(unitCostTotal),
-                  totalCost: String(totalCost),
-                  bdiAmount: String(bdiAmount),
-                  finalPrice: String(finalPrice),
-                  taxAmount: String(item.taxAmount || 0),
-                  source: item.source || 'Estimativa',
-                  sourceCode: item.sourceCode || null,
-                  sourceDate: item.sourceDate || null,
-                };
-              });
-              await db.createBudgetItems(budgetItemsToSave);
-            }
-            
-            // Salvar custos logísticos após execução do agente de logística
-            // P0-4 FIX: Limpar dados antigos antes de inserir novos
-            if (agentType === 'logistica' && output && (output as any).costs) {
-              try {
-                await db.deleteLogisticsCostsByProjectId(input.projectId);
-                const rawCosts = (output as any).costs;
-                const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
-                const costsToSave = rawCosts.map((cost: any) => {
-                  let category: typeof validCategories[number] = 'outros';
-                  const rawCategory = (cost.category || '').toLowerCase();
-                  if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
-                  else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
-                  else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
-                  else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
-                  else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
-                  else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
-                  
-                  return {
-                    projectId: input.projectId,
-                    category,
-                    description: String(cost.description || 'Custo logístico').substring(0, 1000),
-                    quantity: String(Number(cost.quantity) || 1),
-                    unit: String(cost.unit || 'un').substring(0, 20),
-                    unitCost: String(Number(cost.unitCost) || 0),
-                    totalCost: String(Number(cost.totalCost) || 0),
-                  };
-                });
-                console.log('[Logistica] Saving costs:', JSON.stringify(costsToSave, null, 2));
-                await db.createLogisticsCosts(costsToSave);
-              } catch (logisticsError) {
-                console.error('[Logistica] Error saving costs:', logisticsError);
-              }
-            }
-            
-            // Salvar cronograma após execução do agente de gestão
-            // P0-4 FIX: Limpar dados antigos + P1-7 FIX: Converter dias para semanas
-            if (agentType === 'gestao_projetos' && output && (output as any).schedule) {
-              await db.deleteScheduleItemsByProjectId(input.projectId);
-              const rawSchedule = (output as any).schedule;
-              const scheduleToSave = rawSchedule.map((item: any) => {
-                // P1-7 FIX: Agente retorna startDay/endDay, converter para semanas
-                const startDay = item.startDay || item.startWeek || 1;
-                const endDay = item.endDay || item.endWeek || startDay;
-                const startWeek = Math.ceil(startDay / 7) || 1;
-                const endWeek = Math.ceil(endDay / 7) || startWeek;
-                return {
-                  projectId: input.projectId,
-                  description: item.activity || item.description || item.phase || 'Atividade',
-                  startWeek,
-                  duration: endWeek - startWeek + 1,
-                  dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
-                };
-              });
-              await db.createScheduleItems(scheduleToSave);
-            }
-            
-            // v2.10: Fluxo de caixa determinístico (substitui output da LLM)
-            if (agentType === 'financeiro') {
-              const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
-              
-              const orcamentistaOut = results.orcamentista as any;
-              const logisticaOut = results.logistica as any;
-              const comercialOut = results.comercial as any;
-              const tributarioOut = results.tributario as any;
-              const gestaoOut = results.gestao_projetos as any;
-              
-              const directCostAll = Number(orcamentistaOut?.totalDirectCost) || 0;
-              const logisticsCostAll = Number(logisticaOut?.totalLogisticsCost ?? logisticaOut?.totalCost) || 0;
-              const totalCostAll = directCostAll + logisticsCostAll;
-              const totalPriceAll = Number(comercialOut?.finalPrice) || 0;
-              const totalTaxesAll = Number(tributarioOut?.totalTaxes) || 0;
-              
-              // Calcular duração
-              const scheduleItemsAll = gestaoOut?.scheduleItems || [];
-              const totalDurationAll = scheduleItemsAll.length > 0
-                ? Math.max(...scheduleItemsAll.map((s: any) => {
-                    const endDay = s.endDay || s.endWeek || 4;
-                    return endDay > 52 ? Math.ceil(endDay / 7) : endDay;
-                  }))
-                : 4;
-              
-              const deterministicResult = calculateDeterministicCashFlow({
-                totalCost: totalCostAll,
-                totalPrice: totalPriceAll,
-                totalDuration: totalDurationAll,
-                totalTaxes: totalTaxesAll,
-              });
-              
-              output = buildDeterministicFinanceiroOutput(deterministicResult, output);
-              
-              // Persistir fluxo de caixa
-              await db.deleteCashFlowItemsByProjectId(input.projectId);
-              const cashFlowToSave = deterministicResult.cashFlow.map((item) => ({
-                projectId: input.projectId,
-                weekNumber: item.week,
-                plannedExpense: String(item.expense),
-                plannedIncome: String(item.income),
-                actualExpense: null,
-                actualIncome: null,
-                cashBalance: String(item.balance),
-                hasAlert: item.balance < 0,
-              }));
-              await db.createCashFlowItems(cashFlowToSave);
-              
-              console.log(`[Financeiro] Determinístico (executeAll): Custo R$ ${totalCostAll.toFixed(2)}, Venda R$ ${totalPriceAll.toFixed(2)}, Saldo final R$ ${deterministicResult.cashFlow[deterministicResult.cashFlow.length - 1]?.balance.toFixed(2)}`);
-            }
-            
+            // Persistir dados derivados e obter output final (pode ser substituído pelo determinístico)
+            output = await persistAgentOutput(agentType, input.projectId, output, {
+              bdiPercent: effectiveBdiPercent,
+              executions,
+              agentInput,
+            });
+
             await db.updateAgentExecution(execution.id, {
               status: "completed",
               output: output as any,
               completedAt: new Date(),
             });
-            
+
             await db.updateProject(input.projectId, { currentAgentId: AGENT_ORDER[agentType] + 1 });
           } catch (error) {
             await db.updateAgentExecution(execution.id, {
@@ -726,119 +487,14 @@ export const appRouter = router({
                 
                 revisedResults[agentType] = output;
                 
-                // Salvar dados (mesma lógica de antes)
-                if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
-                  const rawItems = (output as any).budgetItems;
-                  const budgetItemsToSave = rawItems.map((item: any) => {
-                    const quantity = Number(item.quantity) || 0;
-                    const unitCostTotal = Number(item.unitCostTotal) || 0;
-                    const totalCost = quantity * unitCostTotal;
-                    // P0-2 FIX: Usar BDI dinâmico
-                    const bdiAmount = totalCost * effectiveBdiPercent;
-                    const finalPrice = totalCost + bdiAmount;
-                    
-                    return {
-                      projectId: input.projectId,
-                      category: item.category || 'Geral',
-                      code: item.code || '',
-                      description: item.description,
-                      unit: item.unit,
-                      quantity: String(quantity),
-                      unitCostMaterial: String(item.unitCostMaterial || 0),
-                      unitCostLabor: String(item.unitCostLabor || 0),
-                      unitCostLogistics: String(item.unitCostLogistics || 0),
-                      unitCostTotal: String(unitCostTotal),
-                      totalCost: String(totalCost),
-                      bdiAmount: String(bdiAmount),
-                      finalPrice: String(finalPrice),
-                      source: item.source || 'Estimativa',
-                      sourceCode: item.sourceCode || null,
-                      sourceDate: item.sourceDate || null,
-                    };
-                  });
-                  await db.createBudgetItems(budgetItemsToSave);
-                }
-                
-                if (agentType === 'logistica' && output && (output as any).costs) {
-                  try {
-                    const rawCosts = (output as any).costs;
-                    const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
-                    const costsToSave = rawCosts.map((cost: any) => {
-                      let category: typeof validCategories[number] = 'outros';
-                      const rawCategory = (cost.category || '').toLowerCase();
-                      if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
-                      else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
-                      else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
-                      else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
-                      else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
-                      else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
-                      
-                      return {
-                        projectId: input.projectId,
-                        category,
-                        description: String(cost.description || 'Custo logístico').substring(0, 1000),
-                        quantity: String(Number(cost.quantity) || 1),
-                        unit: String(cost.unit || 'un').substring(0, 20),
-                        unitCost: String(Number(cost.unitCost) || 0),
-                        totalCost: String(Number(cost.totalCost) || 0),
-                      };
-                    });
-                    await db.createLogisticsCosts(costsToSave);
-                  } catch (logisticsError) {
-                    console.error('[Logistica Revision] Error saving costs:', logisticsError);
-                  }
-                }
-                
-                // v2.10: Fluxo de caixa determinístico (revisão financeira)
-                if (agentType === 'financeiro') {
-                  const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
-                  
-                  const comercialRevOut = revisedResults.comercial as any;
-                  const tributarioRevOut = revisedResults.tributario as any;
-                  const logisticaRevOut = revisedResults.logistica as any;
-                  const orcamentistaRevOut = revisedResults.orcamentista as any;
-                  const gestaoRevOut = revisedResults.gestao_projetos as any;
-                  
-                  const directCostRev = Number(orcamentistaRevOut?.totalDirectCost) || 0;
-                  const logisticsCostRev = Number(logisticaRevOut?.totalLogisticsCost ?? logisticaRevOut?.totalCost) || 0;
-                  const totalCostRev = directCostRev + logisticsCostRev;
-                  const totalPriceRev = Number(comercialRevOut?.finalPrice) || 0;
-                  const totalTaxesRev = Number(tributarioRevOut?.totalTaxes) || 0;
-                  
-                  const scheduleItemsRev = gestaoRevOut?.scheduleItems || [];
-                  const totalDurationRev = scheduleItemsRev.length > 0
-                    ? Math.max(...scheduleItemsRev.map((s: any) => {
-                        const endDay = s.endDay || s.endWeek || 4;
-                        return endDay > 52 ? Math.ceil(endDay / 7) : endDay;
-                      }))
-                    : 4;
-                  
-                  const deterministicResultRev = calculateDeterministicCashFlow({
-                    totalCost: totalCostRev,
-                    totalPrice: totalPriceRev,
-                    totalDuration: totalDurationRev,
-                    totalTaxes: totalTaxesRev,
-                  });
-                  
-                  output = buildDeterministicFinanceiroOutput(deterministicResultRev, output);
-                  revisedResults[agentType] = output;
-                  
-                  await db.deleteCashFlowItemsByProjectId(input.projectId);
-                  const cashFlowToSaveRev = deterministicResultRev.cashFlow.map((item) => ({
-                    projectId: input.projectId,
-                    weekNumber: item.week,
-                    plannedExpense: String(item.expense),
-                    plannedIncome: String(item.income),
-                    actualExpense: null,
-                    actualIncome: null,
-                    cashBalance: String(item.balance),
-                    hasAlert: item.balance < 0,
-                  }));
-                  await db.createCashFlowItems(cashFlowToSaveRev);
-                  
-                  console.log(`[Financeiro Revisão] Determinístico: Saldo final R$ ${deterministicResultRev.cashFlow[deterministicResultRev.cashFlow.length - 1]?.balance.toFixed(2)}`);
-                }
-                
+                // Persistir dados derivados (uses shared service)
+                output = await persistAgentOutput(agentType, input.projectId, output, {
+                  bdiPercent: effectiveBdiPercent,
+                  executions: updatedExecutions,
+                  agentInput,
+                });
+                revisedResults[agentType] = output;
+
                 await db.updateAgentExecution(exec.id, {
                   status: 'completed',
                   output: output as any,
@@ -1551,19 +1207,19 @@ export const appRouter = router({
 
   // Admin Dashboard Router
   admin: router({
-    getStats: protectedProcedure
+    getStats: adminProcedure
       .query(async ({ ctx }) => {
         const stats = await db.getAdminStats();
         return stats;
       }),
 
-    getUsers: protectedProcedure
+    getUsers: adminProcedure
       .query(async ({ ctx }) => {
         const users = await db.getAdminUsers();
         return users;
       }),
 
-    getProjects: protectedProcedure
+    getProjects: adminProcedure
       .query(async ({ ctx }) => {
         const projects = await db.getAdminProjects();
         return projects;
@@ -1818,129 +1474,13 @@ async function executeRemainingAgents(
       const agent = agents[agentType];
       let output = await agent.execute(agentInput);
       
-      // Salvar itens de orçamento após execução do orçamentista
-      // P0-4 FIX: Limpar dados antigos antes de inserir novos
-      if (agentType === 'orcamentista' && output && (output as any).budgetItems) {
-        await db.deleteBudgetItemsByProjectId(projectId);
-        const rawItems = (output as any).budgetItems;
-        const budgetItemsToSave = rawItems.map((item: any) => {
-          const quantity = Number(item.quantity) || 0;
-          const unitCostTotal = Number(item.unitCostTotal) || 0;
-          const totalCost = quantity * unitCostTotal;
-          // P0-2 FIX: Usar BDI dinâmico
-          const bdiAmount = totalCost * pipelineBdiValue;
-          const finalPrice = totalCost + bdiAmount;
-          
-          return {
-            projectId: projectId,
-            category: item.category || 'Geral',
-            code: item.code || '',
-            description: item.description,
-            unit: item.unit,
-            quantity: String(quantity),
-            unitCostMaterial: String(item.unitCostMaterial || 0),
-            unitCostLabor: String(item.unitCostLabor || 0),
-            unitCostLogistics: String(item.unitCostLogistics || 0),
-            unitCostTotal: String(unitCostTotal),
-            totalCost: String(totalCost),
-            bdiAmount: String(bdiAmount),
-            finalPrice: String(finalPrice),
-            taxAmount: String(item.taxAmount || 0),
-            source: item.source || 'Estimativa',
-            sourceCode: item.sourceCode || null,
-            sourceDate: item.sourceDate || null,
-          };
-        });
-        await db.createBudgetItems(budgetItemsToSave);
-      }
-      
-      // Salvar custos logísticos
-      // P0-4 FIX: Limpar dados antigos
-      if (agentType === 'logistica' && output && (output as any).costs) {
-        try {
-          await db.deleteLogisticsCostsByProjectId(projectId);
-          const rawCosts = (output as any).costs;
-          const validCategories = ['frete', 'bota_fora', 'deslocamento', 'hospedagem', 'alimentacao', 'equipamentos', 'outros'] as const;
-          const costsToSave = rawCosts.map((cost: any) => {
-            let category: typeof validCategories[number] = 'outros';
-            const rawCategory = (cost.category || '').toLowerCase();
-            if (rawCategory.includes('frete') || rawCategory.includes('transporte')) category = 'frete';
-            else if (rawCategory.includes('bota') || rawCategory.includes('resíduo') || rawCategory.includes('entulho')) category = 'bota_fora';
-            else if (rawCategory.includes('desloc') || rawCategory.includes('viagem')) category = 'deslocamento';
-            else if (rawCategory.includes('hosped') || rawCategory.includes('hotel')) category = 'hospedagem';
-            else if (rawCategory.includes('aliment') || rawCategory.includes('refeiç')) category = 'alimentacao';
-            else if (rawCategory.includes('equip') || rawCategory.includes('ferramenta')) category = 'equipamentos';
-            
-            return {
-              projectId: projectId,
-              category,
-              description: String(cost.description || 'Custo logístico').substring(0, 1000),
-              quantity: String(Number(cost.quantity) || 1),
-              unit: String(cost.unit || 'un').substring(0, 20),
-              unitCost: String(Number(cost.unitCost) || 0),
-              totalCost: String(Number(cost.totalCost) || 0),
-            };
-          });
-          await db.createLogisticsCosts(costsToSave);
-        } catch (logisticsError) {
-          console.error('[Logistica] Error saving costs:', logisticsError);
-        }
-      }
-      
-      // Salvar cronograma
-      // P0-4 FIX: Limpar dados antigos + P1-7 FIX: Converter dias para semanas
-      if (agentType === 'gestao_projetos' && output && (output as any).schedule) {
-        await db.deleteScheduleItemsByProjectId(projectId);
-        const rawSchedule = (output as any).schedule;
-        const scheduleToSave = rawSchedule.map((item: any) => {
-          const startDay = item.startDay || item.startWeek || 1;
-          const endDay = item.endDay || item.endWeek || startDay;
-          const startWeek = Math.ceil(startDay / 7) || 1;
-          const endWeek = Math.ceil(endDay / 7) || startWeek;
-          return {
-            projectId: projectId,
-            description: item.activity || item.description || item.phase || 'Atividade',
-            startWeek,
-            duration: endWeek - startWeek + 1,
-            dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
-          };
-        });
-        await db.createScheduleItems(scheduleToSave);
-      }
-      
-      // v2.10: Fluxo de caixa determinístico (pipeline function)
-      if (agentType === 'financeiro') {
-        const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./services/deterministicCashFlow');
-        const finInputPipe = agentInput as any;
-        const tributarioExecPipe = executions.find(e => e.agentType === 'tributario');
-        const totalTaxesPipe = tributarioExecPipe?.output ? Number((tributarioExecPipe.output as any).totalTaxes) || 0 : 0;
-        
-        const deterministicResultPipe = calculateDeterministicCashFlow({
-          totalCost: finInputPipe.totalCost || 0,
-          totalPrice: finInputPipe.totalPrice || 0,
-          totalDuration: finInputPipe.cashFlow?.length || 4,
-          totalTaxes: totalTaxesPipe,
-        });
-        
-        output = buildDeterministicFinanceiroOutput(deterministicResultPipe, output);
-        
-        // Persistir fluxo de caixa
-        await db.deleteCashFlowItemsByProjectId(projectId);
-        const cashFlowToSavePipe = deterministicResultPipe.cashFlow.map((item) => ({
-          projectId: projectId,
-          weekNumber: item.week,
-          plannedExpense: String(item.expense),
-          plannedIncome: String(item.income),
-          actualExpense: null,
-          actualIncome: null,
-          cashBalance: String(item.balance),
-          hasAlert: item.balance < 0,
-        }));
-        await db.createCashFlowItems(cashFlowToSavePipe);
-        
-        console.log(`[Financeiro] Determinístico (pipeline): Saldo final R$ ${deterministicResultPipe.cashFlow[deterministicResultPipe.cashFlow.length - 1]?.balance.toFixed(2)}`);
-      }
-      
+      // Persistir dados derivados (uses shared service)
+      output = await persistAgentOutput(agentType, projectId, output, {
+        bdiPercent: pipelineBdiValue,
+        executions,
+        agentInput,
+      });
+
       await db.updateAgentExecution(execution.id, {
         status: "completed",
         output: output as any,
