@@ -245,7 +245,7 @@ export const appRouter = router({
         projectId: z.number(),
         agentType: z.enum([
           "engenheiro_tecnico", "logistica", "orcamentista", "tributario",
-          "comercial", "gestao_projetos", "financeiro", "juridico", "board"
+          "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"
         ]),
       }))
       .mutation(async ({ ctx, input }) => {
