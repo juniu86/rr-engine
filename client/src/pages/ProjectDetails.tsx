@@ -90,7 +90,7 @@ export default function ProjectDetails() {
       enabled: projectId > 0,
       refetchInterval: (query) => {
         const status = query.state.data?.project?.status;
-        if (status === "approved" || status === "rejected" || status === "completed") {
+        if (status === "approved" || status === "rejected") {
           return false;
         }
         return 5000;
