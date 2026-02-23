@@ -281,7 +281,7 @@ export const appRouter = router({
           });
           
           const nextAgentOrder = AGENT_ORDER[input.agentType] + 1;
-          if (nextAgentOrder <= 9) {
+          if (nextAgentOrder <= 10) {
             await db.updateProject(input.projectId, { currentAgentId: nextAgentOrder });
           }
           
@@ -428,8 +428,8 @@ export const appRouter = router({
               status: "processing" // Voltar para processamento
             });
             
-            // Resetar agentes financeiros para re-execução
-            const financialAgents: AgentType[] = ['orcamentista', 'logistica', 'tributario', 'comercial', 'gestao_projetos', 'financeiro', 'juridico', 'board'];
+            // Resetar agentes financeiros para re-execução (inclui auditor para revalidação)
+            const financialAgents: AgentType[] = ['orcamentista', 'logistica', 'tributario', 'comercial', 'gestao_projetos', 'financeiro', 'juridico', 'board', 'auditor'];
             const executions = await db.getAgentExecutionsByProjectId(input.projectId);
             
             for (const agentType of financialAgents) {
