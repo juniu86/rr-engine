@@ -1,10 +1,11 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { lazy, Suspense } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
 const Home = lazy(() => import("./pages/Home"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -18,26 +19,48 @@ const Planos = lazy(() => import("./pages/Planos"));
 function PageLoader() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      <div className="flex flex-col items-center gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
+        <span className="text-sm text-muted-foreground">Carregando...</span>
+      </div>
     </div>
   );
 }
 
+const pageTransition = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.2, ease: "easeOut" },
+};
+
+function AnimatedPage({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div {...pageTransition}>
+      {children}
+    </motion.div>
+  );
+}
+
 function Router() {
+  const [location] = useLocation();
+
   return (
     <Suspense fallback={<PageLoader />}>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/admin" component={AdminDashboard} />
-        <Route path="/projects/new" component={NewProject} />
-        <Route path="/projects/:id" component={ProjectDetails} />
-        <Route path="/projects/:id/compare" component={CompareRevisions} />
-        <Route path="/planos" component={Planos} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/404" component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
+      <AnimatePresence mode="wait">
+        <Switch key={location}>
+          <Route path="/">{() => <AnimatedPage><Home /></AnimatedPage>}</Route>
+          <Route path="/dashboard">{() => <AnimatedPage><Dashboard /></AnimatedPage>}</Route>
+          <Route path="/admin">{() => <AnimatedPage><AdminDashboard /></AnimatedPage>}</Route>
+          <Route path="/projects/new">{() => <AnimatedPage><NewProject /></AnimatedPage>}</Route>
+          <Route path="/projects/:id">{(params) => <AnimatedPage><ProjectDetails /></AnimatedPage>}</Route>
+          <Route path="/projects/:id/compare">{(params) => <AnimatedPage><CompareRevisions /></AnimatedPage>}</Route>
+          <Route path="/planos">{() => <AnimatedPage><Planos /></AnimatedPage>}</Route>
+          <Route path="/settings">{() => <AnimatedPage><Settings /></AnimatedPage>}</Route>
+          <Route path="/404">{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
+          <Route>{() => <AnimatedPage><NotFound /></AnimatedPage>}</Route>
+        </Switch>
+      </AnimatePresence>
     </Suspense>
   );
 }

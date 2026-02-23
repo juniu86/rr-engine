@@ -53,6 +53,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { MissingInfoRequest } from "../../../shared/agents";
 import { agentIcons, agentStatusConfig, projectStatusConfig } from "@/lib/constants";
+import EmptyState from "@/components/EmptyState";
+import MoneyValue from "@/components/MoneyValue";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 const statusConfig = { ...agentStatusConfig, ...projectStatusConfig };
 
@@ -532,45 +535,58 @@ export default function ProjectDetails() {
                   </div>
                 </div>
                 
-                {/* Barra de composição visual */}
+                {/* Composição visual — Donut Chart */}
+                {precoFinal > 0 && (
                 <div className="mt-4 pt-4 border-t border-slate-700">
-                  <div className="text-xs text-muted-foreground mb-2">Composição do Preço</div>
-                  <div className="h-3 rounded-full overflow-hidden flex bg-slate-700">
-                    {precoFinal > 0 && (
-                      <>
-                        <div 
-                          className="bg-slate-400 h-full" 
-                          style={{ width: `${(custoDirecto / precoFinal) * 100}%` }}
-                          title={`Custo Direto: ${((custoDirecto / precoFinal) * 100).toFixed(1)}%`}
-                        />
-                        <div 
-                          className="bg-blue-500 h-full" 
-                          style={{ width: `${(custoLogistica / precoFinal) * 100}%` }}
-                          title={`Logística: ${((custoLogistica / precoFinal) * 100).toFixed(1)}%`}
-                        />
-                        <div 
-                          className="bg-purple-500 h-full" 
-                          style={{ width: `${(bdiValor / precoFinal) * 100}%` }}
-                          title={`BDI: ${((bdiValor / precoFinal) * 100).toFixed(1)}%`}
-                        />
-                      </>
-                    )}
-                  </div>
-                  <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                      Direto ({precoFinal > 0 ? ((custoDirecto / precoFinal) * 100).toFixed(0) : 0}%)
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                      Logística ({precoFinal > 0 ? ((custoLogistica / precoFinal) * 100).toFixed(0) : 0}%)
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                      BDI ({precoFinal > 0 ? ((bdiValor / precoFinal) * 100).toFixed(0) : 0}%)
-                    </span>
+                  <div className="text-xs text-muted-foreground mb-3">Composição do Preço</div>
+                  <div className="flex items-center gap-6">
+                    <div className="w-[140px] h-[140px] shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Direto', value: custoDirecto },
+                              { name: 'Logística', value: custoLogistica },
+                              { name: 'BDI', value: bdiValor },
+                            ]}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={42}
+                            outerRadius={62}
+                            paddingAngle={3}
+                            dataKey="value"
+                            strokeWidth={0}
+                          >
+                            <Cell fill="#94a3b8" />
+                            <Cell fill="#60a5fa" />
+                            <Cell fill="#a78bfa" />
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex-1 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-400" /> Custo Direto
+                        </span>
+                        <span className="text-xs font-medium">{((custoDirecto / precoFinal) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Logística
+                        </span>
+                        <span className="text-xs font-medium">{((custoLogistica / precoFinal) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> BDI
+                        </span>
+                        <span className="text-xs font-medium">{((bdiValor / precoFinal) * 100).toFixed(1)}%</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -1181,11 +1197,11 @@ export default function ProjectDetails() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhum item orçado ainda.</p>
-                    <p className="text-sm">Execute os agentes para gerar o orçamento.</p>
-                  </div>
+                  <EmptyState
+                    variant="budget"
+                    title="Nenhum item orçado ainda"
+                    description="Execute os agentes para gerar o orçamento com preços SINAPI e PINI."
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1202,37 +1218,90 @@ export default function ProjectDetails() {
               </CardHeader>
               <CardContent>
                 {cashFlowItems.length > 0 ? (
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-2">
-                      {cashFlowItems.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <p className="font-medium">Semana {item.weekNumber}</p>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <div className="text-red-500">
-                              - R$ {Number(item.plannedExpense || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </div>
-                            <div className="text-green-500">
-                              + R$ {Number(item.plannedIncome || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </div>
-                            <div className={Number(item.cashBalance) < 0 ? "text-red-500 font-bold" : "font-semibold"}>
-                              = R$ {Number(item.cashBalance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </div>
-                            {item.hasAlert && (
-                              <AlertCircle className="h-4 w-4 text-primary" />
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                  <div className="space-y-6">
+                    {/* Area Chart */}
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={cashFlowItems.map((item) => ({
+                            week: `S${item.weekNumber}`,
+                            despesa: Number(item.plannedExpense || 0),
+                            receita: Number(item.plannedIncome || 0),
+                            saldo: Number(item.cashBalance || 0),
+                            hasAlert: item.hasAlert,
+                          }))}
+                          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="colorDespesa" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="oklch(1 0 0 / 0.06)" />
+                          <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                          <RechartsTooltip
+                            contentStyle={{ backgroundColor: 'oklch(0.18 0.012 250)', border: '1px solid oklch(1 0 0 / 0.1)', borderRadius: '8px', fontSize: 13 }}
+                            labelStyle={{ color: '#94a3b8' }}
+                            formatter={(value: number, name: string) => [
+                              `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                              name === 'receita' ? 'Receita' : name === 'despesa' ? 'Despesa' : 'Saldo'
+                            ]}
+                          />
+                          <Area type="monotone" dataKey="receita" stroke="#34d399" fill="url(#colorReceita)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="despesa" stroke="#f87171" fill="url(#colorDespesa)" strokeWidth={2} strokeDasharray="5 5" />
+                          <Area type="monotone" dataKey="saldo" stroke="#60a5fa" fill="none" strokeWidth={2.5} />
+                        </AreaChart>
+                      </ResponsiveContainer>
                     </div>
-                  </ScrollArea>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Fluxo de caixa não disponível.</p>
-                    <p className="text-sm">Execute o agente Financeiro para gerar a projeção.</p>
+
+                    {/* Legend */}
+                    <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-emerald-400 rounded" /> Receita</span>
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-red-400 rounded border-dashed" /> Despesa</span>
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-blue-400 rounded" /> Saldo</span>
+                    </div>
+
+                    {/* Detail table */}
+                    <div className="border rounded-xl overflow-hidden">
+                      <div className="grid grid-cols-4 gap-0 text-xs font-medium text-muted-foreground bg-muted/30 px-4 py-2.5">
+                        <span>Semana</span>
+                        <span className="text-right">Despesas</span>
+                        <span className="text-right">Receitas</span>
+                        <span className="text-right">Saldo</span>
+                      </div>
+                      <ScrollArea className="h-[200px]">
+                        {cashFlowItems.map((item) => (
+                          <div key={item.id} className="grid grid-cols-4 gap-0 px-4 py-2.5 border-t text-sm hover:bg-muted/20 transition-colors">
+                            <span className="font-medium flex items-center gap-1.5">
+                              S{item.weekNumber}
+                              {item.hasAlert && <AlertCircle className="h-3.5 w-3.5 text-warm" />}
+                            </span>
+                            <span className="text-right text-red-400">
+                              <MoneyValue value={-Number(item.plannedExpense || 0)} size="sm" colorize />
+                            </span>
+                            <span className="text-right text-emerald-400">
+                              <MoneyValue value={Number(item.plannedIncome || 0)} size="sm" colorize />
+                            </span>
+                            <span className="text-right">
+                              <MoneyValue value={Number(item.cashBalance || 0)} size="sm" colorize />
+                            </span>
+                          </div>
+                        ))}
+                      </ScrollArea>
+                    </div>
                   </div>
+                ) : (
+                  <EmptyState
+                    variant="cashflow"
+                    title="Fluxo de caixa não disponível"
+                    description="Execute o agente Financeiro para gerar a projeção semanal de despesas, receitas e saldo."
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1271,11 +1340,11 @@ export default function ProjectDetails() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhum documento gerado.</p>
-                    <p className="text-sm mb-4">Clique no botão abaixo para gerar os documentos.</p>
-                  </div>
+                  <EmptyState
+                    variant="documents"
+                    title="Nenhum documento gerado"
+                    description="Gere propostas comerciais, memórias de cálculo e cronogramas usando os botões abaixo."
+                  />
                 )}
 
                 {/* Botões de Geração de Documentos */}

@@ -3,15 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getLoginUrl } from "@/const";
-import { 
-  FileText, 
-  Calculator, 
-  Users, 
-  TrendingUp, 
-  Shield, 
+import RRLogo from "@/components/RRLogo";
+import {
+  FileText,
+  Calculator,
+  Users,
+  TrendingUp,
+  Shield,
   Clock,
   ArrowRight,
-  Building2,
   Zap,
   ChevronRight,
   CheckCircle2,
@@ -186,10 +186,7 @@ export default function Home() {
         {/* Header */}
         <header className="border-b border-white/5 bg-[oklch(0.12_0.02_250)]/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="container flex h-16 items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-8 w-8 text-primary" />
-              <span className="text-xl font-bold text-white">RR-Engine</span>
-            </div>
+            <RRLogo size="md" />
             <nav className="flex items-center gap-4">
               {isAuthenticated ? (
                 <>
@@ -219,35 +216,35 @@ export default function Home() {
               <Zap className="h-4 w-4" />
               <span className="text-sm font-medium">Powered by AI</span>
             </div>
-            <h1 className="mb-6 text-5xl font-bold tracking-tight text-white md:text-6xl">
-              Sistema de Engenharia e{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[oklch(0.70_0.14_195)] to-[oklch(0.65_0.17_160)]">
+            <h1 className="mb-6 text-5xl font-bold tracking-tight text-white md:text-7xl font-display">
+              Engenharia e{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[oklch(0.70_0.14_195)] via-[oklch(0.65_0.17_160)] to-[oklch(0.75_0.15_70)]">
                 Viabilidade Econômica
               </span>
             </h1>
-            <p className="mb-8 text-xl text-slate-400 max-w-2xl mx-auto">
-              Transforme memoriais descritivos em propostas comerciais completas com 
-              inteligência artificial. Precisão técnica, conformidade com NBRs e 
+            <p className="mb-10 text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
+              Transforme memoriais descritivos em propostas comerciais completas com
+              inteligência artificial. Precisão técnica, conformidade com NBRs e
               total transparência.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {isAuthenticated ? (
                 <Link href="/projects/new">
-                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8">
+                  <Button size="lg" className="gradient-brand text-white border-0 text-lg px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
                     Novo Orçamento
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </Link>
               ) : (
                 <a href={getLoginUrl()}>
-                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8">
+                  <Button size="lg" className="gradient-brand text-white border-0 text-lg px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
                     Começar Agora
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </a>
               )}
               <a href="#agentes">
-                <Button size="lg" variant="outline" className="text-lg px-8 border-slate-700 text-slate-300 hover:bg-slate-800/50">
+                <Button size="lg" variant="outline" className="text-lg px-8 border-slate-700 text-slate-300 hover:bg-slate-800/50 hover:border-primary/30 transition-all">
                   Ver Agentes
                 </Button>
               </a>
@@ -603,10 +600,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="border-t border-white/5 py-8">
           <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-primary" />
-              <span className="font-semibold text-white">RR Engenharia</span>
-            </div>
+            <RRLogo size="sm" />
             <p className="text-sm text-slate-600">
               © 2026 RR Engenharia. Todos os direitos reservados.
             </p>

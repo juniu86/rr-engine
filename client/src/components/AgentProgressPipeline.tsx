@@ -58,7 +58,7 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
                     <div className={cn(
                       "flex flex-col items-center p-3 rounded-xl border cursor-pointer group transition-all duration-300",
                       "bg-[oklch(0.18_0.012_250)]",
-                      isRunning && "border-primary/50 shadow-lg shadow-primary/10",
+                      isRunning && "border-primary/50 shadow-lg shadow-primary/10 animate-pulse",
                       isCompleted && "border-emerald-500/30",
                       isPending && "border-white/5",
                       status === "failed" && "border-red-500/30"
@@ -146,22 +146,32 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
             })}
           </div>
           
-          {/* Connection line with progress */}
-          <div className="relative h-6 my-2 mx-4">
+          {/* Connection line with animated progress */}
+          <div className="relative h-8 my-1 mx-4">
             {/* Background line */}
             <div className="absolute top-1/2 left-0 right-0 h-px bg-white/10" />
-            
-            {/* Progress line */}
-            <div 
-              className="absolute top-1/2 left-0 h-px bg-gradient-to-r from-emerald-500 to-primary transition-all duration-500"
-              style={{ 
-                width: `${Math.min((completedCount / totalAgents) * 100, 100)}%`
+
+            {/* Animated progress line */}
+            <div
+              className="absolute top-1/2 left-0 h-[2px] rounded-full transition-all duration-1000 ease-out"
+              style={{
+                width: `${Math.min((completedCount / totalAgents) * 100, 100)}%`,
+                background: 'linear-gradient(90deg, #34d399, oklch(0.55 0.14 220))',
+                boxShadow: completedCount < totalAgents ? '0 0 8px oklch(0.55 0.14 220 / 0.5)' : 'none',
               }}
             />
-            
+
+            {/* Animated glow dot at progress tip */}
+            {completedCount > 0 && completedCount < totalAgents && (
+              <div
+                className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary animate-pulse transition-all duration-1000"
+                style={{ left: `${Math.min((completedCount / totalAgents) * 100, 100)}%` }}
+              />
+            )}
+
             {/* Arrow indicator */}
             <div className="absolute right-0 top-1/2 -translate-y-1/2">
-              <div className="w-4 h-4 border-r-2 border-b-2 border-primary/40 rotate-45 translate-x-1" />
+              <div className="w-3 h-3 border-r-[1.5px] border-b-[1.5px] border-primary/40 rotate-45 translate-x-1" />
             </div>
           </div>
 
@@ -184,7 +194,7 @@ export default function AgentProgressPipeline({ executions, className }: AgentPr
                     <div className={cn(
                       "flex flex-col items-center p-3 rounded-xl border cursor-pointer group transition-all duration-300",
                       "bg-[oklch(0.18_0.012_250)]",
-                      isRunning && "border-primary/50 shadow-lg shadow-primary/10",
+                      isRunning && "border-primary/50 shadow-lg shadow-primary/10 animate-pulse",
                       isCompleted && "border-emerald-500/30",
                       isPending && "border-white/5",
                       status === "failed" && "border-red-500/30"

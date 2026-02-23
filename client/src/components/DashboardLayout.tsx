@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Plus, FolderOpen, Building2, Settings, BarChart3, CreditCard } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Plus, FolderOpen, Settings, BarChart3, CreditCard } from "lucide-react";
+import RRLogo from "./RRLogo";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -172,12 +173,7 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <Building2 className="h-5 w-5 text-primary" />
-                  <span className="font-semibold tracking-tight truncate">
-                    RR-Engine
-                  </span>
-                </div>
+                <RRLogo size="sm" />
               ) : null}
             </div>
           </SidebarHeader>
@@ -253,7 +249,7 @@ function DashboardLayoutContent({
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
                 <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
+                  <span className="tracking-tight text-foreground font-display font-semibold">
                     {activeMenuItem?.label ?? "Menu"}
                   </span>
                 </div>
@@ -261,7 +257,35 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className={`flex-1 p-4 ${isMobile ? 'pb-20' : ''}`}>{children}</main>
+
+        {/* Mobile Bottom Navigation */}
+        {isMobile && (
+          <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-white/10 safe-area-bottom">
+            <div className="flex items-center justify-around h-16 px-2">
+              {menuItems.slice(0, 4).map(item => {
+                const isActive = location === item.path;
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => setLocation(item.path)}
+                    className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
+                      isActive
+                        ? 'text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <item.icon className={`h-5 w-5 ${isActive ? 'text-primary' : ''}`} />
+                    <span className="text-[10px] font-medium">{item.label.split(' ')[0]}</span>
+                    {isActive && (
+                      <span className="absolute -bottom-0 w-8 h-0.5 rounded-full gradient-brand" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        )}
       </SidebarInset>
     </>
   );

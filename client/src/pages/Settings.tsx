@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, Calculator, Percent, Receipt, Save, RefreshCw, CreditCard, Plus, Trash2 } from "lucide-react";
+import { Building2, Calculator, Percent, Receipt, Save, RefreshCw, CreditCard, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import DashboardLayout from "@/components/DashboardLayout";
 
 const ESTADOS_BRASIL = [
   { value: "AC", label: "Acre" },
@@ -273,27 +274,19 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container flex items-center justify-between h-16">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold">Configurações da Empresa</h1>
-              <p className="text-sm text-muted-foreground">Impostos, BDI e parâmetros de orçamentação</p>
-            </div>
+    <DashboardLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl">Configurações</h1>
+            <p className="text-muted-foreground">Impostos, BDI e parâmetros de orçamentação</p>
           </div>
-          <Button onClick={handleSave} disabled={updateSettings.isPending}>
+          <Button onClick={handleSave} disabled={updateSettings.isPending} className="gradient-brand text-white border-0">
             <Save className="h-4 w-4 mr-2" />
             {updateSettings.isPending ? "Salvando..." : "Salvar Configurações"}
           </Button>
         </div>
-      </header>
-
-      <main className="container py-8">
         <Tabs defaultValue="empresa" className="space-y-6">
           <TabsList className="grid w-full grid-cols-5 lg:w-[750px]">
             <TabsTrigger value="empresa" className="flex items-center gap-2">
@@ -767,7 +760,7 @@ export default function Settings() {
             </Card>
           </TabsContent>
         </Tabs>
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }
