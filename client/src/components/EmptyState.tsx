@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
@@ -15,7 +16,7 @@ interface EmptyStateProps {
 }
 
 function EmptyIllustration({ variant }: { variant: EmptyStateProps["variant"] }) {
-  const illustrations: Record<string, JSX.Element> = {
+  const illustrations: Record<string, React.ReactElement> = {
     projects: (
       <svg width="160" height="120" viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
         {/* Blueprint grid */}

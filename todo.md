@@ -612,3 +612,6 @@ Data: 04/02/2026
 - [x] Incluir resumo de budgetItems no prompt para auxiliar estimação
 - [x] 8 testes unitários validando remoção completa (315 testes passando, 27 arquivos)
 - [x] Validação TypeScript OK (0 erros)
+
+## Bugs v2.12.1
+- [ ] Fix: project.getDetails retorna 404 - página de detalhes do projeto não carrega (loading infinito)
