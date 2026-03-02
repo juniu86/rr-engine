@@ -635,3 +635,16 @@ Data: 04/02/2026
 ### Testes ✅
 - [x] 20 testes unitários para llm-providers (detectProvider, maxTokens, thinking, strict, capabilities)
 - [x] Validação TypeScript OK (0 erros) — 335 testes passando, 28 arquivos
+
+## v2.14.0 - Correção JSON Truncado (Engenheiro Técnico)
+### P0 - Imediato ✅
+- [x] Alterar maxOutputTokens: 8192 → 32768 para Gemini em llm-providers.ts
+- [x] Adicionar detecção de finish_reason === "max_tokens" | "length" em BaseAgent.execute()
+- [x] Adicionar detecção de JSON truncado via estrutura ({ sem } ou [ sem ]) em BaseAgent.execute()
+### P1 - Arquitetural ✅
+- [x] Criar /server/agents/chunking.ts (needsChunking, splitMemorialIntoChunks, createChunkedInputs, mergeEngenheiroOutputs)
+- [x] Integrar chunking no EngenheiroTecnicoAgent.execute() (threshold: 25 linhas, overlap: 2)
+- [x] Deduplicação de items por description + merge de nbrReferences, criticalNotes, groupsProcessed
+### Testes ✅
+- [x] 24 testes unitários para chunking e detecção de truncamento (359 testes passando, 29 arquivos)
+- [x] Validação TypeScript OK (0 erros)

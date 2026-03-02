@@ -134,17 +134,41 @@ abstract class BaseAgent<TInput, TOutput> {
       throw llmError;
     }
     
-    // Etapa 2: Processar resposta (lógica extraída para método privado)
+    // Etapa 2: Detectar truncamento via finish_reason
+    const finishReason = response.choices?.[0]?.finish_reason;
+    if (finishReason === "max_tokens" || finishReason === "length") {
+      console.error(`[Agent ${this.name}] Response truncated! finish_reason: ${finishReason}`);
+      throw new Error(
+        `Agent ${this.name} response was truncated (finish_reason: ${finishReason}). ` +
+        `The output exceeded the token limit. Consider simplifying the input or increasing maxOutputTokens.`
+      );
+    }
+    
+    // Etapa 3: Processar resposta (lógica extraída para método privado)
     const content = this._processLLMResponse(response);
     console.log(`[Agent ${this.name}] Content preview:`, content.substring(0, 200));
     
-    // Etapa 3: Parse do JSON
+    // Etapa 4: Parse do JSON
     try {
       const parsed = JSON.parse(content) as TOutput;
       console.log(`[Agent ${this.name}] Successfully parsed output`);
       return parsed;
     } catch (parseError) {
       console.error(`[Agent ${this.name}] JSON parse error:`, parseError);
+      
+      // Detectar JSON truncado via estrutura
+      const trimmed = content.trim();
+      const isLikelyTruncated = 
+        (trimmed.startsWith('{') && !trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && !trimmed.endsWith(']'));
+      
+      if (isLikelyTruncated) {
+        throw new Error(
+          `Agent ${this.name} response was truncated mid-JSON. ` +
+          `The output exceeded the token limit. Consider simplifying the input.`
+        );
+      }
+      
       throw new Error(`Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`);
     }
   }
@@ -432,7 +456,27 @@ Retorne um JSON com:
       };
     }
     
-    // Chamar LLM
+    // Verificar se precisa de chunking (memoriais grandes)
+    const { needsChunking, createChunkedInputs, mergeEngenheiroOutputs } = await import("./chunking");
+    
+    if (needsChunking(memorial)) {
+      console.log(`[EngenheiroTecnico] Memorial grande detectado - usando chunking`);
+      const chunkedInputs = createChunkedInputs(input);
+      console.log(`[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks`);
+      
+      const outputs: EngenheiroTecnicoOutput[] = [];
+      for (let i = 0; i < chunkedInputs.length; i++) {
+        console.log(`[EngenheiroTecnico] Processando chunk ${i + 1}/${chunkedInputs.length}...`);
+        const chunkOutput = await super.execute(chunkedInputs[i]);
+        outputs.push(chunkOutput);
+      }
+      
+      const merged = mergeEngenheiroOutputs(outputs);
+      console.log(`[EngenheiroTecnico] Chunks merged: ${merged.items?.length || 0} items`);
+      return merged;
+    }
+    
+    // Chamar LLM (memorial cabe em uma chamada)
     console.log(`[EngenheiroTecnico] Chamando LLM...`);
     const output = await super.execute(input);
     
