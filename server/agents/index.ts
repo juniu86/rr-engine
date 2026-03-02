@@ -110,6 +110,11 @@ abstract class BaseAgent<TInput, TOutput> {
     // Etapa 1: Chamar a LLM
     let response;
     try {
+      // strict: true é exclusivo do OpenAI; Gemini não suporta
+      const { supportsStrictSchema } = await import("../_core/llm-providers").then(m => ({
+        supportsStrictSchema: m.supportsStrictSchema(process.env.LLM_MODEL ?? "gemini-2.5-flash")
+      }));
+
       response = await invokeLLM({
         messages: [
           { role: "system", content: this.getSystemPrompt() },
@@ -119,7 +124,7 @@ abstract class BaseAgent<TInput, TOutput> {
           type: "json_schema",
           json_schema: {
             name: `${this.type}_output`,
-            strict: true,
+            ...(supportsStrictSchema && { strict: true }),
             schema: this.getOutputSchema() as Record<string, unknown>,
           },
         },

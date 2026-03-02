@@ -620,3 +620,18 @@ Data: 04/02/2026
 - [x] Adicionar "auditor" ao enum Zod do executeSingle (permitir re-execução individual)
 - [x] Corrigir nextAgentOrder <= 9 para <= 10 (incluir auditor na progressão)
 - [x] Incluir "auditor" na lista de agentes resetados após revisão financeira
+
+## v2.13.0 - Correção do Erro no Agente Auditor (LLM Compatibility)
+### P0 - Críticos ✅
+- [x] Remover payload.thinking = { budget_tokens: 128 } incondicional do llm.ts
+- [x] Adicionar getMaxTokensForModel() via adapter pattern (Gemini: 8192, Claude: 16384, GPT: 16384)
+- [x] Condicionar thinking apenas para providers que suportam (Claude)
+### P1 - Alto ✅
+- [x] Condicionar strict: true apenas para modelos OpenAI no agents/index.ts (via supportsStrictSchema)
+### P2 - Médio Prazo ✅
+- [x] Criar /server/_core/llm-providers.ts com adapter pattern (ProviderCapabilities)
+- [x] Refatorar invokeLLM para usar getProviderCapabilities()
+- [x] Refatorar agents/index.ts para usar supportsStrictSchema()
+### Testes ✅
+- [x] 20 testes unitários para llm-providers (detectProvider, maxTokens, thinking, strict, capabilities)
+- [x] Validação TypeScript OK (0 erros) — 335 testes passando, 28 arquivos

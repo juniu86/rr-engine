@@ -1,4 +1,5 @@
 import { ENV } from "./env";
+import { getProviderCapabilities } from "./llm-providers";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -296,10 +297,21 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  // Adapter pattern: capabilities por provider
+  const modelName = (payload.model as string) ?? "gemini-2.5-flash";
+  const capabilities = getProviderCapabilities(modelName);
+
+  // max_tokens respeitando limite do provider
+  payload.max_tokens = params.maxTokens ?? params.max_tokens ?? capabilities.maxOutputTokens;
+
+  // thinking apenas para providers que suportam (Claude)
+  if (capabilities.supportsThinking) {
+    payload.thinking = {
+      type: "enabled",
+      budget_tokens: 128,
+    };
   }
+  // Para Gemini e outros modelos: NÃO adicionar thinking
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
