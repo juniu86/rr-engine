@@ -648,3 +648,26 @@ Data: 04/02/2026
 ### Testes ✅
 - [x] 24 testes unitários para chunking e detecção de truncamento (359 testes passando, 29 arquivos)
 - [x] Validação TypeScript OK (0 erros)
+
+
+## v2.15.0 - Integração Motor Determinístico Claude (Backtest Bicuiba)
+### P0 - Imediato
+- [x] Copiar motor Claude para server/lib/deterministicEngine/ (9 arquivos, 2.1K LOC)
+- [ ] Criar wrapper de integração em server/routers.ts
+- [ ] Testar motor Claude com memorial Bicuiba
+- [ ] Validar 8 bugs corrigidos (duplicação, FAR, logística, etc)
+### P1 - Validação
+- [ ] Executar 36 testes do motor Claude (vitest)
+- [ ] Comparar resultados: Bicuiba esperado vs motor Claude
+- [ ] Validar BDI fixo em 28%
+- [ ] Validar zero duplicatas e itens inventados
+### P2 - Integração com Pipeline
+- [ ] Decidir: Integração (opção 1) vs Substituição (opção 2)
+- [ ] Se Integração: chamar motor antes dos 10 agentes
+- [ ] Se Substituição: remover agentes, usar motor direto
+- [ ] Atualizar testes de integração
+### Testes
+- [ ] 36 testes do motor passando
+- [ ] Testes de integração com routers.ts
+- [ ] Validação TypeScript (0 erros)
+- [ ] Manter 359+ testes passando
