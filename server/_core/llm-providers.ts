@@ -18,7 +18,7 @@ export interface ProviderCapabilities {
 
 const PROVIDER_CAPABILITIES: Record<string, ProviderCapabilities> = {
   gemini: {
-    maxOutputTokens: 32768,  // Aumentado de 8192 (Gemini-2.5-flash suporta até 65536)
+    maxOutputTokens: 65536,  // Limite máximo real do Gemini-2.5-flash (validado 2026-03-23)
     supportsThinking: false,
     supportsStrictSchema: false,
     providerName: "Google Gemini",
