@@ -98,13 +98,48 @@ abstract class BaseAgent<TInput, TOutput> {
   }
   
   /**
+   * Executa uma função com retry automático para erros 5xx.
+   * Implementa backoff exponencial: 1s, 3s, 5s
+   * 
+   * @param fn - Função a executar
+   * @returns Resultado da função
+   * @throws Error se falhar após 3 tentativas
+   */
+  private async executeWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const maxAttempts = 3;
+    const backoffs = [1000, 3000, 5000]; // 1s, 3s, 5s
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        // Extrai o status do erro de forma segura
+        const status = error?.message?.match(/(\d{3})/)?.[0] || null;
+        const statusCode = status ? parseInt(status, 10) : null;
+
+        // Retry apenas para erros 5xx (Server Error)
+        if (attempt < maxAttempts && statusCode && statusCode >= 500 && statusCode < 600) {
+          const waitTime = backoffs[attempt - 1];
+          console.warn(`[Agent ${this.name}] Attempt ${attempt} failed with status ${statusCode}. Retrying in ${waitTime}ms...`);
+          await new Promise(res => setTimeout(res, waitTime));
+          continue;
+        }
+        // Re-lança o erro para outros casos (4xx) ou na última tentativa
+        throw error;
+      }
+    }
+    // Este código é inalcançável devido ao throw no loop, mas é necessário para o type checking
+    throw new Error("Unexpected retry logic flow");
+  }
+
+  /**
    * Executa o agente com o input fornecido.
    * Responsável por:
    * 1. Chamar a LLM com os prompts configurados
    * 2. Processar a resposta via _processLLMResponse()
    * 3. Fazer parse do JSON e retornar o output tipado
    */
-  async execute(input: TInput): Promise<TOutput> {
+  private async _execute(input: TInput): Promise<TOutput> {
     console.log(`[Agent ${this.name}] Starting execution...`);
     
     // Etapa 1: Chamar a LLM
@@ -171,6 +206,13 @@ abstract class BaseAgent<TInput, TOutput> {
       
       throw new Error(`Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`);
     }
+  }
+
+  /**
+   * Ponto de entrada público do agente com retry automático.
+   */
+  async execute(input: TInput): Promise<TOutput> {
+    return this.executeWithRetry(() => this._execute(input));
   }
 }
 

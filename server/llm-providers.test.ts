@@ -35,9 +35,9 @@ describe("LLM Provider Capabilities", () => {
   });
 
   describe("getMaxTokensForModel", () => {
-    it("deve retornar 32768 para Gemini", () => {
-      expect(getMaxTokensForModel("gemini-2.5-flash")).toBe(32768);
-      expect(getMaxTokensForModel("gemini-2.5-pro")).toBe(32768);
+    it("deve retornar 65536 para Gemini", () => {
+      expect(getMaxTokensForModel("gemini-2.5-flash")).toBe(65536);
+      expect(getMaxTokensForModel("gemini-2.5-pro")).toBe(65536);
     });
 
     it("deve retornar 16384 para Claude", () => {
@@ -102,7 +102,7 @@ describe("LLM Provider Capabilities", () => {
   describe("getProviderCapabilities", () => {
     it("deve retornar capabilities completas para Gemini", () => {
       const caps = getProviderCapabilities("gemini-2.5-flash");
-      expect(caps.maxOutputTokens).toBe(32768);
+      expect(caps.maxOutputTokens).toBe(65536);
       expect(caps.supportsThinking).toBe(false);
       expect(caps.supportsStrictSchema).toBe(false);
       expect(caps.providerName).toBe("Google Gemini");
