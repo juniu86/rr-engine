@@ -7,6 +7,24 @@
  * Fonte: SINAPI — Valores de referência (não desonerado)
  */
 
+// ─── INCC-M Inflation Adjustment ─────────────────────────────────────────────
+/** INCC-M average monthly rate (historical 2024-2025) */
+const INCC_M_MENSAL = 0.005; // 0.5% per month
+/** Reference date for SINAPI/PINI base prices */
+const DATA_REFERENCIA = new Date('2025-01-01');
+
+/**
+ * Adjust a base price for inflation since the reference date.
+ * Uses INCC-M (Índice Nacional de Custo da Construção - Mercado) average rate.
+ */
+export function adjustForInflation(price: number, referenceDate?: Date): number {
+  const ref = referenceDate ?? DATA_REFERENCIA;
+  const msPerMonth = 30 * 24 * 60 * 60 * 1000;
+  const monthsElapsed = Math.max(0, (Date.now() - ref.getTime()) / msPerMonth);
+  if (monthsElapsed < 1) return price; // No adjustment within first month
+  return Math.round(price * (1 + INCC_M_MENSAL * monthsElapsed) * 100) / 100;
+}
+
 export interface PrecoSINAPI {
   codigo: string;
   descricao: string;
@@ -205,7 +223,11 @@ export function findSINAPIPrice(descricao: string): PrecoSINAPI | null {
     }
   }
 
-  return bestMatch;
+  // Apply INCC-M inflation adjustment to the matched price
+  if (bestMatch) {
+    return { ...bestMatch, preco_unitario: adjustForInflation(bestMatch.preco_unitario) };
+  }
+  return null;
 }
 
 function normalizeText(text: string): string {
@@ -288,7 +310,7 @@ export function findSINAPIFromExpandedDB(
         codigo: comp.code,
         descricao: comp.description,
         unidade: comp.unit.toLowerCase() === 'm2' ? 'm²' : comp.unit.toLowerCase(),
-        preco_unitario: comp.price,
+        preco_unitario: adjustForInflation(comp.price),
         keywords: [], // Not used for expanded DB matching
       };
     }
@@ -354,7 +376,7 @@ export function findPINIFromDB(
         codigo: comp.code,
         descricao: comp.description,
         unidade: comp.unit.toLowerCase() === 'm2' ? 'm²' : comp.unit.toLowerCase(),
-        preco_unitario: comp.price,
+        preco_unitario: adjustForInflation(comp.price),
         keywords: [],
       };
     }

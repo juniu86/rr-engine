@@ -806,13 +806,88 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
 - Porta interna completa: R$ 600-1.200/un`;
   }
   
+  /**
+   * Build price anchor references from SINAPI/PINI databases.
+   * Returns top-15 items by estimated value for prompt injection.
+   */
+  private buildPriceAnchors(items: any[]): string {
+    try {
+      const { SINAPI_DB } = require("../services/sinapi") as { SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }> };
+      const { PINI_DATABASE } = require("../services/pini") as { PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }> };
+
+      const normalizeText = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').trim();
+
+      const anchors: Array<{ description: string; source: string; code: string; price: number; unit: string; estValue: number }> = [];
+
+      for (const item of items) {
+        if (item.isSummaryItem) continue;
+        const descNorm = normalizeText(item.description || '');
+        const keywords = descNorm.split(/\s+/).filter((k: string) => k.length > 2);
+        if (keywords.length === 0) continue;
+
+        // Search SINAPI first
+        let bestMatch: { code: string; description: string; price: number; unit: string; source: string } | null = null;
+        let bestScore = 0;
+
+        for (const comp of SINAPI_DB) {
+          if (comp.unit === 'H') continue;
+          const compNorm = normalizeText(comp.description);
+          let matched = 0;
+          for (const kw of keywords) { if (compNorm.includes(kw)) matched++; }
+          const score = matched / keywords.length;
+          if (score > bestScore && score >= 0.4) {
+            bestScore = score;
+            bestMatch = { code: comp.code, description: comp.description, price: comp.price, unit: comp.unit, source: 'SINAPI' };
+          }
+        }
+
+        // Try PINI if SINAPI didn't match well
+        if (bestScore < 0.6) {
+          for (const comp of PINI_DATABASE) {
+            const compNorm = normalizeText(comp.description);
+            let matched = 0;
+            for (const kw of keywords) { if (compNorm.includes(kw)) matched++; }
+            const score = matched / keywords.length;
+            if (score > bestScore && score >= 0.4) {
+              bestScore = score;
+              bestMatch = { code: comp.code, description: comp.description, price: comp.price, unit: comp.unit, source: 'PINI' };
+            }
+          }
+        }
+
+        if (bestMatch) {
+          const qty = Number(item.quantity) || 1;
+          anchors.push({ ...bestMatch, estValue: bestMatch.price * qty });
+        }
+      }
+
+      // Sort by estimated value descending, take top 15
+      return anchors
+        .sort((a, b) => b.estValue - a.estValue)
+        .slice(0, 15)
+        .map(a => `- "${a.description}": ${a.source} ${a.code} = R$ ${a.price.toFixed(2)}/${a.unit}`)
+        .join('\n');
+    } catch {
+      return '';
+    }
+  }
+
   getUserPrompt(input: OrcamentistaInput): string {
     const totalItems = input.items?.length || 0;
+
+    // Build price anchors from real SINAPI/PINI databases (top-15 by value)
+    const anchors = this.buildPriceAnchors(input.items || []);
+
     return `Precifique TODOS os ${totalItems} itens de obra listados abaixo.
 
 ⚠️ IMPORTANTE: Você DEVE retornar exatamente ${totalItems} itens no budgetItems.
 NÃO omita nenhum item. NÃO agrupe itens diferentes.
+${anchors ? `
+=== PREÇOS DE REFERÊNCIA (SINAPI/PINI Jan/2025, base SP) ===
+${anchors}
 
+⚠️ Use estes preços como base. Se divergir >15% de alguma referência, justifique.
+` : ''}
 ITENS (${totalItems} no total):
 ${JSON.stringify(input.items, null, 2)}
 
