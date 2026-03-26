@@ -1,0 +1,1 @@
+ALTER TABLE `budget_items` MODIFY COLUMN `taxType` enum('iss','icms','both','none') DEFAULT 'none';
