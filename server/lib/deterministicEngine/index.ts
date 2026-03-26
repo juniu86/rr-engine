@@ -20,20 +20,27 @@ import { parseMemorial, deduplicateItems } from './modules/parser';
 import { priceItems } from './modules/pricing';
 import { calculateLogistics } from './modules/logistics';
 import { calculateBudget } from './modules/budget';
+import { crossValidate } from './modules/crossValidation';
 
 export { parseMemorial } from './modules/parser';
 export { priceItems } from './modules/pricing';
 export { calculateLogistics } from './modules/logistics';
 export { calculateBudget } from './modules/budget';
+export { crossValidate } from './modules/crossValidation';
 export { buildConfig } from './config/defaults';
 export type { EngineConfig, MemorialDescritivo, ResultadoEngine } from './types';
 
 /**
  * Run the full RR-Engine pipeline on a memorial markdown string.
+ *
+ * @param markdownContent - The memorial descritivo in markdown format
+ * @param configOverrides - Optional engine configuration overrides
+ * @param llmTotal - Optional total from LLM agent pipeline for cross-validation
  */
 export function processMemorial(
   markdownContent: string,
   configOverrides?: Partial<EngineConfig>,
+  llmTotal?: number,
 ): ResultadoEngine {
   const config = buildConfig(configOverrides);
   const warnings: string[] = [];
@@ -50,10 +57,13 @@ export function processMemorial(
   }
 
   // ─── Step 2: Price items (BUG 2 + BUG 6) ───────────────────────────
+  // Pass estado for per-state regional factor (more precise than generic FAR)
+  const estado = memorial.localizacao.estado || undefined;
   const { itens: itensOrcamento, warnings: pricingWarnings } = priceItems(
     memorial.itens,
     config,
     memorial.localizacao.tipo,
+    estado,
   );
   warnings.push(...pricingWarnings);
 
@@ -64,6 +74,7 @@ export function processMemorial(
     memorial.localizacao.tipo,
     memorial.prazo_semanas,
     itensOrcamento,
+    estado,
   );
   warnings.push(...logisticsWarnings);
 
@@ -81,6 +92,14 @@ export function processMemorial(
     }
   }
   resumo.itens_inventados_removidos = inventadosRemovidos;
+
+  // ─── Step 5: Cross-validate with LLM (if available) ────────────────
+  if (llmTotal) {
+    const validation = crossValidate(resumo.preco_venda, llmTotal);
+    if (validation.warning) {
+      warnings.push(validation.warning);
+    }
+  }
 
   return {
     memorial,

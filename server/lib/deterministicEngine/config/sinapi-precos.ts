@@ -216,3 +216,83 @@ function normalizeText(text: string): string {
     .replace(/[^a-z0-9\s]/g, '')
     .trim();
 }
+
+// ─── Expanded DB Integration ─────────────────────────────────────────────────
+
+/**
+ * Lazy-loaded reference to the expanded SINAPI_DB (200+ compositions).
+ * Imported dynamically to avoid circular dependencies.
+ */
+let _expandedDB: Array<{ code: string; description: string; unit: string; price: number; category: string }> | null = null;
+
+function getExpandedDB(): typeof _expandedDB {
+  if (_expandedDB) return _expandedDB;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { SINAPI_DB } = require('../../../services/sinapi') as {
+      SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }>;
+    };
+    _expandedDB = SINAPI_DB;
+    return _expandedDB;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Search the expanded SINAPI database (200+ compositions) using text similarity.
+ * Used as fallback when the curated base (30 items with keywords) doesn't match.
+ *
+ * Scoring: keyword overlap between normalized item description and composition description.
+ * Unit compatibility adds a bonus to the score.
+ */
+export function findSINAPIFromExpandedDB(
+  descricao: string,
+  unidade?: string,
+): PrecoSINAPI | null {
+  const db = getExpandedDB();
+  if (!db) return null;
+
+  const queryNorm = normalizeText(descricao);
+  const queryKeywords = queryNorm.split(/\s+/).filter(k => k.length > 2);
+  if (queryKeywords.length === 0) return null;
+
+  let bestMatch: PrecoSINAPI | null = null;
+  let bestScore = 0;
+  const MIN_THRESHOLD = 0.4;
+
+  for (const comp of db) {
+    const descNorm = normalizeText(comp.description);
+
+    // Count keyword matches
+    let matched = 0;
+    for (const kw of queryKeywords) {
+      if (descNorm.includes(kw)) matched++;
+    }
+
+    let score = queryKeywords.length > 0 ? matched / queryKeywords.length : 0;
+
+    // Unit compatibility bonus
+    if (unidade && comp.unit.toLowerCase() === unidade.toLowerCase()) {
+      score += 0.2;
+    }
+
+    // Skip compositions that are labor-only (hourly rates for workers)
+    if (comp.unit === 'H' || comp.unit === 'MÊS' && comp.category === 'Mão de Obra') {
+      continue;
+    }
+
+    if (score > bestScore && score >= MIN_THRESHOLD) {
+      bestScore = score;
+      bestMatch = {
+        codigo: comp.code,
+        descricao: comp.description,
+        unidade: comp.unit.toLowerCase() === 'm2' ? 'm²' : comp.unit.toLowerCase(),
+        preco_unitario: comp.price,
+        keywords: [], // Not used for expanded DB matching
+      };
+    }
+  }
+
+  return bestMatch;
+}
