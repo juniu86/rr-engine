@@ -94,6 +94,14 @@ export interface MissingInfoRequest {
   required?: boolean;
   /** Contexto adicional para ajudar o usuário */
   hint?: string;
+  /** Whether zero values are accepted for numeric fields */
+  allowZero?: boolean;
+  /** AI-suggested value based on inference (frontend pre-fills) (v3.0) */
+  suggestedValue?: string | number;
+  /** Whether this field could have been auto-inferred (medium confidence) (v3.0) */
+  isAutoInferrable?: boolean;
+  /** Reason for the suggestion, e.g. "Padrão médio inferido do memorial" (v3.0) */
+  suggestionReason?: string;
 }
 
 /**
@@ -146,6 +154,12 @@ export interface MemorialItem {
   specifications?: string;
   nbrReference?: string;
   isPendingVistoria: boolean;
+  /** Whether specs were auto-inferred from construction standard (v3.0) */
+  isInferred?: boolean;
+  /** Reasoning for inference, e.g. "Padrão alto detectado → metais Deca Unic" */
+  inferenceReason?: string;
+  /** Quality tier detected from memorial context */
+  qualityTier?: "economico" | "medio" | "alto";
 }
 
 // Budget Item with full details

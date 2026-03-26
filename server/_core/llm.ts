@@ -1,5 +1,5 @@
 import { ENV } from "./env";
-import { getProviderCapabilities } from "./llm-providers";
+import { getProviderCapabilities, detectProvider } from "./llm-providers";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -326,6 +326,16 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
+  // ─── Routing: Direct Anthropic API when key is available and model is Claude ──
+  const provider = detectProvider(modelName);
+  const isClaudeModel = provider === 'claude-opus' || provider === 'claude-sonnet' || provider === 'claude';
+  const hasAnthropicKey = ENV.anthropicApiKey && ENV.anthropicApiKey.length > 10;
+
+  if (isClaudeModel && hasAnthropicKey) {
+    return invokeAnthropicDirect(payload, modelName);
+  }
+
+  // ─── Fallback: Forge proxy (Gemini, GPT, or Claude without direct key) ────────
   const response = await fetch(resolveApiUrl(), {
     method: "POST",
     headers: {
@@ -344,7 +354,95 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const result = (await response.json()) as InvokeResult;
-  // Log only metadata, not response content (may contain sensitive user data)
   console.log(`[LLM] Response received: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`);
   return result;
+}
+
+// ─── Direct Anthropic API Integration ─────────────────────────────────────────
+
+/**
+ * Call the Anthropic Messages API directly (api.anthropic.com/v1/messages).
+ * Converts OpenAI-compatible payload → Anthropic format → back to InvokeResult.
+ */
+async function invokeAnthropicDirect(
+  payload: Record<string, unknown>,
+  modelName: string,
+): Promise<InvokeResult> {
+  console.log(`[LLM] Using Anthropic direct API for model: ${modelName}`);
+
+  // 1. Extract system message from messages array (Anthropic uses separate "system" field)
+  const messages = payload.messages as Array<{ role: string; content: unknown }>;
+  const systemMsg = messages.find(m => m.role === 'system');
+  const nonSystemMessages = messages.filter(m => m.role !== 'system');
+
+  // 2. Build Anthropic-format payload
+  const anthropicPayload: Record<string, unknown> = {
+    model: modelName,
+    max_tokens: (payload.max_tokens as number) ?? 32768,
+    messages: nonSystemMessages,
+  };
+
+  if (systemMsg) {
+    anthropicPayload.system = typeof systemMsg.content === 'string'
+      ? systemMsg.content
+      : JSON.stringify(systemMsg.content);
+  }
+
+  // 3. Call Anthropic API
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ENV.anthropicApiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(anthropicPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[LLM] Anthropic API failed:', response.status, errorText);
+    throw new Error(`Anthropic API failed: ${response.status} – ${errorText}`);
+  }
+
+  // 4. Convert Anthropic response → InvokeResult (OpenAI-compatible format)
+  const anthropicResult = (await response.json()) as Record<string, unknown>;
+  const result = convertAnthropicToInvokeResult(anthropicResult);
+  console.log(`[LLM] Anthropic response: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`);
+  return result;
+}
+
+/**
+ * Convert Anthropic Messages API response to OpenAI-compatible InvokeResult.
+ *
+ * Anthropic format: { content: [{ type: "text", text: "..." }], stop_reason, usage: { input_tokens, output_tokens } }
+ * OpenAI format:    { choices: [{ message: { content: "..." }, finish_reason }], usage: { prompt_tokens, completion_tokens } }
+ */
+function convertAnthropicToInvokeResult(r: Record<string, unknown>): InvokeResult {
+  const content = r.content as Array<{ type: string; text?: string }> | undefined;
+  const textContent = content?.find(c => c.type === 'text');
+
+  const stopReason = r.stop_reason as string | undefined;
+  const usage = r.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+
+  return {
+    id: (r.id as string) ?? '',
+    created: Math.floor(Date.now() / 1000),
+    model: (r.model as string) ?? '',
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: textContent?.text ?? '',
+      },
+      finish_reason: stopReason === 'end_turn' ? 'stop'
+                   : stopReason === 'max_tokens' ? 'length'
+                   : stopReason ?? 'stop',
+    }],
+    usage: {
+      prompt_tokens: usage?.input_tokens ?? 0,
+      completion_tokens: usage?.output_tokens ?? 0,
+      total_tokens: (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0),
+    },
+  };
 }
