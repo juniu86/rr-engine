@@ -296,3 +296,69 @@ export function findSINAPIFromExpandedDB(
 
   return bestMatch;
 }
+
+// ─── PINI DB Integration ──────────────────────────────────────────────────────
+
+let _piniDB: Array<{ code: string; description: string; unit: string; price: number }> | null = null;
+
+function getPiniDB(): typeof _piniDB {
+  if (_piniDB) return _piniDB;
+  try {
+    const { PINI_DATABASE } = require('../../../services/pini') as {
+      PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }>;
+    };
+    _piniDB = PINI_DATABASE;
+    return _piniDB;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Search the PINI TCPO database (80+ compositions) using text similarity.
+ * Used as additional fallback after SINAPI databases.
+ * PINI provides complementary pricing for finishes and specialized services.
+ */
+export function findPINIFromDB(
+  descricao: string,
+  unidade?: string,
+): PrecoSINAPI | null {
+  const db = getPiniDB();
+  if (!db) return null;
+
+  const queryNorm = normalizeText(descricao);
+  const queryKeywords = queryNorm.split(/\s+/).filter(k => k.length > 2);
+  if (queryKeywords.length === 0) return null;
+
+  let bestMatch: PrecoSINAPI | null = null;
+  let bestScore = 0;
+  const MIN_THRESHOLD = 0.4;
+
+  for (const comp of db) {
+    const descNorm = normalizeText(comp.description);
+
+    let matched = 0;
+    for (const kw of queryKeywords) {
+      if (descNorm.includes(kw)) matched++;
+    }
+
+    let score = queryKeywords.length > 0 ? matched / queryKeywords.length : 0;
+
+    if (unidade && comp.unit.toLowerCase() === unidade.toLowerCase()) {
+      score += 0.2;
+    }
+
+    if (score > bestScore && score >= MIN_THRESHOLD) {
+      bestScore = score;
+      bestMatch = {
+        codigo: comp.code,
+        descricao: comp.description,
+        unidade: comp.unit.toLowerCase() === 'm2' ? 'm²' : comp.unit.toLowerCase(),
+        preco_unitario: comp.price,
+        keywords: [],
+      };
+    }
+  }
+
+  return bestMatch;
+}

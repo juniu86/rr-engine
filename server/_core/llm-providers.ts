@@ -23,6 +23,18 @@ const PROVIDER_CAPABILITIES: Record<string, ProviderCapabilities> = {
     supportsStrictSchema: false,
     providerName: "Google Gemini",
   },
+  "claude-opus": {
+    maxOutputTokens: 32768,  // Claude Opus 4.6 — higher token limit for complex analysis
+    supportsThinking: true,
+    supportsStrictSchema: false,
+    providerName: "Anthropic Claude Opus",
+  },
+  "claude-sonnet": {
+    maxOutputTokens: 16384,
+    supportsThinking: true,
+    supportsStrictSchema: false,
+    providerName: "Anthropic Claude Sonnet",
+  },
   claude: {
     maxOutputTokens: 16384,
     supportsThinking: true,
@@ -50,6 +62,8 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
  */
 export function detectProvider(model: string): string {
   if (model.includes("gemini")) return "gemini";
+  if (model.includes("claude-opus")) return "claude-opus";
+  if (model.includes("claude-sonnet")) return "claude-sonnet";
   if (model.includes("claude")) return "claude";
   if (model.includes("gpt")) return "gpt";
   return "unknown";

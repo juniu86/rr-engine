@@ -9,7 +9,7 @@
  */
 
 import type { ItemMemorial, ItemOrcamento, EngineConfig, TipoLocalidade } from '../types';
-import { findSINAPIPrice, findSINAPIFromExpandedDB, type PrecoSINAPI } from '../config/sinapi-precos';
+import { findSINAPIPrice, findSINAPIFromExpandedDB, findPINIFromDB, type PrecoSINAPI } from '../config/sinapi-precos';
 import { normalizeText } from '../utils/normalize';
 import { getRegionFactor } from '../../../../shared/regionFactors';
 
@@ -77,7 +77,8 @@ function priceItem(
   // Standard single item pricing — fallback chain:
   // 1. Curated SINAPI base (30 items with optimized keywords)
   // 2. Expanded SINAPI DB (200+ compositions via text similarity)
-  // 3. Category-aware estimation
+  // 3. PINI TCPO DB (80+ compositions — finishes and specialized services)
+  // 4. Category-aware estimation
   const sinapi = findSINAPIPrice(item.descricao);
 
   if (sinapi) {
@@ -85,18 +86,25 @@ function priceItem(
       startId, item, sinapi.preco_unitario, far, 'sinapi',
     ));
   } else {
-    // Try expanded database before falling back to estimation
     const expanded = findSINAPIFromExpandedDB(item.descricao, item.unidade);
     if (expanded) {
       results.push(createOrcamentoItem(
         startId, item, expanded.preco_unitario, far, 'sinapi',
       ));
     } else {
-      warnings.push(`Preço SINAPI não encontrado para: "${item.descricao}". Usando estimativa por categoria.`);
-      const estimated = estimatePrice(item);
-      results.push(createOrcamentoItem(
-        startId, item, estimated, far, 'composicao',
-      ));
+      // Try PINI TCPO database before falling back to estimation
+      const pini = findPINIFromDB(item.descricao, item.unidade);
+      if (pini) {
+        results.push(createOrcamentoItem(
+          startId, item, pini.preco_unitario, far, 'cotacao',
+        ));
+      } else {
+        warnings.push(`Preço SINAPI/PINI não encontrado para: "${item.descricao}". Usando estimativa por categoria.`);
+        const estimated = estimatePrice(item);
+        results.push(createOrcamentoItem(
+          startId, item, estimated, far, 'composicao',
+        ));
+      }
     }
   }
 
@@ -128,13 +136,14 @@ function priceHeaderWithSubItems(
     }
   }
 
-  // Price each sub-item (same fallback chain: curated → expanded → estimate)
+  // Price each sub-item (same fallback chain: curated → expanded → PINI → estimate)
   const subResults: ItemOrcamento[] = [];
   for (const sub of subItens) {
     const sinapi = findSINAPIPrice(sub.descricao);
     const expanded = !sinapi ? findSINAPIFromExpandedDB(sub.descricao, sub.unidade) : null;
-    const preco = sinapi?.preco_unitario ?? expanded?.preco_unitario ?? estimatePrice(sub);
-    const fonte = (sinapi || expanded) ? 'sinapi' as const : 'composicao' as const;
+    const pini = (!sinapi && !expanded) ? findPINIFromDB(sub.descricao, sub.unidade) : null;
+    const preco = sinapi?.preco_unitario ?? expanded?.preco_unitario ?? pini?.preco_unitario ?? estimatePrice(sub);
+    const fonte = (sinapi || expanded) ? 'sinapi' as const : pini ? 'cotacao' as const : 'composicao' as const;
 
     const subItem = createOrcamentoItem(id + 1 + subResults.length, sub, preco, far, fonte);
     headerTotal += subItem.preco_total;
