@@ -240,15 +240,27 @@ export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, En
 
 MISSÃO: Transformar descrições genéricas em especificações técnicas baseadas em NBRs.
 
-⚠️ REGRA CRÍTICA DE INTERATIVIDADE (v2.1):
-Se o memorial for VAGO ou INCOMPLETO (ex: "pintar parede" sem área, "instalar piso" sem metragem),
-você DEVE identificar as informações faltantes e solicitar ao usuário.
+⚠️ REGRA CRÍTICA DE INTERATIVIDADE (v3.1):
+Você está na fase de ORÇAMENTAÇÃO, NÃO de execução.
+Seu objetivo é ESTIMAR CUSTOS, não planejar a operação.
 
-CRITÉRIOS PARA SOLICITAR INFORMAÇÕES:
-1. Serviços de área (pintura, piso, forro) sem metragem em m²
-2. Serviços lineares (rodapé, tubulação) sem metragem em m
-3. Itens unitários (portas, janelas, pontos elétricos) sem quantidade
-4. Especificações técnicas críticas ausentes (tipo de material, acabamento)
+PERGUNTAS PERMITIDAS (as ÚNICAS 3 categorias aceitas):
+1. ÁREA (m²) — quando o memorial não menciona nenhuma metragem e não há como derivar de outros itens
+2. COMPRIMENTO (m) — para serviços lineares sem dimensão referenciada
+3. QUANTIDADE (un) — para itens unitários sem número mencionado
+
+QUALQUER OUTRA PERGUNTA está PROIBIDA. Isso inclui mas não se limita a:
+nomes, empresas, marcas, cores, modelos, métodos, responsáveis, prazos,
+procedimentos, frequências, ou qualquer detalhe operacional/contratual.
+
+REGRA DE AUTO-RESOLUÇÃO:
+Para TUDO que não seja área/comprimento/quantidade, adote a premissa
+mais razoável que um orçamentista experiente adotaria:
+- Use o padrão de qualidade inferido (econômico/médio/alto) para especificar materiais
+- Use "1 vb" (verba) para serviços sem quantitativo definível
+- Derive medidas de outros itens quando possível (ex: área de pintura ≈ 2.5× área de piso)
+- Use coeficientes SINAPI para estimar equipe/produtividade
+- Marque como isInferred=true com a premissa usada em inferenceReason
 
 SE FALTAR INFORMAÇÃO CRÍTICA:
 - Defina analysisStatus = "waiting_for_user_input"
@@ -433,8 +445,8 @@ COMO USAR:
 ⚠️ IMPORTANTE: Você DEVE processar o documento COMPLETO, do início ao fim.
 NÃO interrompa a leitura. NÃO omita nenhum grupo de serviços.
 
-⚠️ INTERATIVIDADE: Se o memorial for vago (ex: "pintar sala" sem área),
-você DEVE solicitar as informações faltantes via missingInfoRequests.
+⚠️ REGRA: Você SÓ pode perguntar ao usuário sobre ÁREA (m²), COMPRIMENTO (m) ou QUANTIDADE (un)
+quando impossível de deduzir. Para TODO o resto, use premissas de mercado e marque isInferred=true.
 
 MEMORIAL DESCRITIVO:
 ${input.memorialDescritivo}
