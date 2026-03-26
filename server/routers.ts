@@ -739,7 +739,9 @@ export const appRouter = router({
     continueAgent: protectedProcedure
       .input(z.object({
         projectId: z.number(),
-        agentType: z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"]),
+        agentType: z.string()
+          .transform((val) => val.trim().toLowerCase())
+          .pipe(z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"])),
         userResponses: z.record(z.string(), z.union([z.string(), z.number()])),
       }))
       .mutation(async ({ ctx, input }) => {

@@ -110,7 +110,7 @@ export const budgetItems = mysqlTable("budget_items", {
   unitCostLogistics: decimal("unitCostLogistics", { precision: 15, scale: 2 }),
   unitCostTotal: decimal("unitCostTotal", { precision: 15, scale: 2 }),
   totalCost: decimal("totalCost", { precision: 15, scale: 2 }),
-  taxType: mysqlEnum("taxType", ["iss", "icms", "both", "none"]),
+  taxType: mysqlEnum("taxType", ["iss", "icms", "both", "none"]).default("none"),
   taxAmount: decimal("taxAmount", { precision: 15, scale: 2 }),
   bdiAmount: decimal("bdiAmount", { precision: 15, scale: 2 }),
   finalPrice: decimal("finalPrice", { precision: 15, scale: 2 }),

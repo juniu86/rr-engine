@@ -1847,9 +1847,14 @@ export default function ProjectDetails() {
                   return;
                 }
                 
+                const normalizedAgentType = (waitingAgentType || '').trim().toLowerCase();
+                if (!normalizedAgentType) {
+                  toast.error("Erro interno: tipo de agente inválido.");
+                  return;
+                }
                 continueAgent.mutate({
                   projectId,
-                  agentType: waitingAgentType as any,
+                  agentType: normalizedAgentType as any,
                   userResponses,
                 });
               }}

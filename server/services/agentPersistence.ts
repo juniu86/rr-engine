@@ -42,7 +42,7 @@ export async function persistBudgetItems(
       category: item.category || 'Geral',
       code: item.code || '',
       description: item.description,
-      unit: item.unit,
+      unit: (item.unit || '').substring(0, 20),
       quantity: String(quantity),
       unitCostMaterial: String(item.unitCostMaterial || 0),
       unitCostLabor: String(item.unitCostLabor || 0),
@@ -54,7 +54,7 @@ export async function persistBudgetItems(
       taxAmount: String(item.taxAmount || 0),
       source: item.source || 'Estimativa',
       sourceCode: item.sourceCode || null,
-      sourceDate: item.sourceDate || null,
+      sourceDate: (item.sourceDate || '').substring(0, 20) || null,
     };
   });
   await db.createBudgetItems(items);
