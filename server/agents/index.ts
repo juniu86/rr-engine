@@ -581,8 +581,10 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
     
     console.log(`[EngenheiroTecnico] Memorial length: ${memorial.length}, temRespostas: ${temRespostasUsuario}`);
     
-    // ESTRATÉGIA PRÉ-LLM: Se memorial vago e sem respostas, retornar direto
-    if (this._isMemorialVago(memorial) && !temRespostasUsuario) {
+    // ESTRATÉGIA PRÉ-LLM: Se memorial vago, sem respostas, E sem padrão de qualidade detectável,
+    // retornar perguntas direto sem chamar LLM. Se há padrão (ex: "AAA"), deixar o LLM inferir.
+    const hasQualityTier = /\b(luxo|aaa|premium|alto\s*padr[aã]o|econ[oô]mico|popular|b[aá]sico|padr[aã]o\s*(m[eé]dio|alto))\b/i.test(memorial);
+    if (this._isMemorialVago(memorial) && !temRespostasUsuario && !hasQualityTier) {
       console.log(`[EngenheiroTecnico] MEMORIAL VAGO - Retornando perguntas sem chamar LLM`);
       return {
         analysisStatus: 'waiting_for_user_input',
