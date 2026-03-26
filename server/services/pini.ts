@@ -38,7 +38,7 @@ function adjustPrice(basePrice: number, region: string): number {
 
 // ==================== PINI TCPO DATABASE (Ref: SP, 01/2025) ====================
 // Composições complementares ao SINAPI, foco em acabamentos e serviços especializados
-const PINI_DATABASE: PiniComposition[] = [
+export const PINI_DATABASE: PiniComposition[] = [
   // ===== ALVENARIA E VEDAÇÃO =====
   {
     code: "TCPO-02.PARE.ALVE.001",

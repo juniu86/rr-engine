@@ -32,10 +32,19 @@ import { AGENT_NAMES } from "../../shared/agents";
 abstract class BaseAgent<TInput, TOutput> {
   abstract name: string;
   abstract type: AgentType;
-  
+
   abstract getSystemPrompt(): string;
   abstract getUserPrompt(input: TInput): string;
   abstract getOutputSchema(): object;
+
+  /**
+   * Returns the preferred LLM model for this agent.
+   * Override in subclasses for agent-specific model routing.
+   * Critical agents use Claude Opus 4.6, simpler agents use Gemini.
+   */
+  getPreferredModel(): string {
+    return process.env.LLM_MODEL ?? "gemini-2.5-flash";
+  }
   
   /**
    * Processa a resposta da LLM e extrai o conteúdo JSON.
@@ -142,15 +151,19 @@ abstract class BaseAgent<TInput, TOutput> {
   private async _execute(input: TInput): Promise<TOutput> {
     console.log(`[Agent ${this.name}] Starting execution...`);
     
-    // Etapa 1: Chamar a LLM
+    // Etapa 1: Chamar a LLM com modelo específico do agente
     let response;
     try {
-      // strict: true é exclusivo do OpenAI; Gemini não suporta
+      const preferredModel = this.getPreferredModel();
+      console.log(`[Agent ${this.name}] Using model: ${preferredModel}`);
+
+      // strict: true é exclusivo do OpenAI; Gemini/Claude não suportam
       const { supportsStrictSchema } = await import("../_core/llm-providers").then(m => ({
-        supportsStrictSchema: m.supportsStrictSchema(process.env.LLM_MODEL ?? "gemini-2.5-flash")
+        supportsStrictSchema: m.supportsStrictSchema(preferredModel)
       }));
 
       response = await invokeLLM({
+        model: preferredModel,
         messages: [
           { role: "system", content: this.getSystemPrompt() },
           { role: "user", content: this.getUserPrompt(input) },
@@ -220,7 +233,8 @@ abstract class BaseAgent<TInput, TOutput> {
 export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, EngenheiroTecnicoOutput> {
   name = AGENT_NAMES.engenheiro_tecnico;
   type: AgentType = "engenheiro_tecnico";
-  
+  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+
   getSystemPrompt(): string {
     return `Você é o Engenheiro Técnico da RR Engenharia, responsável por auditar e traduzir Memoriais Descritivos em tarefas de engenharia específicas.
 
@@ -330,7 +344,26 @@ EXEMPLO:
   ]
 }
 
-FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences, criticalNotes, missingInfoRequests e analysisStatus.`;
+FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences, criticalNotes, missingInfoRequests e analysisStatus.
+
+=== REFERÊNCIAS NBR RÁPIDAS ===
+- NBR 6118: Estruturas de concreto (cobrimento mínimo, fck, durabilidade)
+- NBR 9575: Impermeabilização (mantas asfálticas, argamassas poliméricas)
+- NBR 15575: Desempenho de edificações (acústico, térmico, lumínico)
+- NBR 5626: Instalações prediais de água fria (dimensionamento, materiais)
+- NBR 5410: Instalações elétricas de baixa tensão (seções, proteções)
+- NBR 7199: Vidros para construção civil (espessuras, tipologias)
+- NBR 14931: Execução de estruturas de concreto
+- NBR 13281: Argamassa para assentamento e revestimento
+
+=== COEFICIENTES DE PRODUTIVIDADE SINAPI (Hh/unidade) ===
+- Pedreiro: 0.87 Hh/m² (alvenaria 9cm), 1.10 Hh/m² (alvenaria 14cm)
+- Pintor: 0.18 Hh/m² (pintura 2 demãos), 0.25 Hh/m² (3 demãos)
+- Servente: 0.58 Hh/m² (apoio geral)
+- Eletricista: 1.5 Hh/ponto (residencial), 2.0 Hh/ponto (comercial)
+- Encanador: 2.0 Hh/ponto (água fria), 2.5 Hh/ponto (esgoto)
+- Azulejista: 0.75 Hh/m² (revestimento cerâmico)
+- Carpinteiro: 1.2 Hh/m² (formas de madeira)`;
   }
   
   getUserPrompt(input: EngenheiroTecnicoInput): string {
@@ -709,7 +742,8 @@ Fórmula: Duração (semanas) = (Quantitativo × Índice Hh) ÷ (8h/dia × 5dias
 export class OrcamentistaAgent extends BaseAgent<OrcamentistaInput, OrcamentistaOutput> {
   name = AGENT_NAMES.orcamentista;
   type: AgentType = "orcamentista";
-  
+  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+
   getSystemPrompt(): string {
     return `Você é o Orçamentista & Suprimentos da RR Engenharia.
 
@@ -772,13 +806,88 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
 - Porta interna completa: R$ 600-1.200/un`;
   }
   
+  /**
+   * Build price anchor references from SINAPI/PINI databases.
+   * Returns top-15 items by estimated value for prompt injection.
+   */
+  private buildPriceAnchors(items: any[]): string {
+    try {
+      const { SINAPI_DB } = require("../services/sinapi") as { SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }> };
+      const { PINI_DATABASE } = require("../services/pini") as { PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }> };
+
+      const normalizeText = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').trim();
+
+      const anchors: Array<{ description: string; source: string; code: string; price: number; unit: string; estValue: number }> = [];
+
+      for (const item of items) {
+        if (item.isSummaryItem) continue;
+        const descNorm = normalizeText(item.description || '');
+        const keywords = descNorm.split(/\s+/).filter((k: string) => k.length > 2);
+        if (keywords.length === 0) continue;
+
+        // Search SINAPI first
+        let bestMatch: { code: string; description: string; price: number; unit: string; source: string } | null = null;
+        let bestScore = 0;
+
+        for (const comp of SINAPI_DB) {
+          if (comp.unit === 'H') continue;
+          const compNorm = normalizeText(comp.description);
+          let matched = 0;
+          for (const kw of keywords) { if (compNorm.includes(kw)) matched++; }
+          const score = matched / keywords.length;
+          if (score > bestScore && score >= 0.4) {
+            bestScore = score;
+            bestMatch = { code: comp.code, description: comp.description, price: comp.price, unit: comp.unit, source: 'SINAPI' };
+          }
+        }
+
+        // Try PINI if SINAPI didn't match well
+        if (bestScore < 0.6) {
+          for (const comp of PINI_DATABASE) {
+            const compNorm = normalizeText(comp.description);
+            let matched = 0;
+            for (const kw of keywords) { if (compNorm.includes(kw)) matched++; }
+            const score = matched / keywords.length;
+            if (score > bestScore && score >= 0.4) {
+              bestScore = score;
+              bestMatch = { code: comp.code, description: comp.description, price: comp.price, unit: comp.unit, source: 'PINI' };
+            }
+          }
+        }
+
+        if (bestMatch) {
+          const qty = Number(item.quantity) || 1;
+          anchors.push({ ...bestMatch, estValue: bestMatch.price * qty });
+        }
+      }
+
+      // Sort by estimated value descending, take top 15
+      return anchors
+        .sort((a, b) => b.estValue - a.estValue)
+        .slice(0, 15)
+        .map(a => `- "${a.description}": ${a.source} ${a.code} = R$ ${a.price.toFixed(2)}/${a.unit}`)
+        .join('\n');
+    } catch {
+      return '';
+    }
+  }
+
   getUserPrompt(input: OrcamentistaInput): string {
     const totalItems = input.items?.length || 0;
+
+    // Build price anchors from real SINAPI/PINI databases (top-15 by value)
+    const anchors = this.buildPriceAnchors(input.items || []);
+
     return `Precifique TODOS os ${totalItems} itens de obra listados abaixo.
 
 ⚠️ IMPORTANTE: Você DEVE retornar exatamente ${totalItems} itens no budgetItems.
 NÃO omita nenhum item. NÃO agrupe itens diferentes.
+${anchors ? `
+=== PREÇOS DE REFERÊNCIA (SINAPI/PINI Jan/2025, base SP) ===
+${anchors}
 
+⚠️ Use estes preços como base. Se divergir >15% de alguma referência, justifique.
+` : ''}
 ITENS (${totalItems} no total):
 ${JSON.stringify(input.items, null, 2)}
 
@@ -847,7 +956,8 @@ VALIDAÇÃO: budgetItems.length DEVE ser igual a ${totalItems}`;
 export class TributarioAgent extends BaseAgent<TributarioInput, TributarioOutput> {
   name = AGENT_NAMES.tributario;
   type: AgentType = "tributario";
-  
+  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+
   getSystemPrompt(): string {
     return `Você é o Agente Tributário da RR Engenharia.
 
@@ -871,7 +981,36 @@ REGRAS DE CLASSIFICAÇÃO:
 REGIMES TRIBUTÁRIOS:
 - simples_nacional: alíquotas unificadas menores
 - lucro_presumido: PIS/COFINS cumulativo (0,65% + 3%)
-- lucro_real: PIS/COFINS não-cumulativo (1,65% + 7,6%)`;
+- lucro_real: PIS/COFINS não-cumulativo (1,65% + 7,6%)
+
+=== TABELA DE ALÍQUOTAS POR REGIME (referência 2025) ===
+Simples Nacional (Anexo IV - Construção Civil):
+  - Faturamento até R$ 180k: 4.5% (faixa 1)
+  - R$ 180k-360k: 7.8% (faixa 2)
+  - R$ 360k-720k: 10.0% (faixa 3)
+  - R$ 720k-1.8M: 11.2% (faixa 4)
+  - R$ 1.8M-3.6M: 14.7% (faixa 5)
+  - R$ 3.6M-4.8M: 30.0% (faixa 6)
+
+Lucro Presumido (construção civil):
+  - ISS: 2-5% (variável por município, média 5%)
+  - PIS: 0.65% (cumulativo)
+  - COFINS: 3.0% (cumulativo)
+  - IRPJ: 1.2% (presunção 8% × alíquota 15%)
+  - CSLL: 1.08% (presunção 12% × alíquota 9%)
+  - INSS patronal: 20% sobre folha
+
+Lucro Real:
+  - PIS: 1.65% (não-cumulativo, com créditos)
+  - COFINS: 7.6% (não-cumulativo, com créditos)
+  - IRPJ: 15% sobre lucro real + 10% adicional acima R$ 20k/mês
+  - CSLL: 9% sobre lucro real
+
+=== RETENÇÕES OBRIGATÓRIAS ===
+- INSS: 11% sobre cessão de mão-de-obra (Simples isentas do Anexo IV)
+- ISS retido: quando tomador PJ e valor > R$ 1.000
+- IR retido: 1.5% para serviços de engenharia
+- PIS/COFINS/CSLL retido: 4.65% para órgãos públicos`;
   }
   
   getUserPrompt(input: TributarioInput): string {
@@ -1084,6 +1223,7 @@ Calcule o BDI adequado (partindo de ${effectiveBdi}%) e o preço final de venda.
 
 // Agent 6: Gestão de Projetos
 export class GestaoProjAgent extends BaseAgent<GestaoProjInput, GestaoProjOutput> {
+  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
   name = AGENT_NAMES.gestao_projetos;
   type: AgentType = "gestao_projetos";
   
@@ -1389,6 +1529,7 @@ INSTRUÇÕES:
 // Agent 8: Jurídico
 export class JuridicoAgent extends BaseAgent<JuridicoInput, JuridicoOutput> {
   name = AGENT_NAMES.juridico;
+  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
   type: AgentType = "juridico";
   
   getSystemPrompt(): string {
@@ -1467,6 +1608,7 @@ Na cláusula de prazo, use "${durationDays} dias" como prazo de execução.`;
 export class BoardAgent extends BaseAgent<BoardInput, BoardOutput> {
   name = AGENT_NAMES.board;
   type: AgentType = "board";
+  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
   
   getSystemPrompt(): string {
     return `Você é o BOARD EXECUTIVO da RR Engenharia, composto por especialistas sêniores em Gestão de Negócios:
@@ -1529,7 +1671,28 @@ Fórmula usada:
 3. Verificar se o fluxo de caixa é sustentável
 4. Verificar se há itens sem preço ou com valores zerados
 
-SEJA CRÍTICO E RIGOROSO. Sua função é proteger a empresa de propostas inviáveis.`;
+SEJA CRÍTICO E RIGOROSO. Sua função é proteger a empresa de propostas inviáveis.
+
+=== BENCHMARKS DE MERCADO (construção civil 2025) ===
+Margens líquidas típicas por tipo de obra:
+- Reforma comercial (lojas, escritórios): 15-25%
+- Obra nova residencial (casas, prédios): 12-20%
+- Obra industrial (galpões, fábricas): 10-18%
+- Manutenção predial (reparos, conservação): 20-35%
+- Postos de combustível: 15-22%
+- Infraestrutura (drenagem, pavimentação): 10-15%
+
+Faixas de BDI por porte:
+- Obras < R$ 150k: BDI 20-30% (menor escala, mais overhead)
+- Obras R$ 150k-500k: BDI 18-25% (faixa padrão)
+- Obras R$ 500k-2M: BDI 15-22% (economia de escala)
+- Obras > R$ 2M: BDI 12-18% (grande porte, menor risco relativo)
+
+Sinais de alerta:
+- BDI < 15% em obra pequena → margem insuficiente para contingências
+- BDI > 40% → proposta não-competitiva, risco de perder licitação
+- Logística > 20% do custo direto → verificar se localização justifica
+- Prazo < 2 semanas para obras > R$ 100k → provavelmente inviável`;
   }
   
   getUserPrompt(input: BoardInput): string {
@@ -1765,6 +1928,7 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
 
 // Agent 10: Auditor de Consistência
 export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
+  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
   name = AGENT_NAMES.auditor;
   type: AgentType = "auditor";
   

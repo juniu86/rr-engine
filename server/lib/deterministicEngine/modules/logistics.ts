@@ -20,6 +20,7 @@ import type {
   TipoLocalidade,
 } from '../types';
 import { normalizeText } from '../utils/normalize';
+import { getRegionFactor } from '../../../../shared/regionFactors';
 
 /** Default unit costs for logistics */
 const CUSTOS_LOGISTICA = {
@@ -33,6 +34,16 @@ const CUSTOS_LOGISTICA = {
 };
 
 /**
+ * Resolve the best regional adjustment factor (FAR).
+ */
+function resolveFAR(config: EngineConfig, tipoLocalidade: TipoLocalidade, estado?: string): number {
+  if (estado && estado.length >= 2) {
+    return getRegionFactor(estado);
+  }
+  return config.fator_regional[tipoLocalidade];
+}
+
+/**
  * Calculate logistics costs based on EXPLICIT memorial mentions only.
  */
 export function calculateLogistics(
@@ -41,22 +52,26 @@ export function calculateLogistics(
   tipoLocalidade: TipoLocalidade,
   prazoSemanas: number,
   budgetItems: ItemOrcamento[],
+  estado?: string,
 ): { custos: CustoLogistico[]; warnings: string[] } {
   const custos: CustoLogistico[] = [];
   const warnings: string[] = [];
-  const far = config.fator_regional[tipoLocalidade];
+  const far = resolveFAR(config, tipoLocalidade, estado);
   let id = 1;
 
   const explicitLower = logistica.itens_explicitos.map(i => normalizeText(i));
   const budgetNormalized = budgetItems.map(i => normalizeText(i.descricao));
 
-  // ─── Transport ──────────────────────────────────────────────────────
+  // ─── Transport (scaled by project size) ─────────────────────────────
   if (logistica.transporte) {
-    const viagens = 2; // ida + volta
+    const custoMateriais = budgetItems
+      .filter(i => !i.is_header)
+      .reduce((sum, i) => sum + i.preco_total, 0);
+    const viagens = calculateTransportTrips(custoMateriais);
     const precoViagem = Math.round(CUSTOS_LOGISTICA.transporte_viagem * far * 100) / 100;
     custos.push({
       id: id++,
-      descricao: 'Transporte de materiais e equipe',
+      descricao: `Transporte de materiais e equipe (${viagens} viagens)`,
       descricao_normalizada: normalizeText('transporte de materiais e equipe'),
       categoria: 'transporte',
       unidade: 'viagem',
@@ -176,4 +191,15 @@ export function calculateLogistics(
   }
 
   return { custos, warnings };
+}
+
+/**
+ * Scale transport trips based on estimated material cost.
+ * Larger projects require more deliveries.
+ */
+function calculateTransportTrips(custoMateriais: number): number {
+  if (custoMateriais < 20_000) return 2;
+  if (custoMateriais < 50_000) return 3;
+  if (custoMateriais < 100_000) return 4;
+  return Math.ceil(custoMateriais / 25_000);
 }

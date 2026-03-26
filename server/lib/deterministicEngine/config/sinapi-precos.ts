@@ -7,6 +7,24 @@
  * Fonte: SINAPI — Valores de referência (não desonerado)
  */
 
+// ─── INCC-M Inflation Adjustment ─────────────────────────────────────────────
+/** INCC-M average monthly rate (historical 2024-2025) */
+const INCC_M_MENSAL = 0.005; // 0.5% per month
+/** Reference date for SINAPI/PINI base prices */
+const DATA_REFERENCIA = new Date('2025-01-01');
+
+/**
+ * Adjust a base price for inflation since the reference date.
+ * Uses INCC-M (Índice Nacional de Custo da Construção - Mercado) average rate.
+ */
+export function adjustForInflation(price: number, referenceDate?: Date): number {
+  const ref = referenceDate ?? DATA_REFERENCIA;
+  const msPerMonth = 30 * 24 * 60 * 60 * 1000;
+  const monthsElapsed = Math.max(0, (Date.now() - ref.getTime()) / msPerMonth);
+  if (monthsElapsed < 1) return price; // No adjustment within first month
+  return Math.round(price * (1 + INCC_M_MENSAL * monthsElapsed) * 100) / 100;
+}
+
 export interface PrecoSINAPI {
   codigo: string;
   descricao: string;
@@ -205,7 +223,11 @@ export function findSINAPIPrice(descricao: string): PrecoSINAPI | null {
     }
   }
 
-  return bestMatch;
+  // Apply INCC-M inflation adjustment to the matched price
+  if (bestMatch) {
+    return { ...bestMatch, preco_unitario: adjustForInflation(bestMatch.preco_unitario) };
+  }
+  return null;
 }
 
 function normalizeText(text: string): string {
@@ -215,4 +237,150 @@ function normalizeText(text: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, '')
     .trim();
+}
+
+// ─── Expanded DB Integration ─────────────────────────────────────────────────
+
+/**
+ * Lazy-loaded reference to the expanded SINAPI_DB (200+ compositions).
+ * Imported dynamically to avoid circular dependencies.
+ */
+let _expandedDB: Array<{ code: string; description: string; unit: string; price: number; category: string }> | null = null;
+
+function getExpandedDB(): typeof _expandedDB {
+  if (_expandedDB) return _expandedDB;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { SINAPI_DB } = require('../../../services/sinapi') as {
+      SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }>;
+    };
+    _expandedDB = SINAPI_DB;
+    return _expandedDB;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Search the expanded SINAPI database (200+ compositions) using text similarity.
+ * Used as fallback when the curated base (30 items with keywords) doesn't match.
+ *
+ * Scoring: keyword overlap between normalized item description and composition description.
+ * Unit compatibility adds a bonus to the score.
+ */
+export function findSINAPIFromExpandedDB(
+  descricao: string,
+  unidade?: string,
+): PrecoSINAPI | null {
+  const db = getExpandedDB();
+  if (!db) return null;
+
+  const queryNorm = normalizeText(descricao);
+  const queryKeywords = queryNorm.split(/\s+/).filter(k => k.length > 2);
+  if (queryKeywords.length === 0) return null;
+
+  let bestMatch: PrecoSINAPI | null = null;
+  let bestScore = 0;
+  const MIN_THRESHOLD = 0.4;
+
+  for (const comp of db) {
+    const descNorm = normalizeText(comp.description);
+
+    // Count keyword matches
+    let matched = 0;
+    for (const kw of queryKeywords) {
+      if (descNorm.includes(kw)) matched++;
+    }
+
+    let score = queryKeywords.length > 0 ? matched / queryKeywords.length : 0;
+
+    // Unit compatibility bonus
+    if (unidade && comp.unit.toLowerCase() === unidade.toLowerCase()) {
+      score += 0.2;
+    }
+
+    // Skip compositions that are labor-only (hourly rates for workers)
+    if (comp.unit === 'H' || comp.unit === 'MÊS' && comp.category === 'Mão de Obra') {
+      continue;
+    }
+
+    if (score > bestScore && score >= MIN_THRESHOLD) {
+      bestScore = score;
+      bestMatch = {
+        codigo: comp.code,
+        descricao: comp.description,
+        unidade: comp.unit.toLowerCase() === 'm2' ? 'm²' : comp.unit.toLowerCase(),
+        preco_unitario: adjustForInflation(comp.price),
+        keywords: [], // Not used for expanded DB matching
+      };
+    }
+  }
+
+  return bestMatch;
+}
+
+// ─── PINI DB Integration ──────────────────────────────────────────────────────
+
+let _piniDB: Array<{ code: string; description: string; unit: string; price: number }> | null = null;
+
+function getPiniDB(): typeof _piniDB {
+  if (_piniDB) return _piniDB;
+  try {
+    const { PINI_DATABASE } = require('../../../services/pini') as {
+      PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }>;
+    };
+    _piniDB = PINI_DATABASE;
+    return _piniDB;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Search the PINI TCPO database (80+ compositions) using text similarity.
+ * Used as additional fallback after SINAPI databases.
+ * PINI provides complementary pricing for finishes and specialized services.
+ */
+export function findPINIFromDB(
+  descricao: string,
+  unidade?: string,
+): PrecoSINAPI | null {
+  const db = getPiniDB();
+  if (!db) return null;
+
+  const queryNorm = normalizeText(descricao);
+  const queryKeywords = queryNorm.split(/\s+/).filter(k => k.length > 2);
+  if (queryKeywords.length === 0) return null;
+
+  let bestMatch: PrecoSINAPI | null = null;
+  let bestScore = 0;
+  const MIN_THRESHOLD = 0.4;
+
+  for (const comp of db) {
+    const descNorm = normalizeText(comp.description);
+
+    let matched = 0;
+    for (const kw of queryKeywords) {
+      if (descNorm.includes(kw)) matched++;
+    }
+
+    let score = queryKeywords.length > 0 ? matched / queryKeywords.length : 0;
+
+    if (unidade && comp.unit.toLowerCase() === unidade.toLowerCase()) {
+      score += 0.2;
+    }
+
+    if (score > bestScore && score >= MIN_THRESHOLD) {
+      bestScore = score;
+      bestMatch = {
+        codigo: comp.code,
+        descricao: comp.description,
+        unidade: comp.unit.toLowerCase() === 'm2' ? 'm²' : comp.unit.toLowerCase(),
+        preco_unitario: adjustForInflation(comp.price),
+        keywords: [],
+      };
+    }
+  }
+
+  return bestMatch;
 }

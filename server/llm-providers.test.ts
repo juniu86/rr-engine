@@ -18,8 +18,10 @@ describe("LLM Provider Capabilities", () => {
 
     it("deve detectar Claude corretamente", () => {
       expect(detectProvider("claude-3-5-sonnet")).toBe("claude");
-      expect(detectProvider("claude-sonnet-4-20250514")).toBe("claude");
-      expect(detectProvider("claude-opus-4-20250514")).toBe("claude");
+      expect(detectProvider("claude-sonnet-4-20250514")).toBe("claude-sonnet");
+      expect(detectProvider("claude-opus-4-20250514")).toBe("claude-opus");
+      expect(detectProvider("claude-opus-4-6")).toBe("claude-opus");
+      expect(detectProvider("claude-sonnet-4-6")).toBe("claude-sonnet");
     });
 
     it("deve detectar GPT corretamente", () => {
@@ -40,9 +42,11 @@ describe("LLM Provider Capabilities", () => {
       expect(getMaxTokensForModel("gemini-2.5-pro")).toBe(65536);
     });
 
-    it("deve retornar 16384 para Claude", () => {
+    it("deve retornar tokens corretos para Claude variantes", () => {
       expect(getMaxTokensForModel("claude-3-5-sonnet")).toBe(16384);
-      expect(getMaxTokensForModel("claude-opus-4-20250514")).toBe(16384);
+      expect(getMaxTokensForModel("claude-opus-4-20250514")).toBe(32768);
+      expect(getMaxTokensForModel("claude-opus-4-6")).toBe(32768);
+      expect(getMaxTokensForModel("claude-sonnet-4-6")).toBe(16384);
     });
 
     it("deve retornar 16384 para GPT", () => {
@@ -108,12 +112,20 @@ describe("LLM Provider Capabilities", () => {
       expect(caps.providerName).toBe("Google Gemini");
     });
 
-    it("deve retornar capabilities completas para Claude", () => {
+    it("deve retornar capabilities completas para Claude Opus", () => {
       const caps = getProviderCapabilities("claude-opus-4-20250514");
+      expect(caps.maxOutputTokens).toBe(32768);
+      expect(caps.supportsThinking).toBe(true);
+      expect(caps.supportsStrictSchema).toBe(false);
+      expect(caps.providerName).toBe("Anthropic Claude Opus");
+    });
+
+    it("deve retornar capabilities completas para Claude Sonnet", () => {
+      const caps = getProviderCapabilities("claude-sonnet-4-6");
       expect(caps.maxOutputTokens).toBe(16384);
       expect(caps.supportsThinking).toBe(true);
       expect(caps.supportsStrictSchema).toBe(false);
-      expect(caps.providerName).toBe("Anthropic Claude");
+      expect(caps.providerName).toBe("Anthropic Claude Sonnet");
     });
 
     it("deve retornar capabilities completas para GPT", () => {

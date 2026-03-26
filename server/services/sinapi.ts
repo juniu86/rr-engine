@@ -36,7 +36,7 @@ function adjustPrice(basePrice: number, state: string): number {
 
 // ==================== SINAPI DATABASE (Ref: SP, Jan/2025) ====================
 // 200+ composições reais organizadas por categoria
-const SINAPI_DB: SinapiComposition[] = [
+export const SINAPI_DB: SinapiComposition[] = [
   // ===== SERVIÇOS PRELIMINARES =====
   { code: "73847", description: "LIMPEZA MANUAL DO TERRENO (ROÇADA)", unit: "M2", price: 3.45, referenceDate: "01/2025", state: "SP", category: "Serviços Preliminares" },
   { code: "73948", description: "LOCAÇÃO CONVENCIONAL DE OBRA, UTILIZANDO GABARITO DE TÁBUAS CORRIDAS PONTALETADAS A CADA 2,00M", unit: "M2", price: 8.92, referenceDate: "01/2025", state: "SP", category: "Serviços Preliminares" },

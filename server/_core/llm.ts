@@ -57,6 +57,8 @@ export type ToolChoice =
   | ToolChoiceExplicit;
 
 export type InvokeParams = {
+  /** LLM model to use. Falls back to LLM_MODEL env or gemini-2.5-flash. */
+  model?: string;
   messages: Message[];
   tools?: Tool[];
   toolChoice?: ToolChoice;
@@ -281,7 +283,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: params.model ?? process.env.LLM_MODEL ?? "gemini-2.5-flash",
     messages: messages.map(normalizeMessage),
   };
 

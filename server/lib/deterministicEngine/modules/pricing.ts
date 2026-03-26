@@ -9,8 +9,21 @@
  */
 
 import type { ItemMemorial, ItemOrcamento, EngineConfig, TipoLocalidade } from '../types';
-import { findSINAPIPrice, type PrecoSINAPI } from '../config/sinapi-precos';
+import { findSINAPIPrice, findSINAPIFromExpandedDB, findPINIFromDB, type PrecoSINAPI } from '../config/sinapi-precos';
 import { normalizeText } from '../utils/normalize';
+import { getRegionFactor } from '../../../../shared/regionFactors';
+
+/**
+ * Resolve the best regional adjustment factor (FAR).
+ * Prefers per-state factor (more precise) when estado is available,
+ * falls back to generic locality-type factor.
+ */
+function resolveFAR(config: EngineConfig, tipoLocalidade: TipoLocalidade, estado?: string): number {
+  if (estado && estado.length >= 2) {
+    return getRegionFactor(estado);
+  }
+  return config.fator_regional[tipoLocalidade];
+}
 
 /**
  * Price all items from the parsed memorial.
@@ -19,8 +32,9 @@ export function priceItems(
   itens: ItemMemorial[],
   config: EngineConfig,
   tipoLocalidade: TipoLocalidade,
+  estado?: string,
 ): { itens: ItemOrcamento[]; warnings: string[] } {
-  const far = config.fator_regional[tipoLocalidade];
+  const far = resolveFAR(config, tipoLocalidade, estado);
   const warnings: string[] = [];
   const result: ItemOrcamento[] = [];
   let id = 1;
@@ -60,19 +74,38 @@ function priceItem(
     );
   }
 
-  // Standard single item pricing
+  // Standard single item pricing — fallback chain:
+  // 1. Curated SINAPI base (30 items with optimized keywords)
+  // 2. Expanded SINAPI DB (200+ compositions via text similarity)
+  // 3. PINI TCPO DB (80+ compositions — finishes and specialized services)
+  // 4. Category-aware estimation
   const sinapi = findSINAPIPrice(item.descricao);
 
-  if (!sinapi) {
-    warnings.push(`Preço SINAPI não encontrado para: "${item.descricao}". Usando estimativa.`);
-    const estimated = estimatePrice(item);
-    results.push(createOrcamentoItem(
-      startId, item, estimated, far, 'composicao',
-    ));
-  } else {
+  if (sinapi) {
     results.push(createOrcamentoItem(
       startId, item, sinapi.preco_unitario, far, 'sinapi',
     ));
+  } else {
+    const expanded = findSINAPIFromExpandedDB(item.descricao, item.unidade);
+    if (expanded) {
+      results.push(createOrcamentoItem(
+        startId, item, expanded.preco_unitario, far, 'sinapi',
+      ));
+    } else {
+      // Try PINI TCPO database before falling back to estimation
+      const pini = findPINIFromDB(item.descricao, item.unidade);
+      if (pini) {
+        results.push(createOrcamentoItem(
+          startId, item, pini.preco_unitario, far, 'cotacao',
+        ));
+      } else {
+        warnings.push(`Preço SINAPI/PINI não encontrado para: "${item.descricao}". Usando estimativa por categoria.`);
+        const estimated = estimatePrice(item);
+        results.push(createOrcamentoItem(
+          startId, item, estimated, far, 'composicao',
+        ));
+      }
+    }
   }
 
   return results;
@@ -103,12 +136,14 @@ function priceHeaderWithSubItems(
     }
   }
 
-  // Price each sub-item
+  // Price each sub-item (same fallback chain: curated → expanded → PINI → estimate)
   const subResults: ItemOrcamento[] = [];
   for (const sub of subItens) {
     const sinapi = findSINAPIPrice(sub.descricao);
-    const preco = sinapi?.preco_unitario ?? estimatePrice(sub);
-    const fonte = sinapi ? 'sinapi' as const : 'composicao' as const;
+    const expanded = !sinapi ? findSINAPIFromExpandedDB(sub.descricao, sub.unidade) : null;
+    const pini = (!sinapi && !expanded) ? findPINIFromDB(sub.descricao, sub.unidade) : null;
+    const preco = sinapi?.preco_unitario ?? expanded?.preco_unitario ?? pini?.preco_unitario ?? estimatePrice(sub);
+    const fonte = (sinapi || expanded) ? 'sinapi' as const : pini ? 'cotacao' as const : 'composicao' as const;
 
     const subItem = createOrcamentoItem(id + 1 + subResults.length, sub, preco, far, fonte);
     headerTotal += subItem.preco_total;
@@ -231,6 +266,90 @@ function shouldDecompose(item: ItemMemorial): ItemMemorial[] | null {
     ];
   }
 
+  // Hydraulic installation "conforme projeto" — decompose into standard points
+  if ((desc.includes('instalacao hidraulica') || desc.includes('hidrossanitaria') || desc.includes('hidraulica completa')) && item.unidade === 'vb') {
+    return [
+      {
+        descricao: 'Ponto de água fria (registro, tubulação e conexões)',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: 8,
+      },
+      {
+        descricao: 'Ponto de esgoto (tubulação e conexões)',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: 6,
+      },
+      {
+        descricao: 'Vaso sanitário com caixa acoplada',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: 2,
+      },
+      {
+        descricao: 'Lavatório com torneira',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: 2,
+      },
+    ];
+  }
+
+  // Complete bathroom "banheiro completo" — decompose into components
+  if ((desc.includes('banheiro completo') || desc.includes('banheiro') && desc.includes('completo')) && item.unidade === 'vb') {
+    return [
+      {
+        descricao: 'Vaso sanitário com caixa acoplada',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: item.quantidade,
+      },
+      {
+        descricao: 'Lavatório com torneira',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: item.quantidade,
+      },
+      {
+        descricao: 'Chuveiro elétrico com registro',
+        categoria: item.categoria,
+        unidade: 'un',
+        quantidade: item.quantidade,
+      },
+      {
+        descricao: 'Revestimento cerâmico para paredes de banheiro',
+        categoria: item.categoria,
+        unidade: 'm²',
+        quantidade: 12 * item.quantidade, // ~12m² per bathroom
+      },
+    ];
+  }
+
+  // Complete roofing "cobertura completa" — decompose into structure + tiles + accessories
+  if ((desc.includes('cobertura completa') || desc.includes('telhado completo')) && item.unidade === 'm²') {
+    return [
+      {
+        descricao: 'Estrutura de madeira para cobertura',
+        categoria: item.categoria,
+        unidade: 'm²',
+        quantidade: item.quantidade,
+      },
+      {
+        descricao: 'Telhamento com telha cerâmica',
+        categoria: item.categoria,
+        unidade: 'm²',
+        quantidade: item.quantidade,
+      },
+      {
+        descricao: 'Calha em chapa galvanizada',
+        categoria: item.categoria,
+        unidade: 'm',
+        quantidade: Math.round(Math.sqrt(item.quantidade) * 2), // perimeter estimate
+      },
+    ];
+  }
+
   return null;
 }
 
@@ -262,18 +381,106 @@ function createOrcamentoItem(
 }
 
 /**
- * Estimate price for items not in SINAPI database.
+ * Category-aware price estimation for items not found in SINAPI databases.
+ * Uses keyword matching against the item description to find the most
+ * appropriate estimate, falling back to unit-based generic values.
+ *
+ * Prices are based on SINAPI SP Jan/2025 averages (before regional adjustment).
  */
 function estimatePrice(item: ItemMemorial): number {
   const desc = normalizeText(item.descricao);
 
-  // Rough estimates for common items not found
-  if (desc.includes('esquadria')) return 400;
-  if (desc.includes('cabeamento') || desc.includes('infraestrutura eletrica')) return 120;
-  if (desc.includes('equipamento') || desc.includes('seguranca')) return 200;
+  // ─── m² estimates ──────────────────────────────────────────────────
+  if (item.unidade === 'm²') {
+    if (desc.includes('demolicao') || desc.includes('remocao')) return 45;
+    if (desc.includes('contrapiso') || desc.includes('regularizacao')) return 55;
+    if (desc.includes('porcelanato')) return 130;
+    if (desc.includes('ceramica') || desc.includes('piso ceramico')) return 95;
+    if (desc.includes('rejuntamento')) return 9;
+    if (desc.includes('pintura') || desc.includes('latex') || desc.includes('acrilica')) return 25;
+    if (desc.includes('massa corrida') || desc.includes('massa pva')) return 15;
+    if (desc.includes('lixamento') || desc.includes('selador')) return 5;
+    if (desc.includes('impermeabilizacao') || desc.includes('manta asfaltica')) return 85;
+    if (desc.includes('revestimento') || desc.includes('chapisco') || desc.includes('emboco')) return 30;
+    if (desc.includes('forro') || desc.includes('forro pvc')) return 85;
+    if (desc.includes('drywall') || desc.includes('gesso acartonado')) return 170;
+    if (desc.includes('alvenaria') || desc.includes('bloco')) return 75;
+    if (desc.includes('cobertura') || desc.includes('telha') || desc.includes('telhamento')) return 70;
+    if (desc.includes('forma') || desc.includes('forma de madeira')) return 80;
+    if (desc.includes('laje')) return 90;
+    if (desc.includes('piso')) return 80;
+    if (desc.includes('limpeza')) return 8;
+    if (desc.includes('tapume')) return 78;
+    if (desc.includes('textura') || desc.includes('texturizado')) return 29;
+    if (desc.includes('epoxi')) return 35;
+    return 65; // generic m² fallback
+  }
 
-  // Generic fallback based on unit
-  if (item.unidade === 'm²') return 50;
-  if (item.unidade === 'un') return 200;
-  return 100;
+  // ─── un estimates ──────────────────────────────────────────────────
+  if (item.unidade === 'un') {
+    if (desc.includes('porta')) return 800;
+    if (desc.includes('janela') || desc.includes('esquadria')) return 700;
+    if (desc.includes('iluminacao') || desc.includes('ponto de luz') || desc.includes('ponto iluminacao')) return 170;
+    if (desc.includes('tomada') || desc.includes('ponto tomada') || desc.includes('ponto eletrico')) return 160;
+    if (desc.includes('quadro') || desc.includes('disjuntor')) return 890;
+    if (desc.includes('louca') || desc.includes('vaso') || desc.includes('bacia')) return 400;
+    if (desc.includes('cuba') || desc.includes('lavatorio')) return 350;
+    if (desc.includes('torneira') || desc.includes('metal') || desc.includes('misturador')) return 250;
+    if (desc.includes('chuveiro') || desc.includes('ducha')) return 200;
+    if (desc.includes('verga') || desc.includes('contraverga')) return 35;
+    if (desc.includes('placa') || desc.includes('identificacao')) return 346;
+    if (desc.includes('caixa dagua') || desc.includes('reservatorio')) return 800;
+    return 300; // generic un fallback
+  }
+
+  // ─── m³ estimates ──────────────────────────────────────────────────
+  if (item.unidade === 'm³') {
+    if (desc.includes('concreto') || desc.includes('fck')) return 500;
+    if (desc.includes('escavacao')) return 55;
+    if (desc.includes('reaterro') || desc.includes('aterro')) return 35;
+    if (desc.includes('argamassa')) return 400;
+    return 200; // generic m³ fallback
+  }
+
+  // ─── m (linear) estimates ──────────────────────────────────────────
+  if (item.unidade === 'm') {
+    if (desc.includes('tubulacao') || desc.includes('tubo') || desc.includes('esgoto')) return 45;
+    if (desc.includes('rodape')) return 20;
+    if (desc.includes('calha')) return 55;
+    if (desc.includes('rufo')) return 45;
+    if (desc.includes('soleira') || desc.includes('granito')) return 68;
+    if (desc.includes('estaca') || desc.includes('broca')) return 50;
+    return 40; // generic m fallback
+  }
+
+  // ─── kg estimates ──────────────────────────────────────────────────
+  if (item.unidade === 'kg') {
+    if (desc.includes('aco') || desc.includes('armacao') || desc.includes('armadura')) return 15;
+    if (desc.includes('estrutura metalica')) return 19;
+    return 15; // generic kg fallback
+  }
+
+  // ─── dia estimates ─────────────────────────────────────────────────
+  if (item.unidade === 'dia') {
+    if (desc.includes('martelete')) return 95;
+    if (desc.includes('serra')) return 45;
+    return 80; // generic dia fallback
+  }
+
+  // ─── mês estimates ─────────────────────────────────────────────────
+  if (item.unidade === 'mês') {
+    if (desc.includes('andaime')) return 800;
+    return 500; // generic mês fallback
+  }
+
+  // ─── vb (verba) estimates ──────────────────────────────────────────
+  if (item.unidade === 'vb') {
+    if (desc.includes('eletrica') || desc.includes('iluminacao')) return 8000;
+    if (desc.includes('hidraulica') || desc.includes('hidrossanitaria')) return 6000;
+    if (desc.includes('limpeza')) return 2000;
+    if (desc.includes('mobilizacao') || desc.includes('desmobilizacao')) return 3000;
+    return 2000; // generic vb fallback
+  }
+
+  return 150; // absolute fallback
 }
