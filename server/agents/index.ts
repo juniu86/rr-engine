@@ -363,7 +363,61 @@ FORMATO DE SAÍDA: JSON estruturado com items, pendingItems, nbrReferences, crit
 - Eletricista: 1.5 Hh/ponto (residencial), 2.0 Hh/ponto (comercial)
 - Encanador: 2.0 Hh/ponto (água fria), 2.5 Hh/ponto (esgoto)
 - Azulejista: 0.75 Hh/m² (revestimento cerâmico)
-- Carpinteiro: 1.2 Hh/m² (formas de madeira)`;
+- Carpinteiro: 1.2 Hh/m² (formas de madeira)
+
+=== REGRAS DE INFERÊNCIA INTELIGENTE (v3.0) ===
+Quando o memorial indicar um PADRÃO DE QUALIDADE (explícita ou implicitamente),
+INFIRA as especificações técnicas. NÃO pergunte ao usuário o que pode ser deduzido.
+Itens inferidos devem ter isInferred=true e inferenceReason explicando a premissa.
+
+DETECÇÃO DE PADRÃO:
+- "popular", "econômico", "básico", "simples" → PADRÃO ECONÔMICO (qualityTier: "economico")
+- "padrão", "médio", "standard", sem indicação → PADRÃO MÉDIO (qualityTier: "medio")
+- "alto padrão", "AAA", "premium", "luxo", "sofisticado", "classe A" → PADRÃO ALTO (qualityTier: "alto")
+
+TABELA DE INFERÊNCIA POR PADRÃO:
+
+ECONÔMICO:
+- Metais: Docol/Lorenzetti linha básica
+- Louças: Celite/Logasa linha popular
+- Piso: cerâmica esmaltada 30x30 ou 45x45 PEI-4
+- Revestimento: cerâmica 20x20 em áreas molhadas
+- Pintura: tinta latex PVA 2 demãos
+- Portas: madeira prensada com batente metálico
+- Janelas: alumínio natural sem vidro duplo
+- Bancada: granito cinza andorinha ou mármore branco
+
+MÉDIO (PADRÃO):
+- Metais: Docol/Deca linha básica (Aspen, Base)
+- Louças: Deca linha Vogue/Aspen
+- Piso: porcelanato esmaltado nacional 60x60
+- Revestimento: cerâmica retificada 30x60 em áreas molhadas
+- Pintura: tinta acrílica fosca/acetinada 2-3 demãos
+- Portas: madeira semi-oca com batente de madeira
+- Janelas: alumínio anodizado com vidro simples
+- Bancada: granito preto São Gabriel ou branco Siena
+
+ALTO (PREMIUM/AAA):
+- Metais: Deca linha Unic/Level ou equivalente premium
+- Louças: Deca Vogue/Incepa Calypso ou equivalente
+- Piso: porcelanato retificado polido/acetinado 80x80 ou 60x120
+- Revestimento: porcelanato retificado para paredes + faixas decorativas
+- Pintura: tinta acrílica premium acetinada/semi-brilho 3 demãos (Suvinil/Coral)
+- Portas: madeira maciça com fechadura Pado/La Fonte
+- Janelas: alumínio com pintura eletrostática + vidro laminado
+- Bancada: granito preto absoluto, quartzo ou Silestone
+
+COMO USAR:
+1. Detecte o padrão no memorial (palavras-chave acima)
+2. INFIRA especificações usando a tabela acima
+3. Marque isInferred=true e preencha inferenceReason (ex: "Padrão alto detectado - metais Deca Unic")
+4. Preencha qualityTier com o padrão detectado
+5. NÃO adicione itens inferidos ao missingInfoRequests
+6. SÓ pergunte ao usuário quando:
+   - Área/comprimento/quantidade NÃO pode ser deduzida do texto
+   - Memorial é genuinamente ambíguo (ex: "fazer piso" sem tipo nem padrão)
+   - Existem conflitos (ex: "econômico" mas menciona "porcelanato importado")
+7. Para campos com confiança média, use suggestedValue no MissingInfoRequest`;
   }
   
   getUserPrompt(input: EngenheiroTecnicoInput): string {
@@ -399,12 +453,17 @@ INSTRUÇÕES:
 Retorne um JSON com:
 - analysisStatus: "completed" se todas as informações estão presentes, "waiting_for_user_input" se faltam dados
 - missingInfoRequests: array de solicitações (fieldId, question, type, unit) - vazio se analysisStatus = "completed"
-- items: lista de itens (só preencher completamente se analysisStatus = "completed")
+  - Para campos com confiança média, preencha suggestedValue e isAutoInferrable=true
+- items: lista de itens com especificações
+  - Se inferiu especificações do padrão de qualidade, marque isInferred=true e preencha inferenceReason e qualityTier
 - pendingItems: lista de itens que precisam de vistoria
 - nbrReferences: lista de normas ABNT aplicáveis
 - criticalNotes: observações críticas sobre o memorial
 - groupsProcessed: lista dos grupos processados
-- totalItemsExtracted: número total de itens extraídos`;
+- totalItemsExtracted: número total de itens extraídos
+
+IMPORTANTE: Use as REGRAS DE INFERÊNCIA para completar especificações automaticamente.
+Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
   }
   
   getOutputSchema(): object {
@@ -429,6 +488,9 @@ Retorne um JSON com:
               hint: { type: "string", description: "Dica para ajudar o usuário" },
               required: { type: "boolean", description: "Se o campo é obrigatório (padrão: true)" },
               allowZero: { type: "boolean", description: "Se permite valor 0 para campos numéricos (padrão: true)" },
+              suggestedValue: { type: ["string", "number"], description: "Valor sugerido pela IA baseado em inferência (frontend pré-preenche)" },
+              isAutoInferrable: { type: "boolean", description: "Se este campo poderia ter sido inferido (confiança média)" },
+              suggestionReason: { type: "string", description: "Razão da sugestão, ex: 'Padrão médio inferido do memorial'" },
             },
             required: ["fieldId", "question", "type"],
             additionalProperties: false,
@@ -450,6 +512,9 @@ Retorne um JSON com:
               isPendingVistoria: { type: "boolean" },
               isSummaryItem: { type: "boolean", description: "Se é item resumo/pai (NÃO somar no total, pois é soma dos filhos)" },
               parentGroupNumber: { type: "string", description: "Número do grupo pai (se for item filho)" },
+              isInferred: { type: "boolean", description: "Se as especificações foram inferidas automaticamente do padrão de qualidade" },
+              inferenceReason: { type: "string", description: "Razão da inferência, ex: 'Padrão alto detectado → metais Deca Unic'" },
+              qualityTier: { type: "string", enum: ["economico", "medio", "alto"], description: "Padrão de qualidade detectado no memorial" },
             },
             required: ["group", "itemNumber", "description", "quantity", "unit", "specifications", "nbrReference", "isPendingVistoria"],
             additionalProperties: false,

@@ -1764,11 +1764,16 @@ export default function ProjectDetails() {
                 <Label htmlFor={request.fieldId} className="flex items-center gap-2">
                   {request.question}
                   {request.required && <span className="text-red-500">*</span>}
+                  {(request as any).isAutoInferrable && (
+                    <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                      sugerido pela IA
+                    </span>
+                  )}
                 </Label>
-                
+
                 {request.type === "select" && request.options ? (
                   <Select
-                    value={String(userResponses[request.fieldId] || "")}
+                    value={String(userResponses[request.fieldId] ?? (request as any).suggestedValue ?? "")}
                     onValueChange={(value) => setUserResponses(prev => ({ ...prev, [request.fieldId]: value }))}
                   >
                     <SelectTrigger>
@@ -1790,10 +1795,10 @@ export default function ProjectDetails() {
                       step="0.01"
                       min="0"
                       placeholder={`Digite o valor${request.unit ? ` em ${request.unit}` : ''}...`}
-                      value={userResponses[request.fieldId] || ""}
-                      onChange={(e) => setUserResponses(prev => ({ 
-                        ...prev, 
-                        [request.fieldId]: e.target.value ? parseFloat(e.target.value) : "" 
+                      value={userResponses[request.fieldId] ?? (request as any).suggestedValue ?? ""}
+                      onChange={(e) => setUserResponses(prev => ({
+                        ...prev,
+                        [request.fieldId]: e.target.value ? parseFloat(e.target.value) : ""
                       }))}
                       className="flex-1"
                     />
@@ -1808,11 +1813,16 @@ export default function ProjectDetails() {
                     id={request.fieldId}
                     type="text"
                     placeholder="Digite sua resposta..."
-                    value={String(userResponses[request.fieldId] || "")}
+                    value={String(userResponses[request.fieldId] ?? (request as any).suggestedValue ?? "")}
                     onChange={(e) => setUserResponses(prev => ({ ...prev, [request.fieldId]: e.target.value }))}
                   />
                 )}
-                
+
+                {(request as any).suggestionReason && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    {(request as any).suggestionReason}
+                  </p>
+                )}
                 {request.hint && (
                   <p className="text-xs text-muted-foreground">
                     {request.hint}
