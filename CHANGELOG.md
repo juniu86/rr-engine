@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [3.0.1] - 26 de Março de 2026
+
+### Sprint 3.1 - Smart Auto-Inference + Direct Anthropic API
+
+#### Adicionado
+- Smart Auto-Inference: Deteccao automatica de qualidade do memorial para pular perguntas pre-LLM
+- Direct Anthropic API Integration: Integracao direta com API Anthropic para Claude models
+- Quality Tier Detection: Sistema de deteccao de nivel de qualidade do memorial descritivo
+
+#### Melhorado
+- Logica de interatividade v2.1 para evitar perguntas redundantes
+- Suporte a multiplos provedores LLM com fallback automatico
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+
+---
+
 ## [3.0.0] - 26 de Março de 2026
 
 ### Sprint 3 - Ensemble Validation Module + Comprehensive Tests
