@@ -306,9 +306,48 @@ SE TODAS AS INFORMAÇÕES ESTIVEREM PRESENTES:
 - missingInfoRequests deve ser array vazio
 
 ⚠️ REGRA CRÍTICA: PROCESSAR 100% DOS ITENS!
-Você DEVE processar TODOS os grupos de serviços e TODOS os itens do memorial.
+Você DEVE processar TODOS os grupos de serviços do memorial.
 NÃO interrompa a leitura antes de processar o documento completo.
-NÃO omita nenhum grupo, mesmo que pareça repetitivo ou similar.
+
+=== REGRA DE EXCLUSÃO MÚTUA (ANTI-DUPLICAÇÃO) ===
+Quando o memorial descreve um ESCOPO GLOBAL e depois DETALHA os componentes,
+você DEVE escolher APENAS UM dos dois níveis para orçar:
+
+PREFERÊNCIA: Sempre prefira o DETALHAMENTO (componentes individuais).
+O escopo global vira ITEM PAI (isSummaryItem=true, totalCost=0).
+
+EXEMPLO ERRADO (gera duplicação de custo):
+  - "Sistema de climatização VRF" (R$ 75.000)      <- PACOTE GLOBAL
+  - "Condensadora VRF 10TR" (R$ 35.000)             <- COMPONENTE
+  - "Fan coils VRF" (R$ 25.000)                     <- COMPONENTE
+  Total: R$ 150.000 (deveria ser R$ 75.000!)
+
+EXEMPLO CORRETO:
+  - "Sistema de climatização VRF" (isSummaryItem=true, totalCost=0)  <- PAI
+  - "Condensadora VRF 10TR" (R$ 35.000, isSummaryItem=false)         <- FILHO
+  - "Fan coils VRF" (R$ 25.000, isSummaryItem=false)                 <- FILHO
+  Total: R$ 75.000
+
+CASOS COMUNS DE EXCLUSÃO MÚTUA:
+1. Cobertura (pacote) vs Telhas + Calhas + Rufos + Cumeeiras (componentes)
+2. Instalação elétrica (por área m2) vs Pontos de luz + Tomadas + Quadros (detalhamento)
+3. Bloco/Edificação (construção completa) vs Ambientes individuais (salas, banheiros)
+4. Sistema de climatização vs Equipamentos individuais (condensadora, fan coils, tubulação)
+5. Drenagem (sistema completo) vs Canaletas + Caixas + Tubulações (componentes)
+6. Instalação hidráulica (completa) vs Pontos de água + Esgoto + Louças (detalhamento)
+
+TESTE: Se remover o pacote global e manter apenas os componentes,
+o escopo está 100% coberto? Se SIM -> pacote vira PAI (isSummaryItem=true).
+
+EXCEÇÃO: Se o memorial descreve APENAS o pacote global SEM detalhar componentes,
+precifique o pacote como item único (isSummaryItem=false). Só marque como PAI
+quando existem componentes detalhados no memorial.
+
+=== NUMERAÇÃO ÚNICA DE ITENS ===
+CADA item deve ter um itemNumber ÚNICO em todo o orçamento.
+NÃO reutilize o mesmo número para itens diferentes.
+Se existem sub-itens, use numeração hierárquica: 7.1, 7.2, 7.3
+(nunca repetir 7.1 para dois itens com escopos diferentes).
 
 GRUPOS TÍPICOS DE SERVIÇOS (processar TODOS):
 1. SERVIÇOS PRELIMINARES (mobilização, locação, proteção)
@@ -758,7 +797,22 @@ IMPORTANTE:
 - Foque em custos que o Orçamentista NÃO consegue prever nas composições
 - Considere as restrições locais (horário, acesso, etc.)
 - Se a obra for local (mesma cidade), não inclua hospedagem/alimentação
-- Separe itens OPCIONAIS no array "optionalItems" com justificativa`;
+- Separe itens OPCIONAIS no array "optionalItems" com justificativa
+
+=== REGRA ANTI-SOBREPOSIÇÃO COM ORÇAMENTO ===
+ANTES de incluir qualquer custo logístico, verifique se o serviço
+NÃO está já embutido em composições SINAPI/PINI do orçamento:
+
+CUSTOS TIPICAMENTE JÁ EMBUTIDOS (NÃO incluir na logística):
+- Frete de materiais padrão: composições SINAPI já incluem frete até 30km
+- Equipamentos em composições: betoneira, serra, martelete se usados em SINAPI, já inclusos
+- Limpeza final: se há item "Limpeza de obra" no orçamento, não duplicar na logística
+- Carga/descarga de demolição: composições de demolição já incluem carga e destinação
+- Transporte de resíduos: se há item "bota-fora" ou "destinação" no orçamento, não duplicar
+
+EXCEÇÃO DE FRETE: Se a obra estiver a mais de 30km da base ou do fornecedor
+principal, calcule apenas o custo do frete EXCEDENTE (diferença acima dos 30km
+já inclusos na composição SINAPI).`;
   }
   
   getUserPrompt(input: LogisticaInput): string {
