@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## [3.0.3] - 26 de Março de 2026
+
+### Sprint 3.3 - CRITICAL FIX: Eliminate Duplicate Budget Items
+
+#### Problema Corrigido
+- Itens pai (resumos) eram salvos junto com filhos, gerando duplicacao de custos
+- Mesmo servico aparecia em multiplos pacotes (ex: piso banheiro linhas 36-37 E 38-39)
+- Resumos re-lancados inflavam custos (ex: linhas 79-84 re-entradas)
+- Premissas operacionais eram tratadas como custos (ex: SAO - Destinacao)
+
+#### Solucao Implementada
+- **Schema do Orcamentista:** novo campo `isSummaryItem` retornado pelo LLM
+- **persistBudgetItems():** filtra `isSummaryItem=true` antes de salvar no banco
+- **Prompt do Orcamentista:** nao exige mais contagem forcada, LLM pode omitir pais
+- **validateAgentCoherence():** usa `filterItemsForPricing()` para validacao
+- **Deduplicacao:** por `description+unit+category` na persistencia
+- **Auditor:** verifica duplicatas como erro critico
+
+#### Impacto Esperado
+- Hangar Avjet: custo direto R$1.9M -> ~R$1.77M (elimina ~R$130K em duplicatas)
+- Preço de venda reduz proporcionalmente mantendo margem
+- Precisao de orcamentos melhora significativamente
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: Hangar Avjet processado com sucesso
+
+---
+
 ## [3.0.2] - 26 de Março de 2026
 
 ### Sprint 3.2 - Maximum Autonomy Rule + Question Whitelist Optimization
