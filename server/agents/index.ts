@@ -2173,13 +2173,33 @@ Se encontrar duplicatas, marque como ERRO CRÍTICO e calcule o impacto financeir
     const totalTaxes = allAgentOutputs.tributario?.totalTaxes || 0;
     const cashFlowFinal = allAgentOutputs.financeiro?.cashFlow?.slice(-1)[0]?.balance || 0;
     const totalDays = allAgentOutputs.gestao?.totalDuration || 0;
-    
+
     // Calcular margens
     const grossMargin = actualPrice - baseCost;
     const grossMarginPercent = actualPrice > 0 ? (grossMargin / actualPrice) * 100 : 0;
     const netMargin = actualPrice - baseCost - totalTaxes;
     const netMarginPercent = actualPrice > 0 ? (netMargin / actualPrice) * 100 : 0;
-    
+
+    // Extrair budgetItems para validação de duplicatas e consistência
+    const budgetItems = allAgentOutputs.orcamentista?.budgetItems || [];
+    const budgetItemsSummary = budgetItems.slice(0, 80).map((item: any, i: number) => {
+      const qty = Number(item.quantity) || 0;
+      const cost = Number(item.unitCostTotal) || 0;
+      const total = qty * cost;
+      const isSummary = item.isSummaryItem ? ' [PAI]' : '';
+      return `${i+1}. ${item.code || '-'} | ${item.description}${isSummary} | ${qty} ${item.unit || ''} × R$${cost.toFixed(2)} = R$${total.toFixed(2)} | Fonte: ${item.source || '?'}`;
+    }).join('\n');
+    const budgetItemsCount = budgetItems.length;
+    const budgetSumCalculated = budgetItems
+      .filter((item: any) => !item.isSummaryItem)
+      .reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.unitCostTotal) || 0), 0);
+
+    // Extrair logisticsCosts para validação cruzada
+    const logisticsCosts = allAgentOutputs.logistica?.costs || [];
+    const logisticsSummary = logisticsCosts.slice(0, 20).map((c: any, i: number) => {
+      return `${i+1}. ${c.description} | ${c.quantity} ${c.unit || ''} × R$${Number(c.unitCost || 0).toFixed(2)} = R$${Number(c.totalCost || 0).toFixed(2)}`;
+    }).join('\n');
+
     return `AUDITORIA DE CONSISTÊNCIA - PROJETO: ${projectConfig.name}
 
 === DADOS PARA VALIDAÇÃO ===
@@ -2213,8 +2233,22 @@ DECISÃO DO BOARD:
 - Aprovado: ${allAgentOutputs.board?.approved ? 'Sim' : 'Não'}
 - Bloqueado: ${allAgentOutputs.board?.blockProposal ? 'Sim' : 'Não'}
 
+CONSISTÊNCIA ENTRE DOCUMENTOS:
+- Comercial.finalPrice: R$ ${actualPrice.toFixed(2)} (deve aparecer em todos os documentos)
+- Gestão.totalDays: ${totalDays} dias (deve ser consistente com o Jurídico)
+- Jurídico validade: ${allAgentOutputs.juridico?.validityDays || 30} dias
+
 CONFIGURAÇÕES DA EMPRESA:
 - Configurações Personalizadas: ${hasCustomSettings ? 'Sim (usuário salvou configurações)' : 'NÃO (usando valores padrão - EMITIR WARNING)'}
+
+=== ITENS DO ORÇAMENTO (${budgetItemsCount} itens) ===
+Soma calculada dos itens (excluindo PAI): R$ ${budgetSumCalculated.toFixed(2)}
+Custo Direto declarado pelo Orçamentista: R$ ${directCost.toFixed(2)}
+${budgetItemsSummary || 'Nenhum item disponível'}
+${budgetItemsCount > 80 ? `... e mais ${budgetItemsCount - 80} itens` : ''}
+
+=== CUSTOS LOGÍSTICOS (${logisticsCosts.length} itens) ===
+${logisticsSummary || 'Nenhum custo logístico disponível'}
 
 === AÇÃO REQUERIDA ===
 

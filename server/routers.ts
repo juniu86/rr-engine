@@ -574,8 +574,34 @@ export const appRouter = router({
             results 
           };
         } else if (boardResult?.approved) {
-          // Proposta APROVADA
-          await db.updateProject(input.projectId, { status: "approved" });
+          // Correção 2: Verificar se Auditor rejeitou — ele é a última linha de defesa
+          const auditorResult = results.auditor as any;
+          if (auditorResult?.auditSeal === 'rejected') {
+            await db.updateProject(input.projectId, { status: "review" });
+            console.log('[Pipeline] Board aprovou mas Auditor rejeitou — status = review');
+          } else {
+            // Proposta APROVADA (Board + Auditor concordam)
+            await db.updateProject(input.projectId, { status: "approved" });
+          }
+
+          // Correção 3: Gravar totais finais na tabela projects (fonte única de verdade)
+          try {
+            const finalBudgetItems = await db.getBudgetItemsByProjectId(input.projectId);
+            const finalDirectCost = finalBudgetItems.reduce((sum: number, item: any) => sum + Number(item.totalCost || 0), 0);
+            const finalLogistics = await db.getLogisticsCostsByProjectId(input.projectId);
+            const finalLogisticsCost = finalLogistics.reduce((sum: number, c: any) => sum + Number(c.totalCost || 0), 0);
+            const comercialResult = results.comercial as any;
+
+            await db.updateProject(input.projectId, {
+              totalCostDirect: String(Math.round(finalDirectCost * 100) / 100),
+              totalCostIndirect: String(Math.round(finalLogisticsCost * 100) / 100),
+              totalPrice: String(comercialResult?.finalPrice || 0),
+            });
+            console.log(`[Pipeline] Totais finais gravados: Direto R$${finalDirectCost.toFixed(2)}, Logística R$${finalLogisticsCost.toFixed(2)}, Preço R$${comercialResult?.finalPrice?.toFixed(2) || 0}`);
+          } catch (err) {
+            console.error('[Pipeline] Error saving final totals:', err);
+          }
+
           return { success: true, results };
         } else {
           // Proposta em REVISÃO
