@@ -35,11 +35,14 @@ export async function persistBudgetItems(
   // Passo 1: Filtrar itens PAI/RESUMO (isSummaryItem=true) para evitar duplicação
   const filteredItems = rawItems.filter((item: any) => !item.isSummaryItem);
 
-  // Passo 4: Deduplicar por description+unit+category
+  // Passo 4a: Deduplicar por description+unit+category (exact match)
   const deduplicatedItems = deduplicateBudgetItems(filteredItems);
 
+  // Passo 4b: Deduplicação semântica — remover itens contidos em outros (containment)
+  const semanticDeduped = detectContainmentDuplicates(deduplicatedItems);
+
   // Correção C: Garantir itemNumber/code único (sufixo para duplicatas)
-  const pricingItems = deduplicateItemNumbers(deduplicatedItems);
+  const pricingItems = deduplicateItemNumbers(semanticDeduped);
 
   const items = pricingItems.map((item: any) => {
     const quantity = Number(item.quantity) || 0;
@@ -152,11 +155,68 @@ export async function persistAgentOutput(
 
   if (agentType === 'orcamentista' && output?.budgetItems) {
     await persistBudgetItems(projectId, output.budgetItems, opts.bdiPercent);
+
+    // Correção 1: Recalcular totalDirectCost dos itens efetivamente persistidos
+    // (após filtro de isSummaryItem + deduplicação por descrição + dedup de código)
+    try {
+      const savedItems = await db.getBudgetItemsByProjectId(projectId);
+      const recalculatedDirectCost = savedItems.reduce(
+        (sum: number, item: any) => sum + Number(item.totalCost || 0), 0
+      );
+      const itemsRemoved = (output.budgetItems?.length || 0) - savedItems.length;
+
+      // Atualizar o output com o valor correto (pós-deduplicação)
+      finalOutput = {
+        ...output,
+        totalDirectCost: Math.round(recalculatedDirectCost * 100) / 100,
+        _originalTotalDirectCost: output.totalDirectCost,
+        _itemsFiltered: itemsRemoved,
+        budgetItems: savedItems.map((item: any) => ({
+          id: item.id,
+          category: item.category,
+          code: item.code,
+          description: item.description,
+          unit: item.unit,
+          quantity: Number(item.quantity) || 0,
+          unitCostMaterial: Number(item.unitCostMaterial) || 0,
+          unitCostLabor: Number(item.unitCostLabor) || 0,
+          unitCostLogistics: Number(item.unitCostLogistics) || 0,
+          unitCostTotal: Number(item.unitCostTotal) || 0,
+          totalCost: Number(item.totalCost) || 0,
+          source: item.source,
+          sourceCode: item.sourceCode,
+          sourceDate: item.sourceDate,
+        })),
+      };
+
+      if (itemsRemoved > 0) {
+        console.log(`[Orcamentista] Deduplication: ${itemsRemoved} items removed. Cost: R$${output.totalDirectCost?.toFixed(2)} → R$${recalculatedDirectCost.toFixed(2)}`);
+      }
+    } catch (err) {
+      console.error('[Orcamentista] Error recalculating after dedup:', err);
+    }
   }
 
   if (agentType === 'logistica' && output?.costs) {
     try {
-      await persistLogisticsCosts(projectId, output.costs);
+      // Correção 5: Cross-check logística vs budgetItems antes de salvar
+      const budgetItems = await db.getBudgetItemsByProjectId(projectId);
+      const filteredCosts = crossCheckLogisticsVsBudget(output.costs, budgetItems);
+      await persistLogisticsCosts(projectId, filteredCosts);
+
+      // Atualizar output com custos filtrados
+      if (filteredCosts.length < output.costs.length) {
+        const removedCount = output.costs.length - filteredCosts.length;
+        const newTotal = filteredCosts.reduce((sum: number, c: any) => sum + Number(c.totalCost || 0), 0);
+        finalOutput = {
+          ...output,
+          costs: filteredCosts,
+          totalLogisticsCost: Math.round(newTotal * 100) / 100,
+          _originalLogisticsCost: output.totalLogisticsCost,
+          _logisticsItemsRemoved: removedCount,
+        };
+        console.log(`[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${output.totalLogisticsCost?.toFixed(2)} → R$${newTotal.toFixed(2)}`);
+      }
     } catch (err) {
       console.error('[Logistica] Error saving costs:', err);
     }
@@ -251,5 +311,110 @@ function deduplicateItemNumbers(items: any[]): any[] {
       return { ...item, code: `${code}.${count}` };
     }
     return item;
+  });
+}
+
+// ==================== SEMANTIC CONTAINMENT DEDUPLICATION ====================
+
+/**
+ * Detect items where a "global scope" item contains sub-items that are also listed individually.
+ * Example: "Sistema de drenagem oleosa completo" contains "Canaletas" + "Caixas de inspeção" + "SAO"
+ *
+ * Strategy: When item A's keywords are a superset of item B's keywords within the same category,
+ * and A costs more than B, keep A and remove B (B is contained in A).
+ * Conversely, if detailed items (B, C, D) together cover A's scope, keep the details and remove A.
+ */
+function detectContainmentDuplicates(items: any[]): any[] {
+  const result = [...items];
+  const toRemove = new Set<number>();
+
+  for (let i = 0; i < result.length; i++) {
+    if (toRemove.has(i)) continue;
+    const itemA = result[i];
+    const catA = (itemA.category || '').toLowerCase();
+    const descA = normalizeForDedup(itemA.description || '');
+    const keywordsA = descA.split(/\s+/).filter((k: string) => k.length > 3);
+    if (keywordsA.length === 0) continue;
+
+    for (let j = i + 1; j < result.length; j++) {
+      if (toRemove.has(j)) continue;
+      const itemB = result[j];
+      const catB = (itemB.category || '').toLowerCase();
+
+      // Only check within same category
+      if (catA !== catB) continue;
+
+      const descB = normalizeForDedup(itemB.description || '');
+      const keywordsB = descB.split(/\s+/).filter((k: string) => k.length > 3);
+      if (keywordsB.length === 0) continue;
+
+      // Check containment: what fraction of B's keywords appear in A's description?
+      const bInA = keywordsB.filter((kw: string) => descA.includes(kw)).length / keywordsB.length;
+      const aInB = keywordsA.filter((kw: string) => descB.includes(kw)).length / keywordsA.length;
+
+      const costA = Number(itemA.totalCost) || Number(itemA.quantity || 0) * Number(itemA.unitCostTotal || 0);
+      const costB = Number(itemB.totalCost) || Number(itemB.quantity || 0) * Number(itemB.unitCostTotal || 0);
+
+      // If B is semantically contained in A (>70% keywords overlap) and A costs more → remove B
+      if (bInA >= 0.7 && costA >= costB) {
+        toRemove.add(j);
+        console.log(`[Dedup:containment] Removed "${itemB.description}" (contained in "${itemA.description}")`);
+      }
+      // If A is semantically contained in B (>70%) and B costs more → remove A
+      else if (aInB >= 0.7 && costB >= costA) {
+        toRemove.add(i);
+        console.log(`[Dedup:containment] Removed "${itemA.description}" (contained in "${itemB.description}")`);
+        break; // A is removed, move to next i
+      }
+    }
+  }
+
+  return result.filter((_, idx) => !toRemove.has(idx));
+}
+
+// ==================== LOGISTICS CROSS-CHECK ====================
+
+/**
+ * Keywords that indicate a logistics item overlaps with budget items.
+ * If a logistics item description contains these AND a budget item also contains them,
+ * the logistics item is likely already covered by the SINAPI composition.
+ */
+const LOGISTICS_OVERLAP_KEYWORDS = [
+  ['frete', 'transporte', 'material'],
+  ['cacamba', 'entulho', 'bota-fora', 'residuo', 'demolicao'],
+  ['betoneira', 'locacao'],
+  ['limpeza', 'final'],
+  ['munck', 'icamento', 'guindaste'],
+];
+
+/**
+ * Remove logistics items that overlap with budget items already in the database.
+ * Uses keyword matching to detect when a logistics cost is already covered by
+ * a SINAPI/PINI composition in the budget.
+ */
+function crossCheckLogisticsVsBudget(logisticsCosts: any[], budgetItems: any[]): any[] {
+  const budgetDescriptions = budgetItems.map((item: any) =>
+    normalizeForDedup(item.description || '')
+  );
+
+  return logisticsCosts.filter((cost: any) => {
+    const costDesc = normalizeForDedup(cost.description || '');
+
+    for (const keywordGroup of LOGISTICS_OVERLAP_KEYWORDS) {
+      const costMatchesGroup = keywordGroup.some(kw => costDesc.includes(kw));
+      if (!costMatchesGroup) continue;
+
+      // Check if any budget item also matches these keywords
+      const budgetHasOverlap = budgetDescriptions.some((budgetDesc: string) =>
+        keywordGroup.some(kw => budgetDesc.includes(kw))
+      );
+
+      if (budgetHasOverlap) {
+        console.log(`[Logistica] Cross-check removed: "${cost.description}" (overlaps with budget item)`);
+        return false; // Remove this logistics item
+      }
+    }
+
+    return true; // Keep this logistics item
   });
 }
