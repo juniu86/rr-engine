@@ -31,7 +31,14 @@ export async function persistBudgetItems(
   bdiPercent: number,
 ): Promise<void> {
   await db.deleteBudgetItemsByProjectId(projectId);
-  const items = rawItems.map((item: any) => {
+
+  // Passo 1: Filtrar itens PAI/RESUMO (isSummaryItem=true) para evitar duplicação
+  const filteredItems = rawItems.filter((item: any) => !item.isSummaryItem);
+
+  // Passo 4: Deduplicar por description+unit+category
+  const pricingItems = deduplicateBudgetItems(filteredItems);
+
+  const items = pricingItems.map((item: any) => {
     const quantity = Number(item.quantity) || 0;
     const unitCostTotal = Number(item.unitCostTotal) || 0;
     const totalCost = quantity * unitCostTotal;
@@ -176,4 +183,51 @@ export async function persistAgentOutput(
   }
 
   return finalOutput;
+}
+
+// ==================== DEDUPLICATION ====================
+
+/**
+ * Remove duplicate budget items based on normalized description + unit + category.
+ * Keeps the item with the highest totalCost when duplicates are found.
+ */
+function deduplicateBudgetItems(items: any[]): any[] {
+  const seen = new Map<string, { item: any; index: number }>();
+  const result: any[] = [];
+
+  for (const item of items) {
+    const key = `${normalizeForDedup(item.description || '')}|${(item.unit || '').toLowerCase()}|${(item.category || '').toLowerCase()}`;
+
+    const existing = seen.get(key);
+    if (existing) {
+      // Keep the item with higher total cost (more detailed pricing)
+      const existingCost = Number(existing.item.totalCost) || Number(existing.item.quantity || 0) * Number(existing.item.unitCostTotal || 0);
+      const newCost = Number(item.totalCost) || Number(item.quantity || 0) * Number(item.unitCostTotal || 0);
+
+      if (newCost > existingCost) {
+        result[existing.index] = item;
+        seen.set(key, { item, index: existing.index });
+      }
+      continue; // Skip duplicate
+    }
+
+    seen.set(key, { item, index: result.length });
+    result.push(item);
+  }
+
+  return result;
+}
+
+/**
+ * Normalize description text for deduplication comparison.
+ * Removes accents, common prefixes, and punctuation.
+ */
+function normalizeForDedup(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim()
+    .replace(/\b(fornecimento|instalacao|execucao|servico|pacote)\s*(de|e|do|da|dos|das)?\s*/g, '');
 }
