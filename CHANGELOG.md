@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [3.0.2] - 26 de Março de 2026
+
+### Sprint 3.2 - Maximum Autonomy Rule + Question Whitelist Optimization
+
+#### Adicionado
+- Maximum Autonomy Rule: Agentes podem fazer perguntas ilimitadas quando necessario para completar tarefas
+- Question Whitelist Optimization: Restricao inteligente a area/length/quantity quando apropriado
+- Dynamic Question Strategy: Sistema que adapta estrategia de perguntas baseado em contexto
+
+#### Melhorado
+- Logica de interatividade v2.2 com suporte a autonomia dinamica
+- Reducao de perguntas redundantes mantendo precisao
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+
+---
+
 ## [3.0.1] - 26 de Março de 2026
 
 ### Sprint 3.1 - Smart Auto-Inference + Direct Anthropic API
