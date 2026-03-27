@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## [3.0.5] - 27 de Março de 2026
+
+### Sprint 3.5 - REV_12: Value Divergence + Status Contradiction + Semantic Dedup + Logistics Cross-Check
+
+#### Cinco Correcoes Criticas Implementadas
+
+**1. Divergencia de Valores (Value Divergence Fix)**
+- Problema: Frontend mostra R$880K, Excel mostra R$1.6M
+- Causa: `totalDirectCost` nao era recalculado APOS deduplicacao
+- Solucao: `totalDirectCost` recalculado APOS dedup e salvo no output
+- Impacto: Frontend e Excel mostram mesmo valor, auditoria consistente
+
+**2. Contradicao de Status (Status Contradiction Fix)**
+- Problema: Projeto marcado como "Aprovado + Rejeitado" simultaneamente
+- Causa: Auditor `rejected=true` mas status nao era atualizado
+- Solucao: Auditor `rejected=true` -> status = "review" automaticamente
+- Impacto: Nunca mais estado contraditorio, fluxo claro
+
+**3. Projetos sem Totais (Missing Totals Fix)**
+- Problema: Totais nao eram gravados em `projects` table
+- Causa: Pipeline completava mas nao persistia resumo final
+- Solucao: Totais gravados em `projects` table apos pipeline completo
+- Impacto: Fonte unica de verdade, queries rapidas
+
+**4. Duplicacao Semantica (Semantic Dedup)**
+- Problema: "Sistema drenagem" vs "Canaletas+SAO" = ambos precificados
+- Solucao: `detectContainmentDuplicates()` — keywords 70%+ overlap = remove menor
+- Exemplo: "Piso" + "Revestimento piso" = remove o segundo
+- Impacto: Elimina duplicatas nao-exatas que LLM nao detecta
+
+**5. Logistica Sobreposta (Logistics Cross-Check)**
+- Problema: Frete/betoneira/limpeza duplicados se ja no orcamento
+- Solucao: `crossCheckLogisticsVsBudget()` — keywords vs budget items
+- Validacao: Se "frete" ja em budget, remove de logistics
+- Impacto: Logistica precisa, sem sobreposicoes com SINAPI
+
+#### Impacto Esperado em REV_12
+- Consistencia: Frontend = Excel = Banco de dados
+- Status: Nunca mais contradicoes, fluxo claro
+- Precisao: Deduplicacao semantica + cross-check logistica
+- Confiabilidade: Fonte unica de verdade em `projects` table
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: REV_12 processada com sucesso
+- Consistencia: Frontend/Excel/DB alinhados
+
+---
+
 ## [3.0.4] - 27 de Março de 2026
 
 ### Sprint 3.4 - REV_10→REV_11: Mutual Exclusion + Logistics Anti-Overlap + Unique Item Numbers
