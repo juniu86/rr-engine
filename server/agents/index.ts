@@ -872,8 +872,10 @@ REGRAS:
 
 === HIERARQUIA DE ITENS (EVITAR DUPLICAÇÃO) ===
 Itens com isSummaryItem=true são ITENS PAI (resumo).
-NÃO precifique itens PAI - eles são apenas soma dos filhos.
+Inclua itens PAI no output com isSummaryItem=true, unitCostTotal=0, totalCost=0.
+NÃO precifique itens PAI — eles existem apenas para organização.
 Precifique APENAS itens com isSummaryItem=false ou não definido.
+totalDirectCost = soma APENAS dos itens com isSummaryItem=false.
 Isso evita duplicação de valores no orçamento.
 
 - PROCESSAR TODOS OS GRUPOS DE SERVIÇOS:
@@ -976,10 +978,12 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
     // Build price anchors from real SINAPI/PINI databases (top-15 by value)
     const anchors = this.buildPriceAnchors(input.items || []);
 
-    return `Precifique TODOS os ${totalItems} itens de obra listados abaixo.
+    return `Precifique os itens de obra listados abaixo.
 
-⚠️ IMPORTANTE: Você DEVE retornar exatamente ${totalItems} itens no budgetItems.
-NÃO omita nenhum item. NÃO agrupe itens diferentes.
+⚠️ IMPORTANTE: Precifique APENAS itens FILHOS (isSummaryItem=false ou não definido).
+Itens PAI (isSummaryItem=true) devem estar no output com unitCostTotal=0 e totalCost=0.
+O budgetItems pode ter IGUAL OU MENOS itens que ${totalItems} (menos quando há itens resumo).
+totalDirectCost = soma APENAS dos itens com isSummaryItem=false.
 ${anchors ? `
 === PREÇOS DE REFERÊNCIA (SINAPI/PINI Jan/2025, base SP) ===
 ${anchors}
@@ -1008,7 +1012,8 @@ INSTRUÇÕES:
    - Instalações Hidrossanitárias
    - Instalações Elétricas
 
-VALIDAÇÃO: budgetItems.length DEVE ser igual a ${totalItems}`;
+VALIDAÇÃO: Itens PAI devem ter isSummaryItem=true e totalCost=0.
+totalDirectCost = soma dos itens com isSummaryItem=false (não incluir itens PAI na soma).`;
   }
   
   getOutputSchema(): object {
@@ -1034,6 +1039,8 @@ VALIDAÇÃO: budgetItems.length DEVE ser igual a ${totalItems}`;
               source: { type: "string" },
               sourceCode: { type: "string" },
               sourceDate: { type: "string" },
+              isSummaryItem: { type: "boolean", description: "true se este item é PAI/RESUMO (soma dos filhos). false se é item filho a ser precificado." },
+              parentGroupNumber: { type: "string", description: "Número do grupo pai, se for item filho" },
             },
             required: ["id", "category", "code", "description", "unit", "quantity", "unitCostMaterial", "unitCostLabor", "unitCostLogistics", "unitCostTotal", "totalCost", "source", "sourceCode", "sourceDate"],
             additionalProperties: false,
@@ -2085,7 +2092,18 @@ Calcule o score de 0 a 100:
 - Cada erro crítico: -25 pontos
 - Cada warning: -10 pontos
 
-Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da proposta ser enviada ao cliente.`;
+Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da proposta ser enviada ao cliente.
+
+=== VALIDAÇÃO DE DUPLICATAS (CRÍTICO) ===
+VERIFIQUE se há itens duplicados no orçamento:
+1. Itens com descrição idêntica ou muito similar (>80% de sobreposição textual)
+2. Itens PAI (isSummaryItem=true) que também foram precificados individualmente como filhos
+3. Mesmo serviço aparecendo em pacotes/grupos diferentes (ex: "piso banheiro" nos pacotes 6 e 8)
+4. Premissas operacionais (ex: "destinação de resíduos", "SAO") com linha de custo autônoma
+5. Itens de cobertura (telha, estrutura) que aparecem como sub-item E como item separado
+
+Se encontrar duplicatas, marque como ERRO CRÍTICO e calcule o impacto financeiro estimado
+(soma dos custos duplicados × (1 + BDI%) = inflação no preço de venda).`;
   }
   
   getUserPrompt(input: AuditorInput): string {

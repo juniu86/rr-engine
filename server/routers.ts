@@ -14,6 +14,7 @@ import { generateProposalPDF, generateMemoriaCalculo, generateSchedulePDF } from
 import { stripeRouter } from "./routers/stripe";
 import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
 import { persistAgentOutput, persistBudgetItems, persistLogisticsCosts, persistScheduleItems, persistCashFlowItems } from "./services/agentPersistence";
+import { filterItemsForPricing } from "./utils/hierarchy";
 
 export const appRouter = router({
   system: systemRouter,
@@ -1873,8 +1874,10 @@ export function validateAgentCoherence(results: Record<string, any>): {
   }
   
   // Validação 3: Soma dos itens do orçamento = Total Direto
+  // Filtrar itens PAI (isSummaryItem=true) para evitar duplicação na soma
   const budgetItems = orcamentista.budgetItems || [];
-  const sumBudgetItems = budgetItems.reduce((sum: number, item: any) => {
+  const pricingItems = filterItemsForPricing(budgetItems);
+  const sumBudgetItems = pricingItems.reduce((sum: number, item: any) => {
     return sum + (Number(item.quantity) || 0) * (Number(item.unitCostTotal) || 0);
   }, 0);
   
