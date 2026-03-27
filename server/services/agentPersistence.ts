@@ -36,7 +36,10 @@ export async function persistBudgetItems(
   const filteredItems = rawItems.filter((item: any) => !item.isSummaryItem);
 
   // Passo 4: Deduplicar por description+unit+category
-  const pricingItems = deduplicateBudgetItems(filteredItems);
+  const deduplicatedItems = deduplicateBudgetItems(filteredItems);
+
+  // Correção C: Garantir itemNumber/code único (sufixo para duplicatas)
+  const pricingItems = deduplicateItemNumbers(deduplicatedItems);
 
   const items = pricingItems.map((item: any) => {
     const quantity = Number(item.quantity) || 0;
@@ -230,4 +233,23 @@ function normalizeForDedup(text: string): string {
     .replace(/[^a-z0-9\s]/g, '')
     .trim()
     .replace(/\b(fornecimento|instalacao|execucao|servico|pacote)\s*(de|e|do|da|dos|das)?\s*/g, '');
+}
+
+/**
+ * Ensure unique itemNumber/code for all budget items.
+ * When two items share the same code but have different descriptions,
+ * the duplicate gets a numeric suffix (.1, .2, etc.).
+ */
+function deduplicateItemNumbers(items: any[]): any[] {
+  const seen = new Map<string, number>();
+  return items.map(item => {
+    const code = item.code || '';
+    if (!code) return item;
+    const count = seen.get(code) || 0;
+    seen.set(code, count + 1);
+    if (count > 0) {
+      return { ...item, code: `${code}.${count}` };
+    }
+    return item;
+  });
 }
