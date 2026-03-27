@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## [3.0.4] - 27 de Março de 2026
+
+### Sprint 3.4 - REV_10→REV_11: Mutual Exclusion + Logistics Anti-Overlap + Unique Item Numbers
+
+#### Tres Correcoes Implementadas
+
+**A: Exclusao Mutua (Mutual Exclusion Rule)**
+- Problema: Pacote global + componentes = ambos precificados
+- Solucao: Se pacote pai existe, apenas componentes sao precificados
+- Exemplo Hangar: "VRF" vira PAI, so condensadora/fan coils sao precificados
+- Impacto: Elimina duplicacao de pacotes completos
+
+**B: Anti-Sobreposicao Logistica (Logistics Anti-Overlap)**
+- Problema: Custos ja embutidos em SINAPI sao duplicados na logistica
+- Solucao: Frete <30km, betoneira, limpeza final nao entram em logistica se ja em SINAPI
+- Impacto: Logistica R$128K -> ~R$60K (50% reducao)
+- Validacao: Comparacao automatica com composicoes SINAPI
+
+**C: Numeracao Unica (Unique Item Numbers)**
+- Problema: Mesmo codigo para itens diferentes (7.1 = "Bloco de Apoio" E "Armadura de retracao")
+- Solucao: Validacao de unicidade por (numero + descricao + categoria)
+- Impacto: Previne confusao em rastreamento e auditoria
+
+#### Impacto Esperado em REV_11
+- Custo direto: R$1.96M -> ~R$1.5M (eliminacao dos 5 frentes de duplicacao)
+- Logistica: R$128K -> ~R$60K (removel de sobreposicoes com SINAPI)
+- Preco final: proporcional com BDI mantendo margem
+- Economia total: ~R$460K-520K (~24% reducao)
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: REV_11 processada com sucesso
+
+---
+
 ## [3.0.3] - 26 de Março de 2026
 
 ### Sprint 3.3 - CRITICAL FIX: Eliminate Duplicate Budget Items
