@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## [3.0.6] - 27 de Março de 2026
+
+### Sprint 3.6 - Auditor Ativo v3.2: Editor-Chefe com Correcoes Aprovadas pelo Usuario
+
+#### Experiencia do Usuario Transformada
+
+**Fluxo Completo:**
+1. Pipeline executa normalmente (10 agentes processam memorial)
+2. Auditor (Claude Opus 4.6) analisa 70+ itens do orcamento
+3. Encontra duplicatas e preenche `corrections` com itens a remover
+4. Modal aparece automaticamente com lista de correcoes:
+   - "Sistema VRF completo" — Duplica condensadora + fan coils → -R$75.000
+   - "Frete de materiais pesados" — Ja embutido em SINAPI → -R$15.000
+   - "Limpeza final profissional" — Duplica item 61 do orcamento → -R$8.000
+5. Usuario revisa, desmarca o que quiser, clica "Aplicar"
+6. Backend remove por ID, recalcula preco deterministico
+7. Resumo Financeiro e planilha mostram valores limpos
+
+#### Implementacao Tecnica
+
+**Frontend (ProjectDetails.tsx):**
+- Modal interativa com lista de correcoes
+- Checkboxes para cada item (default: selecionado)
+- Botao "Aplicar Correcoes" chama `applyAuditorCorrections` mutation
+- Feedback visual de economia total
+
+**Backend (server/routers.ts):**
+- Novo router `applyAuditorCorrections` valida e aplica remocoes
+- Recalcula `totalDirectCost`, `totalLogistics`, `totalBDI`
+- Atualiza `projects` table com novos totais
+- Retorna resumo financeiro atualizado
+
+**Auditor (server/agents/index.ts):**
+- Analisa budget items completo com contexto
+- Retorna array de `corrections` com ID, descricao, economia
+- Usa Claude Opus 4.6 para precisao maxima
+
+**Schema (shared/agents.ts):**
+- Novo tipo `AuditorCorrection` com `itemId`, `reason`, `savingsAmount`
+- Tipo `AuditorOutput` com `corrections` array
+
+#### Impacto Esperado
+- Usuario tem controle total: aprova/rejeita cada correcao
+- Transparencia: ve economia de cada item
+- Confianca: pode revisar antes de aplicar
+- Precisao: valores finais 100% consistentes
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: REV_12 processada com modal de correcoes
+- UX: Modal intuitiva, feedback claro
+
+---
+
 ## [3.0.5] - 27 de Março de 2026
 
 ### Sprint 3.5 - REV_12: Value Divergence + Status Contradiction + Semantic Dedup + Logistics Cross-Check
