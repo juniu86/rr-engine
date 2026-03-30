@@ -2156,8 +2156,36 @@ VERIFIQUE se há itens duplicados no orçamento:
 4. Premissas operacionais (ex: "destinação de resíduos", "SAO") com linha de custo autônoma
 5. Itens de cobertura (telha, estrutura) que aparecem como sub-item E como item separado
 
-Se encontrar duplicatas, marque como ERRO CRÍTICO e calcule o impacto financeiro estimado
-(soma dos custos duplicados × (1 + BDI%) = inflação no preço de venda).`;
+Se encontrar duplicatas, liste-as no campo "corrections" (ver abaixo).
+
+=== MODO EDITOR-CHEFE (v3.2) ===
+Além de validar, você DEVE identificar e RECOMENDAR CORREÇÕES no campo "corrections".
+Não basta dizer "há duplicatas" — você deve listar EXATAMENTE quais itens remover.
+
+O usuário verá suas recomendações e decidirá quais aplicar.
+
+PREENCHA corrections.budgetItemsToRemove com itens do orçamento a remover:
+- Itens duplicados (mesma descrição ou descrição contida em outro item)
+- Pacote global quando componentes já estão detalhados (ex: "Sistema VRF" + condensadora + fan coils)
+- Premissas operacionais que não são custos (ex: "SAO - Destinação inicial")
+- Para cada: description (EXATA como aparece na lista), reason (justificativa clara), estimatedImpact (R$)
+
+PREENCHA corrections.logisticsToRemove com custos logísticos sobrepostos:
+- Frete já embutido em composições SINAPI (até 30km)
+- Equipamentos já inclusos nas composições (betoneira, serra)
+- Limpeza que já aparece como item orçamentário
+- Para cada: description, reason, estimatedImpact
+
+PREENCHA corrections.totalImpact = soma de todos os estimatedImpact
+PREENCHA corrections.correctedDirectCost = custo direto atual - impacto orçamento
+PREENCHA corrections.correctedLogisticsCost = logística atual - impacto logística
+
+REGRA DE SELO:
+- Se encontrar duplicatas MAS todas são corrigíveis via corrections → auditSeal = "approved_with_warnings"
+- Se NÃO encontrar duplicatas e tudo está consistente → auditSeal = "approved"
+- SOMENTE use auditSeal = "rejected" para erros NÃO-CORRIGÍVEIS (margem negativa, dados faltantes)
+
+Se NÃO houver correções necessárias, retorne corrections com arrays vazios e totalImpact = 0.`;
   }
   
   getUserPrompt(input: AuditorInput): string {
@@ -2320,6 +2348,43 @@ Retorne o JSON com o resultado completo da auditoria.`;
         auditSeal: { type: "string", enum: ["approved", "approved_with_warnings", "rejected"] },
         auditTimestamp: { type: "string" },
         auditNotes: { type: "string" },
+        corrections: {
+          type: "object",
+          description: "Correções sugeridas pelo Auditor para aprovação do usuário",
+          properties: {
+            budgetItemsToRemove: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  description: { type: "string", description: "Descrição exata do item a remover (como aparece no orçamento)" },
+                  reason: { type: "string", description: "Justificativa: duplicata de X, contido em Y, premissa operacional, etc." },
+                  estimatedImpact: { type: "number", description: "Valor em R$ que será removido do custo direto" },
+                },
+                required: ["description", "reason", "estimatedImpact"],
+                additionalProperties: false,
+              },
+            },
+            logisticsToRemove: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  description: { type: "string", description: "Descrição exata do custo logístico a remover" },
+                  reason: { type: "string", description: "Justificativa: já embutido em SINAPI, duplica item X, etc." },
+                  estimatedImpact: { type: "number", description: "Valor em R$ que será removido da logística" },
+                },
+                required: ["description", "reason", "estimatedImpact"],
+                additionalProperties: false,
+              },
+            },
+            totalImpact: { type: "number", description: "Soma total de todos os estimatedImpact (redução no custo)" },
+            correctedDirectCost: { type: "number", description: "Custo direto após remoção dos itens duplicados" },
+            correctedLogisticsCost: { type: "number", description: "Custo logístico após remoção das sobreposições" },
+          },
+          required: ["budgetItemsToRemove", "logisticsToRemove", "totalImpact", "correctedDirectCost", "correctedLogisticsCost"],
+          additionalProperties: false,
+        },
       },
       required: ["isValid", "validationScore", "criticalErrors", "warnings", "validations", "crossAgentChecks", "financialSummary", "auditSeal", "auditTimestamp", "auditNotes"],
       additionalProperties: false,

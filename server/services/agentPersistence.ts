@@ -285,7 +285,7 @@ function deduplicateBudgetItems(items: any[]): any[] {
  * Normalize description text for deduplication comparison.
  * Removes accents, common prefixes, and punctuation.
  */
-function normalizeForDedup(text: string): string {
+export function normalizeForDedup(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
