@@ -494,4 +494,20 @@ export interface AuditorOutput {
   auditSeal: "approved" | "approved_with_warnings" | "rejected";
   auditTimestamp: string;
   auditNotes: string;
+  /** Correções sugeridas pelo Auditor para aprovação do usuário (v3.2) */
+  corrections?: {
+    budgetItemsToRemove: Array<{
+      description: string;
+      reason: string;
+      estimatedImpact: number;
+    }>;
+    logisticsToRemove: Array<{
+      description: string;
+      reason: string;
+      estimatedImpact: number;
+    }>;
+    totalImpact: number;
+    correctedDirectCost: number;
+    correctedLogisticsCost: number;
+  };
 }

@@ -87,6 +87,13 @@ export default function ProjectDetails() {
   
   // Estado para exibir histórico de interações
   const [showInteractionHistory, setShowInteractionHistory] = useState(false);
+
+  // Estados para correções do Auditor (v3.2)
+  const [showAuditCorrections, setShowAuditCorrections] = useState(false);
+  const [auditCorrections, setAuditCorrections] = useState<any>(null);
+  const [selectedBudgetRemovals, setSelectedBudgetRemovals] = useState<Record<string, boolean>>({});
+  const [selectedLogisticsRemovals, setSelectedLogisticsRemovals] = useState<Record<string, boolean>>({});
+  const [correctionsAlreadyApplied, setCorrectionsAlreadyApplied] = useState(false);
   
   const { data: details, isLoading, refetch } = trpc.project.getDetails.useQuery(
     { id: projectId },
@@ -327,6 +334,40 @@ export default function ProjectDetails() {
       }
     }
   }, [waitingForInputAgent, showMissingInfoDialog]);
+
+  // Detectar correções do Auditor (v3.2)
+  useEffect(() => {
+    if (correctionsAlreadyApplied) return;
+    const auditorExec = agentExecutions?.find((e: any) => e.agentType === 'auditor');
+    if (auditorExec?.status === 'completed') {
+      const output = auditorExec.output as any;
+      const corrections = output?.corrections;
+      if (corrections && (corrections.budgetItemsToRemove?.length > 0 || corrections.logisticsToRemove?.length > 0)) {
+        setAuditCorrections(corrections);
+        // Pre-select all items for removal
+        const budgetSelections: Record<string, boolean> = {};
+        corrections.budgetItemsToRemove?.forEach((item: any) => { budgetSelections[item.description] = true; });
+        setSelectedBudgetRemovals(budgetSelections);
+        const logisticsSelections: Record<string, boolean> = {};
+        corrections.logisticsToRemove?.forEach((item: any) => { logisticsSelections[item.description] = true; });
+        setSelectedLogisticsRemovals(logisticsSelections);
+        setShowAuditCorrections(true);
+      }
+    }
+  }, [agentExecutions, correctionsAlreadyApplied]);
+
+  // Mutation para aplicar correções do Auditor
+  const applyAuditCorrections = trpc.agent.applyAuditCorrections.useMutation({
+    onSuccess: (data: any) => {
+      setShowAuditCorrections(false);
+      setCorrectionsAlreadyApplied(true);
+      refetch();
+      toast.success(`Correções aplicadas: ${data.budgetItemsRemoved} itens do orçamento e ${data.logisticsRemoved} custos logísticos removidos. Novo custo direto: R$ ${data.correctedDirectCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+    },
+    onError: (error: any) => {
+      toast.error(`Erro ao aplicar correções: ${error.message}`);
+    },
+  });
 
   // Verificar itens opcionais após execução da logística
   useEffect(() => {
@@ -1877,6 +1918,93 @@ export default function ProjectDetails() {
                 <CheckCircle2 className="mr-2 h-4 w-4" />
               )}
               Enviar Dados e Continuar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Correções do Auditor (v3.2) */}
+      <Dialog open={showAuditCorrections} onOpenChange={setShowAuditCorrections}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Correções Sugeridas pelo Auditor</DialogTitle>
+            <DialogDescription>
+              O Auditor identificou itens duplicados ou sobrepostos. Revise e aprove as remoções sugeridas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {auditCorrections?.budgetItemsToRemove?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Itens do Orçamento a Remover</h4>
+                {auditCorrections.budgetItemsToRemove.map((item: any, i: number) => (
+                  <div key={`budget-${i}`} className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                    <Checkbox
+                      checked={selectedBudgetRemovals[item.description] ?? true}
+                      onCheckedChange={(checked) =>
+                        setSelectedBudgetRemovals(prev => ({ ...prev, [item.description]: !!checked }))
+                      }
+                    />
+                    <div className="flex-1 text-sm">
+                      <div className="font-medium">{item.description}</div>
+                      <div className="text-muted-foreground">{item.reason}</div>
+                      <div className="text-red-500 font-medium">-R$ {Number(item.estimatedImpact).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {auditCorrections?.logisticsToRemove?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Custos Logísticos a Remover</h4>
+                {auditCorrections.logisticsToRemove.map((item: any, i: number) => (
+                  <div key={`logistics-${i}`} className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                    <Checkbox
+                      checked={selectedLogisticsRemovals[item.description] ?? true}
+                      onCheckedChange={(checked) =>
+                        setSelectedLogisticsRemovals(prev => ({ ...prev, [item.description]: !!checked }))
+                      }
+                    />
+                    <div className="flex-1 text-sm">
+                      <div className="font-medium">{item.description}</div>
+                      <div className="text-muted-foreground">{item.reason}</div>
+                      <div className="text-red-500 font-medium">-R$ {Number(item.estimatedImpact).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {auditCorrections && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg text-sm">
+                <div className="font-semibold">Impacto total estimado: -R$ {Number(auditCorrections.totalImpact || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                <div className="text-muted-foreground">Custo direto corrigido: R$ {Number(auditCorrections.correctedDirectCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowAuditCorrections(false)}>
+              Ignorar
+            </Button>
+            <Button
+              onClick={() => {
+                const budgetToRemove = Object.entries(selectedBudgetRemovals)
+                  .filter(([_, selected]) => selected)
+                  .map(([desc]) => desc);
+                const logisticsToRemove = Object.entries(selectedLogisticsRemovals)
+                  .filter(([_, selected]) => selected)
+                  .map(([desc]) => desc);
+                applyAuditCorrections.mutate({
+                  projectId: projectId!,
+                  budgetItemsToRemove: budgetToRemove,
+                  logisticsToRemove,
+                });
+              }}
+              disabled={applyAuditCorrections.isPending}
+            >
+              {applyAuditCorrections.isPending ? 'Aplicando...' : 'Aplicar Correções Selecionadas'}
             </Button>
           </DialogFooter>
         </DialogContent>

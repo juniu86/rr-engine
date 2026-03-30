@@ -13,7 +13,7 @@ import { searchPini, getPiniComposition, comparePrices } from "./services/pini";
 import { generateProposalPDF, generateMemoriaCalculo, generateSchedulePDF } from "./services/documents";
 import { stripeRouter } from "./routers/stripe";
 import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
-import { persistAgentOutput, persistBudgetItems, persistLogisticsCosts, persistScheduleItems, persistCashFlowItems } from "./services/agentPersistence";
+import { persistAgentOutput, persistBudgetItems, persistLogisticsCosts, persistScheduleItems, persistCashFlowItems, normalizeForDedup } from "./services/agentPersistence";
 import { filterItemsForPricing } from "./utils/hierarchy";
 
 export const appRouter = router({
@@ -632,6 +632,99 @@ export const appRouter = router({
         });
         
         return { success: true, message: "Proposta confirmada com sucesso!" };
+      }),
+
+    // Aplicar correções sugeridas pelo Auditor (v3.2)
+    applyAuditCorrections: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        budgetItemsToRemove: z.array(z.string()),
+        logisticsToRemove: z.array(z.string()),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // 1. Validar ownership
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+
+        let budgetRemoved = 0;
+        let logisticsRemoved = 0;
+
+        // 2. Remover budget items por matching de descrição → delete por ID
+        if (input.budgetItemsToRemove.length > 0) {
+          const allBudgetItems = await db.getBudgetItemsByProjectId(input.projectId);
+          for (const descToRemove of input.budgetItemsToRemove) {
+            const normalized = normalizeForDedup(descToRemove);
+            const match = allBudgetItems.find((item: any) =>
+              normalizeForDedup(item.description || '') === normalized
+            );
+            if (match) {
+              await db.deleteBudgetItemById(match.id);
+              budgetRemoved++;
+              console.log(`[AuditCorrections] Removed budget item: "${match.description}" (ID: ${match.id})`);
+            }
+          }
+        }
+
+        // 3. Remover logistics items por matching de descrição → delete por ID
+        if (input.logisticsToRemove.length > 0) {
+          const allLogistics = await db.getLogisticsCostsByProjectId(input.projectId);
+          for (const descToRemove of input.logisticsToRemove) {
+            const normalized = normalizeForDedup(descToRemove);
+            const match = allLogistics.find((item: any) =>
+              normalizeForDedup(item.description || '') === normalized
+            );
+            if (match) {
+              await db.deleteLogisticsCostById(match.id);
+              logisticsRemoved++;
+              console.log(`[AuditCorrections] Removed logistics cost: "${match.description}" (ID: ${match.id})`);
+            }
+          }
+        }
+
+        // 4. Recalcular totais deterministicamente
+        const remainingBudget = await db.getBudgetItemsByProjectId(input.projectId);
+        const correctedDirectCost = remainingBudget.reduce(
+          (sum: number, item: any) => sum + Number(item.totalCost || 0), 0
+        );
+        const remainingLogistics = await db.getLogisticsCostsByProjectId(input.projectId);
+        const correctedLogisticsCost = remainingLogistics.reduce(
+          (sum: number, c: any) => sum + Number(c.totalCost || 0), 0
+        );
+
+        const bdiPercent = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) : 25;
+        const baseCost = correctedDirectCost + correctedLogisticsCost;
+        const correctedFinalPrice = Math.round(baseCost * (1 + bdiPercent / 100) * 100) / 100;
+
+        // 5. Atualizar projects table com totais corrigidos
+        await db.updateProject(input.projectId, {
+          totalCostDirect: String(Math.round(correctedDirectCost * 100) / 100),
+          totalCostIndirect: String(Math.round(correctedLogisticsCost * 100) / 100),
+          totalPrice: String(correctedFinalPrice),
+        });
+
+        // 6. Atualizar agentExecution do Orçamentista com totalDirectCost corrigido
+        try {
+          const executions = await db.getAgentExecutionsByProjectId(input.projectId);
+          const orcExec = executions.find((e: any) => e.agentType === 'orcamentista');
+          if (orcExec && orcExec.output) {
+            const updatedOutput = { ...(orcExec.output as any), totalDirectCost: Math.round(correctedDirectCost * 100) / 100 };
+            await db.updateAgentExecution(orcExec.id, { output: updatedOutput as any });
+          }
+        } catch (err) {
+          console.error('[AuditCorrections] Error updating orcamentista execution:', err);
+        }
+
+        console.log(`[AuditCorrections] Applied: ${budgetRemoved} budget items removed, ${logisticsRemoved} logistics removed. New cost: R$${correctedDirectCost.toFixed(2)}, Price: R$${correctedFinalPrice.toFixed(2)}`);
+
+        return {
+          success: true,
+          budgetItemsRemoved: budgetRemoved,
+          logisticsRemoved,
+          correctedDirectCost: Math.round(correctedDirectCost * 100) / 100,
+          correctedLogisticsCost: Math.round(correctedLogisticsCost * 100) / 100,
+          correctedFinalPrice,
+        };
       }),
 
     // Obter alertas pendentes do Board

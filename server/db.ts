@@ -298,6 +298,12 @@ export async function deleteBudgetItemsByProjectId(projectId: number): Promise<v
   await db.delete(budgetItems).where(eq(budgetItems.projectId, projectId));
 }
 
+export async function deleteBudgetItemById(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(budgetItems).where(eq(budgetItems.id, id));
+}
+
 // ==================== LOGISTICS COST QUERIES ====================
 export async function createLogisticsCosts(costs: InsertLogisticsCost[]): Promise<void> {
   const db = await getDb();
@@ -320,6 +326,12 @@ export async function deleteLogisticsCostsByProjectId(projectId: number): Promis
   if (!db) throw new Error("Database not available");
   
   await db.delete(logisticsCosts).where(eq(logisticsCosts.projectId, projectId));
+}
+
+export async function deleteLogisticsCostById(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(logisticsCosts).where(eq(logisticsCosts.id, id));
 }
 
 // ==================== SCHEDULE ITEM QUERIES ====================
