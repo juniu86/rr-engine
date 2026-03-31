@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## [3.0.8] - 31 de Março de 2026
+
+### Sprint 3.8 - Board v3.3: Modo Solucionador com Parcelas Dinâmicas de Pagamento
+
+#### Transformacao do Comportamento do Board
+
+**Antes (Lava Rápido REV_03):**
+```
+Board: "PROJETO NÃO RECOMENDADO. Exposição de R$211K sem adiantamento. BLOQUEADO."
+→ Projeto parado. Usuário frustrado.
+```
+
+**Depois:**
+```
+Board: "PROJETO APROVADO COM CONDIÇÕES.
+  Solução para caixa: Medição intermediária de 40% na semana 3.
+  Cronograma sugerido: 30% entrada + 40% medição + 30% final.
+  Cash flow recalculado: exposição zerada.
+  Condição: Negociar medição intermediária com cliente."
+→ Projeto segue. Backend recalcula cash flow automaticamente.
+```
+
+#### Implementacao Tecnica
+
+**Board Agent (server/agents/index.ts):**
+- Novo modo: "Solucionador" em vez de "Bloqueador"
+- Analisa cash flow deficit e propoe `suggestedBillingSchedule`
+- Retorna array de parcelas com: `percentage`, `week`, `description`
+- Usa Claude Opus 4.6 para precisao maxima
+
+**Backend Router (server/routers.ts):**
+- Novo endpoint `recalculateCashFlow` aplica parcelas sugeridas
+- Recalcula exposicao em cada semana
+- Atualiza `projects` table com novo cash flow
+- Retorna resumo financeiro com exposição zerada
+
+**Schema (drizzle/schema.ts + shared/agents.ts):**
+- Novo campo `suggestedBillingSchedule` em BoardOutput
+- Tipo `BillingInstallment` com `percentage`, `week`, `description`
+- Persistencia em `projects` table
+
+#### Impacto Esperado
+- Projetos com deficit de caixa: agora aprovados com condições
+- Usuário: ve solução clara e negociaável
+- Cash flow: recalculado automaticamente
+- Confianca: Board propoe, usuario negocia com cliente
+
+#### Proximas Iteracoes
+- Fallback deterministico: funcao `solveCashFlowDeficit()` como rede de seguranca
+- Quando: se Claude Opus nao preencher `suggestedBillingSchedule`
+- Implementacao: proxima iteracao apos validacao em producao
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: Lava Rápido REV_04 processada com sucesso
+- UX: Board propoe solução, usuario aprova
+
+---
+
 ## [3.0.7] - 31 de Março de 2026
 
 ### Sprint 3.7 - Robust agentType Validation + suggestedValues Pre-Population + Sanitization
