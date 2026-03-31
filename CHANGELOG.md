@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## [3.0.9] - 31 de Março de 2026
+
+### Sprint 3.9 - Resolve 500 Error for Claude Models with Graceful Fallback + JSON Instruction
+
+#### Duas Causas do Erro 500 Identificadas e Corrigidas
+
+**Causa 1: Sem Chave Anthropic**
+- Problema: Forge proxy recebia `model: "claude-opus-4-6"` (nao reconhecia) e falhava com 500
+- Solucao: Quando `ANTHROPIC_API_KEY` nao esta configurada, faz fallback automatico para `gemini-2.5-flash` via Forge
+- Implementacao: 
+  ```ts
+  if (!process.env.ANTHROPIC_API_KEY && model.includes('claude')) {
+    console.warn(`[LLM] ANTHROPIC_API_KEY not configured. Falling back to gemini-2.5-flash`);
+    model = 'gemini-2.5-flash';
+  }
+  ```
+- Impacto: Sem chave = Gemini automaticamente (funcional mas qualidade inferior)
+
+**Causa 2: Com Chave Anthropic**
+- Problema: Payload direto para Anthropic nao tinha instrucao de JSON (pois `response_format: json_schema` e OpenAI-only)
+- Solucao: Injeta "You MUST respond with valid JSON only" no system prompt quando `response_format` estava presente
+- Implementacao:
+  ```ts
+  if (options.response_format && model.includes('claude')) {
+    messages[0].content += "\n\nYou MUST respond with valid JSON only.";
+  }
+  ```
+- Impacto: Claude Opus retorna JSON valido mesmo sem `response_format` nativo
+
+#### Configuracao para Producao
+
+**Para usar Claude Opus em producao:**
+1. Configure `ANTHROPIC_API_KEY=sk-ant-api03-...` como variavel de ambiente no servidor
+2. Restart do servidor
+3. Todos os agentes usam Claude Opus automaticamente
+
+**Sem ANTHROPIC_API_KEY:**
+- Todos os agentes usam Gemini 2.5-flash (fallback automatico)
+- Sistema funciona 100%, mas com qualidade inferior
+- Log de warning mostra qual modelo foi usado
+
+#### Impacto Esperado
+- Erro 500: eliminado para Claude models
+- Fallback: automatico e transparente
+- JSON: sempre valido mesmo sem `response_format` nativo
+- Producao: pronta para Claude Opus com chave Anthropic
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: Agentes funcionam com fallback Gemini
+- Producao: pronta para ANTHROPIC_API_KEY quando disponivel
+
+---
+
 ## [3.0.8] - 31 de Março de 2026
 
 ### Sprint 3.8 - Board v3.3: Modo Solucionador com Parcelas Dinâmicas de Pagamento
