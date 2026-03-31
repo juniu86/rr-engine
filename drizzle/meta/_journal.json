@@ -113,6 +113,13 @@
       "when": 1774551279373,
       "tag": "0015_minor_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1774969983065,
+      "tag": "0016_lush_maginty",
+      "breakpoints": true
     }
   ]
 }
