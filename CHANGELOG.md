@@ -1,5 +1,81 @@
 # CHANGELOG
 
+## [3.1.0] - 31 de Março de 2026
+
+### Sprint 4.0 - Intelligent Chunking of Orçamentista by Discipline Fronts
+
+#### Escalabilidade para Memoriais Grandes (100+ itens)
+
+**Problema Resolvido:**
+- Memoriais com 100+ itens causavam timeout ou truncamento no Orçamentista
+- LLM nao conseguia processar contexto tao grande de uma vez
+- Qualidade da orçamentacao degradava com tamanho do memorial
+
+**Solucao Implementada:**
+
+1. **needsBudgetChunking()** — Threshold: 30 itens
+   - Projetos com <30 itens: bypass direto (zero mudanca)
+   - Projetos com 30+ itens: ativa chunking automatico
+
+2. **groupItemsByFront()** — Agrupa por prefixo do campo group
+   - Exemplo: "3. Cobertura", "3.1 Telhas", "3.2 Calhas" → grupo "3"
+   - Respeita estrutura hierarquica do memorial
+
+3. **splitItemsIntoFronts()** — Chunks de ate 25 itens
+   - Respeita fronteiras de grupo (nao divide grupo no meio)
+   - PAI injetado em sub-chunks de grupos grandes
+   - Metadata: _chunkInfo com numero do chunk e total
+
+4. **createOrcamentistaChunkedInputs()** — Cria inputs com metadata
+   - Header no getUserPrompt indicando frente atual ao LLM
+   - Exemplo: "[Chunk 2/5] Processando frente 4: Estrutura"
+
+5. **mergeOrcamentistaOutputs()** — Consolida outputs
+   - Merge de budgetItems de todos os chunks
+   - Dedup por description+unit+category
+   - totalDirectCost recalculado via filterItemsForPricing()
+
+#### Implementacao Tecnica
+
+**Novo arquivo: server/agents/budgetChunking.ts (~363 linhas)**
+- Exporta: needsBudgetChunking, groupItemsByFront, splitItemsIntoFronts, etc
+- Logica pura, sem dependencias de agentes
+- Testavel isoladamente
+
+**Modificacao: server/agents/index.ts (+41 linhas)**
+- Override OrcamentistaAgent.execute() com chunking automatico
+- Se needsBudgetChunking() = true: processa chunks sequencialmente
+- Se needsBudgetChunking() = false: comportamento original
+
+#### Impacto Esperado
+- Memoriais <30 itens: zero mudanca
+- Memoriais 30-100 itens: qualidade melhorada, sem timeout
+- Memoriais 100+ itens: agora processaveis (antes impossivel)
+- Tempo total: pode aumentar (N chunks em sequencia), mas qualidade melhora
+- Precisao: cada chunk tem contexto menor, LLM mais preciso
+
+#### Comportamento Exemplo
+
+**Entrada: Memorial com 85 itens em 6 frentes**
+```
+Chunk 1/6: Frente 1 (Fundacoes) — 15 itens
+Chunk 2/6: Frente 2 (Estrutura) — 18 itens
+Chunk 3/6: Frente 3 (Cobertura) — 12 itens
+Chunk 4/6: Frente 4 (Alvenaria) — 14 itens
+Chunk 5/6: Frente 5 (Instalacoes) — 16 itens
+Chunk 6/6: Frente 6 (Acabamentos) — 10 itens
+
+Merge: 85 itens consolidados, dedup aplicada, totalDirectCost recalculado
+```
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: Memoriais <30 itens funcionam identicamente
+- Teste de escalabilidade: Memoriais 100+ itens agora processaveis
+
+---
+
 ## [3.0.9] - 31 de Março de 2026
 
 ### Sprint 3.9 - Resolve 500 Error for Claude Models with Graceful Fallback + JSON Instruction
