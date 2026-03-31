@@ -335,6 +335,19 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     return invokeAnthropicDirect(payload, modelName);
   }
 
+  // If Claude model requested but no Anthropic key, fallback to default model via Forge
+  // (Forge may not support claude-opus-4-6 or similar model names)
+  if (isClaudeModel && !hasAnthropicKey) {
+    const fallbackModel = process.env.LLM_MODEL ?? "gemini-2.5-flash";
+    console.warn(`[LLM] No ANTHROPIC_API_KEY configured. Falling back from ${modelName} to ${fallbackModel} via Forge.`);
+    payload.model = fallbackModel;
+    // Recalculate capabilities for fallback model
+    const fallbackCapabilities = getProviderCapabilities(fallbackModel);
+    payload.max_tokens = params.maxTokens ?? params.max_tokens ?? fallbackCapabilities.maxOutputTokens;
+    // Remove thinking param (not supported by Gemini/GPT)
+    delete (payload as any).thinking;
+  }
+
   // ─── Fallback: Forge proxy (Gemini, GPT, or Claude without direct key) ────────
   const response = await fetch(resolveApiUrl(), {
     method: "POST",
@@ -375,17 +388,26 @@ async function invokeAnthropicDirect(
   const systemMsg = messages.find(m => m.role === 'system');
   const nonSystemMessages = messages.filter(m => m.role !== 'system');
 
-  // 2. Build Anthropic-format payload
+  // 2. Build Anthropic-format payload (ONLY supported fields — no response_format, no thinking)
   const anthropicPayload: Record<string, unknown> = {
     model: modelName,
     max_tokens: (payload.max_tokens as number) ?? 32768,
     messages: nonSystemMessages,
   };
 
+  // Extract system message content + inject JSON instruction
+  // (Anthropic doesn't support response_format, so we tell the LLM to output JSON in the system prompt)
+  let systemContent = '';
   if (systemMsg) {
-    anthropicPayload.system = typeof systemMsg.content === 'string'
+    systemContent = typeof systemMsg.content === 'string'
       ? systemMsg.content
       : JSON.stringify(systemMsg.content);
+  }
+  if (payload.response_format) {
+    systemContent += '\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code blocks, no explanatory text — ONLY the raw JSON object.';
+  }
+  if (systemContent) {
+    anthropicPayload.system = systemContent;
   }
 
   // 3. Call Anthropic API
