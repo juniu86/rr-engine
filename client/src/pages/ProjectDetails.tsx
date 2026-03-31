@@ -324,12 +324,23 @@ export default function ProjectDetails() {
   useEffect(() => {
     if (waitingForInputAgent && !showMissingInfoDialog) {
       const output = waitingForInputAgent.output as any;
-      const requests = output?.missingInfoRequests || 
+      const requests = output?.missingInfoRequests ||
                        (waitingForInputAgent as any).missingInfoRequests || [];
-      
+
       if (requests.length > 0) {
         setMissingInfoRequests(requests);
         setWaitingAgentType(waitingForInputAgent.agentType);
+        // Pre-populate userResponses with suggestedValues from requests
+        const prePopulated: Record<string, string | number> = {};
+        for (const req of requests) {
+          const suggested = (req as any).suggestedValue;
+          if (suggested !== undefined && suggested !== null && suggested !== '') {
+            prePopulated[req.fieldId] = suggested;
+          }
+        }
+        if (Object.keys(prePopulated).length > 0) {
+          setUserResponses(prev => ({ ...prePopulated, ...prev }));
+        }
         setShowMissingInfoDialog(true);
       }
     }
