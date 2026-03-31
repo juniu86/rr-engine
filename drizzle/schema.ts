@@ -49,6 +49,8 @@ export const projects = mysqlTable("projects", {
   financialRevisionCycle: int("financialRevisionCycle").default(0), // 0 = sem revisão, 1 = em revisão financeira
   financialRevisionReason: text("financialRevisionReason"), // Motivo da revisão financeira (instruções do Board)
   financialRevisionInstructions: json("financialRevisionInstructions"), // Instruções detalhadas para cada agente
+  // Cronograma de pagamento por projeto (sugerido pelo Board ou configurado pelo usuário)
+  billingInstallments: json("billingInstallments"), // [{name: "Entrada", percentage: 30}, {name: "Medição", percentage: 40}, {name: "Final", percentage: 30}]
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [

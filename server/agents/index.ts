@@ -1851,7 +1851,49 @@ Sinais de alerta:
 - BDI < 15% em obra pequena → margem insuficiente para contingências
 - BDI > 40% → proposta não-competitiva, risco de perder licitação
 - Logística > 20% do custo direto → verificar se localização justifica
-- Prazo < 2 semanas para obras > R$ 100k → provavelmente inviável`;
+- Prazo < 2 semanas para obras > R$ 100k → provavelmente inviável
+
+=== MODO SOLUCIONADOR (v3.3) ===
+Você NÃO é um porteiro que bloqueia. Você é um CONSULTOR EXECUTIVO que RESOLVE.
+Quando detectar um problema, sua PRIMEIRA reação deve ser PROPOR UMA SOLUÇÃO.
+
+PROBLEMA → SOLUÇÃO:
+
+1. CAIXA NEGATIVO EM SEMANA X:
+   → Propor medição intermediária na semana X
+   → Calcular percentual mínimo para manter caixa positivo
+   → Preencher suggestedBillingSchedule com novo cronograma de parcelas
+   Exemplo: caixa negativo na semana 3 de 4 →
+   suggestedBillingSchedule: {
+     installments: [
+       {name: "Entrada", percentage: 30},
+       {name: "Medição intermediária (semana 3)", percentage: 40},
+       {name: "Final", percentage: 30}
+     ],
+     reason: "Caixa projetado negativo na semana 3. Medição intermediária resolve a exposição.",
+     projectedMaxExposure: 0
+   }
+
+2. PRAZO APERTADO:
+   → Sugerir prazo realista e justificar
+   → NÃO bloquear — propor prazo correto como condição de aprovação
+
+3. DADOS FALTANTES (vistoria, detalhamento):
+   → Prosseguir com premissas conservadoras (+15% contingência)
+   → Listar como condição: "Vistoria necessária antes da execução"
+   → NÃO bloquear — sinalizar como warning com plano de mitigação
+
+4. EXPOSIÇÃO DE CAIXA ALTA:
+   → Propor cronograma de medições que elimine a exposição
+   → Se impossível eliminar, propor linha de crédito como condição
+
+REGRA FUNDAMENTAL DE BLOQUEIO:
+blockProposal = true SOMENTE quando:
+- Margem de lucro < 5% (projeto dá prejuízo real)
+- Memorial completamente incompatível com orçamento (>50% de itens sem preço)
+
+Para TODOS os outros casos → approved=true ou requiresUserConfirmation=true
+com soluções e condições claras. Nunca bloqueie por problemas que têm solução.`;
   }
   
   getUserPrompt(input: BoardInput): string {
@@ -2076,6 +2118,28 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
             comercial: { type: "string", description: "Instruções específicas para o Comercial" },
           },
           required: ["orcamentista", "logistica", "tributario", "comercial"],
+          additionalProperties: false,
+        },
+        suggestedBillingSchedule: {
+          type: "object",
+          description: "Cronograma de pagamento sugerido para resolver problemas de caixa",
+          properties: {
+            installments: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Nome da parcela (Entrada, Medição, Final)" },
+                  percentage: { type: "number", description: "Percentual do preço total (0-100)" },
+                },
+                required: ["name", "percentage"],
+                additionalProperties: false,
+              },
+            },
+            reason: { type: "string", description: "Justificativa para o cronograma sugerido" },
+            projectedMaxExposure: { type: "number", description: "Exposição máxima projetada com o novo cronograma" },
+          },
+          required: ["installments", "reason", "projectedMaxExposure"],
           additionalProperties: false,
         },
       },
