@@ -1903,10 +1903,19 @@ export default function ProjectDetails() {
                   toast.error("Erro interno: tipo de agente inválido.");
                   return;
                 }
+
+                // Sanitizar userResponses: remover chaves vazias, converter strings numéricas
+                const sanitizedResponses: Record<string, string | number> = {};
+                for (const [key, value] of Object.entries(userResponses)) {
+                  if (value === "" || value === null || value === undefined) continue;
+                  if (typeof value === 'number' && isNaN(value)) continue;
+                  sanitizedResponses[key] = value;
+                }
+
                 continueAgent.mutate({
                   projectId,
                   agentType: normalizedAgentType as any,
-                  userResponses,
+                  userResponses: sanitizedResponses,
                 });
               }}
               disabled={continueAgent.isPending}

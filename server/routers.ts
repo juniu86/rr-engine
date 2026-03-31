@@ -862,7 +862,7 @@ export const appRouter = router({
         agentType: z.string()
           .transform((val) => val.trim().toLowerCase())
           .pipe(z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"])),
-        userResponses: z.record(z.string(), z.union([z.string(), z.number()])),
+        userResponses: z.record(z.string(), z.union([z.string(), z.number()]).nullable().transform(v => v ?? "")).default({}),
       }))
       .mutation(async ({ ctx, input }) => {
         const project = await db.getProjectById(input.projectId);
