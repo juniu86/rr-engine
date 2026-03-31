@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## [3.0.7] - 31 de Março de 2026
+
+### Sprint 3.7 - Robust agentType Validation + suggestedValues Pre-Population + Sanitization
+
+#### Tres Correcoes Implementadas
+
+**1. agentType Validation Robusta**
+- Problema: "Engenheiro Técnico", "engenheiro-tecnico", "ENGENHEIRO_TECNICO" falhavam em validacao
+- Solucao: `.transform()` com normalizacao NFD (remove acentos) + `.refine()`
+- Implementacao: 
+  ```ts
+  agentType: z.string()
+    .transform(val => val.trim().toLowerCase().normalize('NFD'))
+    .refine(val => VALID_AGENT_TYPES.includes(val), { message: 'Invalid agent type' })
+  ```
+- Impacto: Todos os formatos resolvem para `"engenheiro_tecnico"` canonico
+
+**2. suggestedValues Pre-Population**
+- Problema: Modal mostrava valor sugerido mas nao o incluia no payload ao submeter
+- Causa: Valores sugeridos nao eram copiados para `userResponses`
+- Solucao: Quando modal abre com `suggestedValues`, copiar imediatamente para `userResponses`
+- Implementacao: `setUserResponses({ ...suggestedValues, ...userResponses })`
+- Impacto: Valores sugeridos sao incluidos no payload, menos cliques do usuario
+
+**3. Sanitizacao Robusta**
+- Problema: Valores `null`, `""`, `NaN` causavam erros de validacao
+- Solucao: Frontend remove valores invalidos antes de enviar, backend aceita `null` e converte para `""`
+- Implementacao:
+  ```ts
+  const sanitized = Object.entries(userResponses)
+    .filter(([_, v]) => v !== null && v !== '' && !Number.isNaN(v))
+    .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {})
+  ```
+- Impacto: Validacao Zod nunca falha por valores invalidos
+
+#### Impacto Esperado
+- Transicao Engenheiro -> Orcamentista: 100% confiavel
+- Modal com suggestedValues: usuario nao precisa re-digitar
+- Erros de validacao: eliminados para campos vazios/null
+- Fluxo: mais fluido, menos cliques, menos erros
+
+#### Validacao
+- TypeScript: 0 erros
+- Testes: 407 testes passando
+- Teste de regressao: Transicao entre agentes funciona
+- UX: Modal pre-populada, menos erros
+
+---
+
 ## [3.0.6] - 27 de Março de 2026
 
 ### Sprint 3.6 - Auditor Ativo v3.2: Editor-Chefe com Correcoes Aprovadas pelo Usuario
