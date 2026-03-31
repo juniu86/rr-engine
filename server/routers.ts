@@ -860,9 +860,18 @@ export const appRouter = router({
       .input(z.object({
         projectId: z.number(),
         agentType: z.string()
-          .transform((val) => val.trim().toLowerCase())
-          .pipe(z.enum(["engenheiro_tecnico", "orcamentista", "logistica", "tributario", "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"])),
-        userResponses: z.record(z.string(), z.union([z.string(), z.number()])),
+          .transform((val) => {
+            // Normalize: trim, lowercase, replace spaces/hyphens with underscores, remove accents
+            return val.trim().toLowerCase()
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/[\s-]+/g, '_')
+              .replace(/[^a-z0-9_]/g, '');
+          })
+          .refine((val) => [
+            "engenheiro_tecnico", "orcamentista", "logistica", "tributario",
+            "comercial", "gestao_projetos", "financeiro", "juridico", "board", "auditor"
+          ].includes(val), { message: "Tipo de agente inválido" }),
+        userResponses: z.record(z.string(), z.union([z.string(), z.number()]).nullable().transform(v => v ?? "")).default({}),
       }))
       .mutation(async ({ ctx, input }) => {
         const project = await db.getProjectById(input.projectId);
@@ -993,7 +1002,7 @@ export const appRouter = router({
             await db.createAgentInteraction({
               projectId: input.projectId,
               agentExecutionId: execution.id,
-              agentType: input.agentType,
+              agentType: input.agentType as AgentType,
               iterationNumber: newIterationCount,
               questions: typedOutput.missingInfoRequests,
               reasonForQuestions: `Iteração ${newIterationCount}: Agente ainda precisa de mais dados para completar a análise`,
