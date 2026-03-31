@@ -896,6 +896,35 @@ export class OrcamentistaAgent extends BaseAgent<OrcamentistaInput, Orcamentista
   type: AgentType = "orcamentista";
   getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
 
+  /**
+   * Override execute() para chunking de orçamentos grandes.
+   * Divide itens em frentes por disciplina de construção, processa cada frente
+   * separadamente, e consolida os resultados.
+   */
+  async execute(input: OrcamentistaInput): Promise<OrcamentistaOutput> {
+    const { needsBudgetChunking, createOrcamentistaChunkedInputs, mergeOrcamentistaOutputs }
+      = await import("./budgetChunking");
+
+    if (needsBudgetChunking(input.items)) {
+      console.log(`[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`);
+      const chunkedInputs = createOrcamentistaChunkedInputs(input);
+      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas`);
+
+      const outputs: OrcamentistaOutput[] = [];
+      for (let i = 0; i < chunkedInputs.length; i++) {
+        console.log(`[Orcamentista] Frente ${i + 1}/${chunkedInputs.length} (${chunkedInputs[i].items.length} itens)...`);
+        const out = await super.execute(chunkedInputs[i]);
+        outputs.push(out);
+      }
+
+      const merged = mergeOrcamentistaOutputs(outputs);
+      console.log(`[Orcamentista] Merge: ${merged.budgetItems?.length} itens, R$ ${merged.totalDirectCost?.toFixed(2)}`);
+      return merged;
+    }
+
+    return super.execute(input);
+  }
+
   getSystemPrompt(): string {
     return `Você é o Orçamentista & Suprimentos da RR Engenharia.
 
@@ -1032,8 +1061,18 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
     // Build price anchors from real SINAPI/PINI databases (top-15 by value)
     const anchors = this.buildPriceAnchors(input.items || []);
 
-    return `Precifique os itens de obra listados abaixo.
+    // Detect chunk context for large budgets split into fronts
+    const chunkInfo = (input as any)._chunkInfo as { index: number; total: number; frontName: string } | undefined;
+    const chunkHeader = chunkInfo
+      ? `
+⚠️ ESTA É A FRENTE ${chunkInfo.index} de ${chunkInfo.total} — "${chunkInfo.frontName}".
+Precifique APENAS os ${totalItems} itens abaixo.
+Não se preocupe com itens de outras frentes — eles serão precificados separadamente.
+`
+      : '';
 
+    return `Precifique os itens de obra listados abaixo.
+${chunkHeader}
 ⚠️ IMPORTANTE: Precifique APENAS itens FILHOS (isSummaryItem=false ou não definido).
 Itens PAI (isSummaryItem=true) devem estar no output com unitCostTotal=0 e totalCost=0.
 O budgetItems pode ter IGUAL OU MENOS itens que ${totalItems} (menos quando há itens resumo).
