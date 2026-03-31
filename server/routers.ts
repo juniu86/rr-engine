@@ -409,6 +409,61 @@ export const appRouter = router({
           (results as any)._coherenceValidation = coherenceValidation;
         }
         
+        // === APLICAR PARCELAS SUGERIDAS PELO BOARD (v3.3) ===
+        if (boardResult?.suggestedBillingSchedule?.installments?.length >= 2) {
+          try {
+            const { calculateDeterministicCashFlow } = await import("./services/deterministicCashFlow");
+            const suggestedInstallments = boardResult.suggestedBillingSchedule.installments;
+            console.log(`[Board] Aplicando cronograma de pagamento sugerido: ${suggestedInstallments.map((i: any) => `${i.name}(${i.percentage}%)`).join(' + ')}`);
+
+            // Recalcular cash flow com novas parcelas
+            const orcOutput = results.orcamentista as any;
+            const logOutput = results.logistica as any;
+            const comercialOutput = results.comercial as any;
+            const tribOutput = results.tributario as any;
+            const gestaoOutput = results.gestao_projetos as any;
+
+            const totalCostForReCalc = (orcOutput?.totalDirectCost || 0) + (logOutput?.totalLogisticsCost || 0);
+            const totalPriceForReCalc = comercialOutput?.finalPrice || 0;
+            const scheduleItems = gestaoOutput?.scheduleItems || gestaoOutput?.schedule || [];
+            const maxWeek = scheduleItems.length > 0 ? Math.max(...scheduleItems.map((s: any) => s.endWeek || s.week || 1)) : 4;
+
+            const newCashFlow = calculateDeterministicCashFlow({
+              totalCost: totalCostForReCalc,
+              totalPrice: totalPriceForReCalc,
+              totalDuration: maxWeek,
+              totalTaxes: tribOutput?.totalTaxes || 0,
+              billingInstallments: suggestedInstallments,
+            });
+
+            // Atualizar output do Financeiro com novo cash flow
+            const finExec = (await db.getAgentExecutionsByProjectId(input.projectId)).find((e: any) => e.agentType === 'financeiro');
+            if (finExec) {
+              const updatedFinOutput = {
+                ...(finExec.output as any),
+                cashFlow: newCashFlow.cashFlow,
+                maxExposure: newCashFlow.maxExposure,
+                needsAdvance: newCashFlow.needsAdvance,
+                suggestedAdvance: newCashFlow.suggestedAdvance,
+                alerts: newCashFlow.alerts,
+                grossMargin: newCashFlow.grossMargin,
+                netMargin: newCashFlow.netMargin,
+              };
+              await db.updateAgentExecution(finExec.id, { output: updatedFinOutput as any });
+              results.financeiro = updatedFinOutput;
+            }
+
+            // Salvar parcelas no projeto
+            await db.updateProject(input.projectId, {
+              billingInstallments: JSON.stringify(suggestedInstallments),
+            } as any);
+
+            console.log(`[Board] Cash flow recalculado. Nova exposição máx: R$${newCashFlow.maxExposure.toFixed(2)}`);
+          } catch (err) {
+            console.error('[Board] Erro ao aplicar parcelas sugeridas:', err);
+          }
+        }
+
         // Lógica crítica do Board
         if (boardResult?.blockProposal) {
           // Verificar se é rejeição exclusivamente financeira e se pode solicitar revisão

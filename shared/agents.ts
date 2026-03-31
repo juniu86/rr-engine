@@ -421,6 +421,12 @@ export interface BoardOutput {
     comercial: string; // Instruções para o Comercial
   };
   isFinancialOnlyRejection: boolean; // Se a rejeição é exclusivamente por motivos financeiros
+  /** Cronograma de pagamento sugerido pelo Board para resolver problemas de caixa (v3.3) */
+  suggestedBillingSchedule?: {
+    installments: Array<{ name: string; percentage: number }>;
+    reason: string;
+    projectedMaxExposure: number;
+  };
 }
 
 // Tipo para instruções de revisão financeira armazenadas no projeto
