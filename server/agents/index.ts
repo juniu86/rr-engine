@@ -45,7 +45,17 @@ abstract class BaseAgent<TInput, TOutput> {
   getPreferredModel(): string {
     return process.env.LLM_MODEL ?? "gemini-2.5-flash";
   }
-  
+
+  /**
+   * Returns the sampling temperature for this agent.
+   * Default 0.2 — conservative to favor reproducibility. Override per agent
+   * based on the nature of the task (deterministic computation → 0.0,
+   * inference of specs / drafting → 0.3-0.4).
+   */
+  getTemperature(): number {
+    return 0.2;
+  }
+
   /**
    * Processa a resposta da LLM e extrai o conteúdo JSON.
    * Lida com múltiplos formatos de resposta:
@@ -164,6 +174,7 @@ abstract class BaseAgent<TInput, TOutput> {
 
       response = await invokeLLM({
         model: preferredModel,
+        temperature: this.getTemperature(),
         messages: [
           { role: "system", content: this.getSystemPrompt() },
           { role: "user", content: this.getUserPrompt(input) },
@@ -234,6 +245,7 @@ export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, En
   name = AGENT_NAMES.engenheiro_tecnico;
   type: AgentType = "engenheiro_tecnico";
   getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  getTemperature() { return 0.3; }
 
   getSystemPrompt(): string {
     return `Você é o Engenheiro Técnico da RR Engenharia, responsável por auditar e traduzir Memoriais Descritivos em tarefas de engenharia específicas.
@@ -721,7 +733,8 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
 export class LogisticaAgent extends BaseAgent<LogisticaInput, LogisticaOutput> {
   name = AGENT_NAMES.logistica;
   type: AgentType = "logistica";
-  
+  getTemperature() { return 0.2; }
+
   getSystemPrompt(): string {
     return `Você é o Agente de Logística e Mobilização da RR Engenharia.
 
@@ -895,6 +908,7 @@ export class OrcamentistaAgent extends BaseAgent<OrcamentistaInput, Orcamentista
   name = AGENT_NAMES.orcamentista;
   type: AgentType = "orcamentista";
   getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  getTemperature() { return 0.1; }
 
   /**
    * Override execute() para chunking de orçamentos grandes.
@@ -1155,6 +1169,7 @@ export class TributarioAgent extends BaseAgent<TributarioInput, TributarioOutput
   name = AGENT_NAMES.tributario;
   type: AgentType = "tributario";
   getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  getTemperature() { return 0.0; }
 
   getSystemPrompt(): string {
     return `Você é o Agente Tributário da RR Engenharia.
@@ -1299,7 +1314,9 @@ Para cada item, defina:
 export class ComercialAgent extends BaseAgent<ComercialInput, ComercialOutput> {
   name = AGENT_NAMES.comercial;
   type: AgentType = "comercial";
-  
+  getTemperature() { return 0.0; }
+
+
   getSystemPrompt(): string {
     return `Você é o Agente Comercial da RR Engenharia.
 
@@ -1422,6 +1439,7 @@ Calcule o BDI adequado (partindo de ${effectiveBdi}%) e o preço final de venda.
 // Agent 6: Gestão de Projetos
 export class GestaoProjAgent extends BaseAgent<GestaoProjInput, GestaoProjOutput> {
   getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
+  getTemperature() { return 0.3; }
   name = AGENT_NAMES.gestao_projetos;
   type: AgentType = "gestao_projetos";
   
@@ -1635,7 +1653,9 @@ Dia 2: Demolição
 export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput> {
   name = AGENT_NAMES.financeiro;
   type: AgentType = "financeiro";
-  
+  getTemperature() { return 0.0; }
+
+
   getSystemPrompt(): string {
     return `Você é o Agente Financeiro da RR Engenharia.
 
@@ -1728,6 +1748,7 @@ INSTRUÇÕES:
 export class JuridicoAgent extends BaseAgent<JuridicoInput, JuridicoOutput> {
   name = AGENT_NAMES.juridico;
   getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  getTemperature() { return 0.4; }
   type: AgentType = "juridico";
   
   getSystemPrompt(): string {
@@ -1807,6 +1828,7 @@ export class BoardAgent extends BaseAgent<BoardInput, BoardOutput> {
   name = AGENT_NAMES.board;
   type: AgentType = "board";
   getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  getTemperature() { return 0.2; }
   
   getSystemPrompt(): string {
     return `Você é o BOARD EXECUTIVO da RR Engenharia, composto por especialistas sêniores em Gestão de Negócios:
@@ -2191,6 +2213,7 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
 // Agent 10: Auditor de Consistência
 export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
   getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
+  getTemperature() { return 0.0; }
   name = AGENT_NAMES.auditor;
   type: AgentType = "auditor";
   

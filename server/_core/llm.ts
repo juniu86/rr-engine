@@ -65,6 +65,12 @@ export type InvokeParams = {
   tool_choice?: ToolChoice;
   maxTokens?: number;
   max_tokens?: number;
+  /**
+   * Sampling temperature. Lower = more deterministic.
+   * If omitted, defaults to 0.2 (RR Engine conservative default — overrides
+   * the provider's own default of ~1.0 to keep outputs reproducible).
+   */
+  temperature?: number;
   outputSchema?: OutputSchema;
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
@@ -285,6 +291,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const payload: Record<string, unknown> = {
     model: params.model ?? process.env.LLM_MODEL ?? "gemini-2.5-flash",
     messages: messages.map(normalizeMessage),
+    temperature: params.temperature ?? 0.2,
   };
 
   if (tools && tools.length > 0) {
@@ -394,6 +401,10 @@ async function invokeAnthropicDirect(
     max_tokens: (payload.max_tokens as number) ?? 32768,
     messages: nonSystemMessages,
   };
+
+  if (typeof payload.temperature === "number") {
+    anthropicPayload.temperature = payload.temperature;
+  }
 
   // Extract system message content + inject JSON instruction
   // (Anthropic doesn't support response_format, so we tell the LLM to output JSON in the system prompt)
