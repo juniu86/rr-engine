@@ -206,7 +206,15 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=
 S3_BUCKET=
+
+# Observabilidade — Langfuse (P2.2, opcional)
+LANGFUSE_ENABLED=false                       # toggle global; default OFF
+LANGFUSE_PUBLIC_KEY=                         # cloud.langfuse.com → Project Settings
+LANGFUSE_SECRET_KEY=
+LANGFUSE_HOST=https://cloud.langfuse.com     # ou self-hosted
 ```
+
+Detalhes do tracing (incluindo o que aparece no dashboard) em `docs/observability.md`.
 
 ## O que NÃO mexer nesta fase
 

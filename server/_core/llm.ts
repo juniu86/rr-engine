@@ -1,5 +1,6 @@
 import { ENV } from "./env";
 import { getProviderCapabilities, detectProvider } from "./llm-providers";
+import { getLangfuse } from "../services/tracing";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -20,7 +21,12 @@ export type FileContent = {
   type: "file_url";
   file_url: {
     url: string;
-    mime_type?: "audio/mpeg" | "audio/wav" | "application/pdf" | "audio/mp4" | "video/mp4" ;
+    mime_type?:
+      | "audio/mpeg"
+      | "audio/wav"
+      | "application/pdf"
+      | "audio/mp4"
+      | "video/mp4";
   };
 };
 
@@ -56,6 +62,18 @@ export type ToolChoice =
   | ToolChoiceByName
   | ToolChoiceExplicit;
 
+/**
+ * Pai opcional do span Langfuse para esta chamada LLM. Aceita qualquer
+ * objeto que exponha `.generation(...)` (LangfuseTraceClient,
+ * LangfuseSpanClient, etc). Sem parent, a `generation` vira top-level.
+ */
+export type LangfuseParent = {
+  generation: (params: Record<string, unknown>) => {
+    end: (params?: Record<string, unknown>) => unknown;
+    update?: (params?: Record<string, unknown>) => unknown;
+  };
+};
+
 export type InvokeParams = {
   /** LLM model to use. Falls back to LLM_MODEL env or gemini-2.5-flash. */
   model?: string;
@@ -75,6 +93,10 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** P2.2: pai opcional para a generation no Langfuse. */
+  _langfuseParent?: LangfuseParent;
+  /** P2.2: nome legível para o span (default: `llm.<model>`). */
+  _langfuseName?: string;
 };
 
 export type ToolCall = {
@@ -288,6 +310,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
+  // P2.2: abre `generation` no Langfuse. Falha do tracing nunca derruba
+  // o pipeline — try/catch ao redor de cada operação. Sem cliente ou
+  // sem flag, `generation` fica null e tudo segue normal.
+  const generation = createLangfuseGeneration(params);
+  const t0 = Date.now();
+
   const payload: Record<string, unknown> = {
     model: params.model ?? process.env.LLM_MODEL ?? "gemini-2.5-flash",
     messages: messages.map(normalizeMessage),
@@ -311,7 +339,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const capabilities = getProviderCapabilities(modelName);
 
   // max_tokens respeitando limite do provider
-  payload.max_tokens = params.maxTokens ?? params.max_tokens ?? capabilities.maxOutputTokens;
+  payload.max_tokens =
+    params.maxTokens ?? params.max_tokens ?? capabilities.maxOutputTokens;
 
   // thinking apenas para providers que suportam (Claude)
   if (capabilities.supportsThinking) {
@@ -335,47 +364,148 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   // ─── Routing: Direct Anthropic API when key is available and model is Claude ──
   const provider = detectProvider(modelName);
-  const isClaudeModel = provider === 'claude-opus' || provider === 'claude-sonnet' || provider === 'claude';
-  const hasAnthropicKey = ENV.anthropicApiKey && ENV.anthropicApiKey.length > 10;
+  const isClaudeModel =
+    provider === "claude-opus" ||
+    provider === "claude-sonnet" ||
+    provider === "claude";
+  const hasAnthropicKey =
+    ENV.anthropicApiKey && ENV.anthropicApiKey.length > 10;
 
-  if (isClaudeModel && hasAnthropicKey) {
-    return invokeAnthropicDirect(payload, modelName);
+  try {
+    if (isClaudeModel && hasAnthropicKey) {
+      const result = await invokeAnthropicDirect(payload, modelName);
+      endLangfuseGeneration(generation, result, Date.now() - t0);
+      return result;
+    }
+
+    // If Claude model requested but no Anthropic key, fallback to default model via Forge
+    // (Forge may not support claude-opus-4-6 or similar model names)
+    if (isClaudeModel && !hasAnthropicKey) {
+      const fallbackModel = process.env.LLM_MODEL ?? "gemini-2.5-flash";
+      console.warn(
+        `[LLM] No ANTHROPIC_API_KEY configured. Falling back from ${modelName} to ${fallbackModel} via Forge.`
+      );
+      payload.model = fallbackModel;
+      // Recalculate capabilities for fallback model
+      const fallbackCapabilities = getProviderCapabilities(fallbackModel);
+      payload.max_tokens =
+        params.maxTokens ??
+        params.max_tokens ??
+        fallbackCapabilities.maxOutputTokens;
+      // Remove thinking param (not supported by Gemini/GPT)
+      delete (payload as any).thinking;
+    }
+
+    // ─── Fallback: Forge proxy (Gemini, GPT, or Claude without direct key) ────────
+    const response = await fetch(resolveApiUrl(), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${ENV.forgeApiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        "[LLM] Request failed:",
+        response.status,
+        response.statusText,
+        errorText
+      );
+      throw new Error(
+        `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
+      );
+    }
+
+    const result = (await response.json()) as InvokeResult;
+    console.log(
+      `[LLM] Response received: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`
+    );
+    endLangfuseGeneration(generation, result, Date.now() - t0);
+    return result;
+  } catch (err) {
+    endLangfuseGenerationError(generation, err, Date.now() - t0);
+    throw err;
   }
+}
 
-  // If Claude model requested but no Anthropic key, fallback to default model via Forge
-  // (Forge may not support claude-opus-4-6 or similar model names)
-  if (isClaudeModel && !hasAnthropicKey) {
-    const fallbackModel = process.env.LLM_MODEL ?? "gemini-2.5-flash";
-    console.warn(`[LLM] No ANTHROPIC_API_KEY configured. Falling back from ${modelName} to ${fallbackModel} via Forge.`);
-    payload.model = fallbackModel;
-    // Recalculate capabilities for fallback model
-    const fallbackCapabilities = getProviderCapabilities(fallbackModel);
-    payload.max_tokens = params.maxTokens ?? params.max_tokens ?? fallbackCapabilities.maxOutputTokens;
-    // Remove thinking param (not supported by Gemini/GPT)
-    delete (payload as any).thinking;
+// ─── Langfuse helpers (P2.2) ──────────────────────────────────────────────────
+
+type LangfuseGeneration = {
+  end: (params?: Record<string, unknown>) => unknown;
+  update?: (params?: Record<string, unknown>) => unknown;
+} | null;
+
+function createLangfuseGeneration(params: InvokeParams): LangfuseGeneration {
+  try {
+    const parent = params._langfuseParent;
+    const langfuse = parent ? null : getLangfuse();
+    if (!parent && !langfuse) return null;
+
+    const model = params.model ?? process.env.LLM_MODEL ?? "gemini-2.5-flash";
+    const maxTokens = params.maxTokens ?? params.max_tokens ?? null;
+    const generationParams = {
+      name: params._langfuseName ?? `llm.${model}`,
+      model,
+      modelParameters: {
+        temperature: params.temperature ?? 0.2,
+        maxTokens,
+      },
+      input: params.messages,
+    };
+    if (parent)
+      return parent.generation(generationParams) as LangfuseGeneration;
+    return langfuse!.generation(
+      generationParams
+    ) as unknown as LangfuseGeneration;
+  } catch (err) {
+    // Inicialização do tracing NUNCA derruba a chamada LLM.
+    console.warn("[Langfuse] generation() falhou ao iniciar:", err);
+    return null;
   }
+}
 
-  // ─── Fallback: Forge proxy (Gemini, GPT, or Claude without direct key) ────────
-  const response = await fetch(resolveApiUrl(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+function endLangfuseGeneration(
+  generation: LangfuseGeneration,
+  result: InvokeResult,
+  latencyMs: number
+): void {
+  if (!generation) return;
+  try {
+    generation.end({
+      output: result.choices?.[0]?.message,
+      usage: {
+        promptTokens: result.usage?.prompt_tokens,
+        completionTokens: result.usage?.completion_tokens,
+        totalTokens: result.usage?.total_tokens,
+      },
+      metadata: { latencyMs, finishReason: result.choices?.[0]?.finish_reason },
+    });
+  } catch (err) {
+    console.warn("[Langfuse] generation.end() falhou, ignorando:", err);
+  }
+}
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[LLM] Request failed:', response.status, response.statusText, errorText);
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
+function endLangfuseGenerationError(
+  generation: LangfuseGeneration,
+  err: unknown,
+  latencyMs: number
+): void {
+  if (!generation) return;
+  try {
+    generation.end({
+      level: "ERROR",
+      statusMessage: err instanceof Error ? err.message : String(err),
+      metadata: { latencyMs },
+    });
+  } catch (innerErr) {
+    console.warn(
+      "[Langfuse] generation.end(error) falhou, ignorando:",
+      innerErr
     );
   }
-
-  const result = (await response.json()) as InvokeResult;
-  console.log(`[LLM] Response received: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`);
-  return result;
 }
 
 // ─── Direct Anthropic API Integration ─────────────────────────────────────────
@@ -386,14 +516,17 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
  */
 async function invokeAnthropicDirect(
   payload: Record<string, unknown>,
-  modelName: string,
+  modelName: string
 ): Promise<InvokeResult> {
   console.log(`[LLM] Using Anthropic direct API for model: ${modelName}`);
 
   // 1. Extract system message from messages array (Anthropic uses separate "system" field)
-  const messages = payload.messages as Array<{ role: string; content: unknown }>;
-  const systemMsg = messages.find(m => m.role === 'system');
-  const nonSystemMessages = messages.filter(m => m.role !== 'system');
+  const messages = payload.messages as Array<{
+    role: string;
+    content: unknown;
+  }>;
+  const systemMsg = messages.find(m => m.role === "system");
+  const nonSystemMessages = messages.filter(m => m.role !== "system");
 
   // 2. Build Anthropic-format payload (ONLY supported fields — no response_format, no thinking)
   const anthropicPayload: Record<string, unknown> = {
@@ -408,40 +541,44 @@ async function invokeAnthropicDirect(
 
   // Extract system message content + inject JSON instruction
   // (Anthropic doesn't support response_format, so we tell the LLM to output JSON in the system prompt)
-  let systemContent = '';
+  let systemContent = "";
   if (systemMsg) {
-    systemContent = typeof systemMsg.content === 'string'
-      ? systemMsg.content
-      : JSON.stringify(systemMsg.content);
+    systemContent =
+      typeof systemMsg.content === "string"
+        ? systemMsg.content
+        : JSON.stringify(systemMsg.content);
   }
   if (payload.response_format) {
-    systemContent += '\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code blocks, no explanatory text — ONLY the raw JSON object.';
+    systemContent +=
+      "\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code blocks, no explanatory text — ONLY the raw JSON object.";
   }
   if (systemContent) {
     anthropicPayload.system = systemContent;
   }
 
   // 3. Call Anthropic API
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
     headers: {
-      'x-api-key': ENV.anthropicApiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
+      "x-api-key": ENV.anthropicApiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
     },
     body: JSON.stringify(anthropicPayload),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('[LLM] Anthropic API failed:', response.status, errorText);
+    console.error("[LLM] Anthropic API failed:", response.status, errorText);
     throw new Error(`Anthropic API failed: ${response.status} – ${errorText}`);
   }
 
   // 4. Convert Anthropic response → InvokeResult (OpenAI-compatible format)
   const anthropicResult = (await response.json()) as Record<string, unknown>;
   const result = convertAnthropicToInvokeResult(anthropicResult);
-  console.log(`[LLM] Anthropic response: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`);
+  console.log(
+    `[LLM] Anthropic response: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`
+  );
   return result;
 }
 
@@ -451,27 +588,38 @@ async function invokeAnthropicDirect(
  * Anthropic format: { content: [{ type: "text", text: "..." }], stop_reason, usage: { input_tokens, output_tokens } }
  * OpenAI format:    { choices: [{ message: { content: "..." }, finish_reason }], usage: { prompt_tokens, completion_tokens } }
  */
-function convertAnthropicToInvokeResult(r: Record<string, unknown>): InvokeResult {
-  const content = r.content as Array<{ type: string; text?: string }> | undefined;
-  const textContent = content?.find(c => c.type === 'text');
+function convertAnthropicToInvokeResult(
+  r: Record<string, unknown>
+): InvokeResult {
+  const content = r.content as
+    | Array<{ type: string; text?: string }>
+    | undefined;
+  const textContent = content?.find(c => c.type === "text");
 
   const stopReason = r.stop_reason as string | undefined;
-  const usage = r.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+  const usage = r.usage as
+    | { input_tokens?: number; output_tokens?: number }
+    | undefined;
 
   return {
-    id: (r.id as string) ?? '',
+    id: (r.id as string) ?? "",
     created: Math.floor(Date.now() / 1000),
-    model: (r.model as string) ?? '',
-    choices: [{
-      index: 0,
-      message: {
-        role: 'assistant',
-        content: textContent?.text ?? '',
+    model: (r.model as string) ?? "",
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: textContent?.text ?? "",
+        },
+        finish_reason:
+          stopReason === "end_turn"
+            ? "stop"
+            : stopReason === "max_tokens"
+              ? "length"
+              : (stopReason ?? "stop"),
       },
-      finish_reason: stopReason === 'end_turn' ? 'stop'
-                   : stopReason === 'max_tokens' ? 'length'
-                   : stopReason ?? 'stop',
-    }],
+    ],
     usage: {
       prompt_tokens: usage?.input_tokens ?? 0,
       completion_tokens: usage?.output_tokens ?? 0,
