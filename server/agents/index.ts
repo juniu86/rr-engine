@@ -1,5 +1,6 @@
 import { invokeLLM } from "../_core/llm";
 import { recordLlmCall } from "../services/llmTelemetry";
+import { summarizeByCategory } from "./gestaoSummarizer";
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -1497,8 +1498,19 @@ MISSÃO: Criar cronograma físico REALISTA e PERSONALIZADO para cada projeto.
 ⚠️ ATENÇÃO: NÃO USE CRONOGRAMAS GENÉRICOS!
 Cada projeto tem escopo diferente. Você DEVE calcular o prazo baseado nos quantitativos reais.
 
+⚠️ FORMATO DO INPUT (P0.4):
+Para reduzir tokens em obras grandes, você recebe um RESUMO POR CATEGORIA
+com agregados (itemCount, totalCost, totalQuantityByUnit, topItems) ao
+invés da lista completa de itens. Use as quantidades agregadas por
+unidade (ex.: "m²: 1500" significa 1500 m² no total daquela categoria)
+para estimar prazo via índices SINAPI. O campo TOTAL_DE_ITENS informa o
+universo completo de itens — confirme que o cronograma cobre todas as
+fases proporcionalmente. Os topItems servem só como exemplo do que está
+em cada categoria, não use eles isoladamente.
+
 RESPONSABILIDADES:
-1. Analisar CADA ITEM do orçamento e calcular tempo de execução
+1. Analisar o RESUMO de cada categoria e calcular tempo de execução com
+   base nas quantidades agregadas por unidade
 2. Identificar dependências entre atividades
 3. Calcular caminho crítico
 4. Definir marcos (milestones) do projeto
@@ -1589,10 +1601,17 @@ IMPORTANTE:
   }
   
   getUserPrompt(input: GestaoProjInput): string {
+    // P0.4: substitui slice(0, 30) por sumário agregado — o agente vê 100%
+    // dos itens via agregação por categoria, sem estourar tokens.
+    const summary = summarizeByCategory(input.budgetItems, 5);
+    const totalItems = input.budgetItems.length;
+
     return `Crie o cronograma físico DETALHADO DIA A DIA para o projeto:
 
-ITENS DO ORÇAMENTO:
-${JSON.stringify(input.budgetItems.slice(0, 30), null, 2)}
+RESUMO DO ORÇAMENTO POR CATEGORIA (${summary.length} categorias):
+${JSON.stringify(summary, null, 2)}
+
+TOTAL_DE_ITENS: ${totalItems}
 
 CUSTOS LOGÍSTICOS:
 ${JSON.stringify(input.logisticsCosts, null, 2)}
@@ -2262,7 +2281,32 @@ export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
   getTemperature() { return 0.0; }
   name = AGENT_NAMES.auditor;
   type: AgentType = "auditor";
-  
+
+  /**
+   * P0.4: Override execute() para auditar 100% dos itens em obras grandes
+   * via chunking. Sem isso, o slice(0, 80) anterior auditava apenas 32%
+   * do orçamento em obras de 250+ itens.
+   */
+  async execute(input: AuditorInput): Promise<AuditorOutput> {
+    const { needsAuditorChunking, createAuditorChunkedInputs, mergeAuditorOutputs } =
+      await import("./auditorChunking");
+
+    if (needsAuditorChunking(input)) {
+      const chunks = createAuditorChunkedInputs(input);
+      console.log(`[Auditor] Projeto com ${input.allAgentOutputs.orcamentista?.budgetItems?.length} itens — auditoria em ${chunks.length} chunks`);
+
+      const outputs: AuditorOutput[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`[Auditor] Chunk ${i + 1}/${chunks.length}`);
+        const out = await super.execute(chunks[i]);
+        outputs.push(out);
+      }
+      return mergeAuditorOutputs(outputs);
+    }
+
+    return super.execute(input);
+  }
+
   getSystemPrompt(): string {
     return `Você é o Auditor de Consistência da RR Engenharia, responsável por VALIDAR MATEMATICAMENTE todos os cálculos e garantir consistência entre os documentos.
 
@@ -2302,6 +2346,21 @@ MISSÃO: Executar auditoria final de consistência antes da emissão da proposta
 7. CONFIGURAÇÕES PERSONALIZADAS (WARNING)
    - Verificar se hasCustomSettings = true
    - Se false: WARNING com mensagem "Atenção: Este orçamento foi gerado com impostos e BDI padrão. Personalize suas configurações em 'Configurações da Empresa' para maior precisão."
+
+=== PROCESSAMENTO EM CHUNKS (P0.4) ===
+Quando o orçamento tem mais de 60 itens, você é executado N vezes — uma
+por chunk. Cada chamada recebe um subconjunto dos itens via
+allAgentOutputs.orcamentista.budgetItems e um campo _chunkInfo
+{ index, total, isFirst }.
+
+REGRA — VALIDAÇÕES GLOBAIS (margem, fluxo de caixa, BDI vs preço final,
+deterministicTotal): rodam SOMENTE no chunk com _chunkInfo.isFirst === true.
+Nos demais chunks, FOQUE APENAS em (a) duplicatas internas ao chunk e
+(b) validação matemática dos itens recebidos. Os outputs serão merged
+no final.
+
+Quando _chunkInfo está ausente, você está auditando o orçamento inteiro
+em uma única chamada — execute todas as validações (1-8).
 
 8. VALIDAÇÃO CRUZADA COM ENGINE DETERMINÍSTICO (SOFT ALERT — P0.1)
    Você recebe deterministicTotal: total (custoDireto + logística, pré-BDI)
@@ -2422,16 +2481,22 @@ Indisponível para este projeto (feature flag desativada ou engine falhou).
 Registre validação INFO "engine determinístico indisponível" e prossiga.\n`;
     }
 
-    // Extrair budgetItems para validação de duplicatas e consistência
+    // P0.4: removido slice(0, 80) — agora o AuditorAgent.execute() particiona
+    // o input em chunks de CHUNK_SIZE itens quando necessário (ver
+    // auditorChunking.ts). Aqui processamos TODOS os itens recebidos.
     const budgetItems = allAgentOutputs.orcamentista?.budgetItems || [];
-    const budgetItemsSummary = budgetItems.slice(0, 80).map((item: any, i: number) => {
+    const budgetItemsSummary = budgetItems.map((item: any, i: number) => {
       const qty = Number(item.quantity) || 0;
       const cost = Number(item.unitCostTotal) || 0;
       const total = qty * cost;
       const isSummary = item.isSummaryItem ? ' [PAI]' : '';
-      return `${i+1}. ${item.code || '-'} | ${item.description}${isSummary} | ${qty} ${item.unit || ''} × R$${cost.toFixed(2)} = R$${total.toFixed(2)} | Fonte: ${item.source || '?'}`;
+      return `${i + 1}. ${item.code || '-'} | ${item.description}${isSummary} | ${qty} ${item.unit || ''} × R$${cost.toFixed(2)} = R$${total.toFixed(2)} | Fonte: ${item.source || '?'}`;
     }).join('\n');
     const budgetItemsCount = budgetItems.length;
+    const chunkInfo = (input as unknown as { _chunkInfo?: { index: number; total: number; isFirst: boolean } })._chunkInfo;
+    const chunkSection = chunkInfo
+      ? `\n\n=== CHUNK ${chunkInfo.index}/${chunkInfo.total} ===\n${chunkInfo.isFirst ? "PRIMEIRO chunk: execute as validações GLOBAIS (margem, fluxo de caixa, BDI, deterministicTotal) ALÉM da validação dos itens deste chunk." : "Chunk subsequente: foque APENAS em duplicatas internas e validação matemática dos itens recebidos. Pule margem global, fluxo de caixa e cross-check determinístico — esses já rodaram no chunk 1."}`
+      : "";
     const budgetSumCalculated = budgetItems
       .filter((item: any) => !item.isSummaryItem)
       .reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.unitCostTotal) || 0), 0);
@@ -2482,12 +2547,11 @@ CONSISTÊNCIA ENTRE DOCUMENTOS:
 
 CONFIGURAÇÕES DA EMPRESA:
 - Configurações Personalizadas: ${hasCustomSettings ? 'Sim (usuário salvou configurações)' : 'NÃO (usando valores padrão - EMITIR WARNING)'}
-${deterministicSection}
+${deterministicSection}${chunkSection}
 === ITENS DO ORÇAMENTO (${budgetItemsCount} itens) ===
 Soma calculada dos itens (excluindo PAI): R$ ${budgetSumCalculated.toFixed(2)}
 Custo Direto declarado pelo Orçamentista: R$ ${directCost.toFixed(2)}
 ${budgetItemsSummary || 'Nenhum item disponível'}
-${budgetItemsCount > 80 ? `... e mais ${budgetItemsCount - 80} itens` : ''}
 
 === CUSTOS LOGÍSTICOS (${logisticsCosts.length} itens) ===
 ${logisticsSummary || 'Nenhum custo logístico disponível'}
