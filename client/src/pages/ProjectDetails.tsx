@@ -1336,7 +1336,7 @@ export default function ProjectDetails() {
                   <EmptyState
                     variant="budget"
                     title="Nenhum item orçado ainda"
-                    description="Execute os agentes para gerar o orçamento com preços SINAPI e PINI."
+                    description="Execute os agentes para gerar o orçamento com preços de base de referência atualizada."
                   />
                 )}
               </CardContent>
@@ -2066,7 +2066,7 @@ function getAgentDescription(type: string): string {
   const descriptions: Record<string, string> = {
     engenheiro_tecnico: "Traduz memorial em tarefas técnicas",
     logistica: "Calcula custos de mobilização",
-    orcamentista: "Precifica com SINAPI/PINI",
+    orcamentista: "Precifica com base de referência atualizada",
     tributario: "Classifica ISS/ICMS",
     comercial: "Define BDI e preço de venda",
     gestao_projetos: "Cria cronograma físico",

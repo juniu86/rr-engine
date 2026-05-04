@@ -118,8 +118,8 @@ export default function Home() {
     },
     {
       icon: Calculator,
-      title: "Integração SINAPI/PINI",
-      description: "Consulta automática de composições e preços de referência atualizados"
+      title: "Base de referência atualizada",
+      description: "Composições e preços consultados em base de referência atualizada de mercado"
     },
     {
       icon: TrendingUp,
@@ -129,7 +129,7 @@ export default function Home() {
     {
       icon: Shield,
       title: "Rastreabilidade Total",
-      description: "Cada item com fonte declarada: SINAPI, PINI ou cotação de mercado"
+      description: "Cada item com fonte declarada na memória de cálculo"
     },
     {
       icon: Clock,
@@ -151,8 +151,8 @@ export default function Home() {
     { 
       num: "02", 
       name: "Orçamentista", 
-      desc: "Precifica com bases SINAPI e PINI",
-      details: "Consulta as bases de dados oficiais SINAPI e PINI para obter composições de custos atualizadas. Calcula custos de material e mão de obra para cada item com rastreabilidade de fonte.",
+      desc: "Precifica com base de referência atualizada",
+      details: "Consulta base de referência atualizada de mercado para obter composições de custos. Calcula custos de material e mão de obra para cada item com rastreabilidade de fonte.",
       output: "Planilha orçamentária com custos unitários",
       icon: Calculator,
       color: "text-emerald-400"
@@ -188,7 +188,7 @@ export default function Home() {
       num: "06", 
       name: "Gestão de Projetos", 
       desc: "Cria cronograma com produtividade",
-      details: "Calcula o prazo de execução baseado em índices de produtividade SINAPI (Hh/unidade). Cria cronograma físico detalhado por atividade e semana.",
+      details: "Calcula o prazo de execução baseado em índices de produtividade de referência (Hh/unidade). Cria cronograma físico detalhado por atividade e semana.",
       output: "Cronograma físico em semanas",
       icon: CalendarDays,
       color: "text-blue-400"
@@ -458,7 +458,7 @@ export default function Home() {
                   <p className="text-red-400 text-xs font-medium tracking-widest uppercase mb-4">Sem RR Engine</p>
                   <div className="space-y-3 text-sm text-slate-400">
                     <p>3 a 5 dias para montar um orcamento</p>
-                    <p>Consulta manual de tabelas SINAPI</p>
+                    <p>Consulta manual de tabelas de referencia</p>
                     <p>Risco de erros em calculos complexos</p>
                     <p>Proposta comercial feita no Word</p>
                   </div>
@@ -470,7 +470,7 @@ export default function Home() {
                   <p className="text-emerald-400 text-xs font-medium tracking-widest uppercase mb-4">Com RR Engine</p>
                   <div className="space-y-3 text-sm text-slate-300">
                     <p>Orcamento completo em minutos</p>
-                    <p>Consulta automatica SINAPI + PINI</p>
+                    <p>Consulta automatica em base de referencia atualizada</p>
                     <p>Auditoria matematica automatizada</p>
                     <p>Proposta e planilha gerados automaticamente</p>
                   </div>
@@ -490,7 +490,7 @@ export default function Home() {
                 <div className="text-slate-500 text-sm">Automatico</div>
               </div>
               <div className="text-center border-x border-white/10">
-                <div className="text-4xl font-light text-white mb-2">SINAPI</div>
+                <div className="text-4xl font-light text-white mb-2">Atualizada</div>
                 <div className="text-slate-500 text-sm">Base de Precos</div>
               </div>
               <div className="text-center">
@@ -537,7 +537,7 @@ export default function Home() {
                   {[
                     "Até 10 orçamentos por mês",
                     "10 agentes de IA especializados",
-                    "Integração SINAPI + PINI em tempo real",
+                    "Base de referência atualizada de mercado",
                     "Exportação XLSX e PDF",
                     "Suporte prioritário",
                   ].map((item) => (
@@ -567,7 +567,7 @@ export default function Home() {
                   {[
                     "1 orçamento completo",
                     "10 agentes de IA especializados",
-                    "Integração SINAPI + PINI",
+                    "Base de referência atualizada de mercado",
                     "Exportação XLSX e PDF",
                     "Histórico de interações",
                   ].map((item) => (

@@ -16,7 +16,7 @@ export const PLANS = {
     features: [
       "Até 10 orçamentos por mês",
       "10 agentes de IA especializados",
-      "Integração SINAPI + PINI em tempo real",
+      "Base de referência atualizada de mercado",
       "Exportação XLSX e PDF",
       "Histórico completo de interações",
       "Suporte prioritário",
@@ -30,7 +30,7 @@ export const PLANS = {
     features: [
       "1 orçamento completo",
       "10 agentes de IA especializados",
-      "Integração SINAPI + PINI",
+      "Base de referência atualizada de mercado",
       "Exportação XLSX e PDF",
       "Histórico de interações",
     ],

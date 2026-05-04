@@ -478,7 +478,7 @@ export default function NewProject() {
                     autoFocus
                   />
                   <p className="text-xs text-muted-foreground">
-                    A localizacao ajuda a selecionar precos regionais SINAPI corretos.
+                    A localizacao ajuda a selecionar precos regionais corretos da base de referencia.
                   </p>
                 </div>
                 <div className="space-y-2">

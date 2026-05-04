@@ -63,6 +63,11 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  // P1.4 Fase 4: registra cron job mensal de refresh de preços.
+  // No-op em NODE_ENV=test (guard interno em scheduleRefreshJob).
+  const { scheduleRefreshJob } = await import("../jobs/refreshPriceDatabases");
+  scheduleRefreshJob();
 }
 
 startServer().catch(console.error);
