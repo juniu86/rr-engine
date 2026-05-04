@@ -118,19 +118,27 @@ describe("Hard limits removidos (P0.4)", () => {
 });
 
 describe("Agent temperature configuration (P0.2)", () => {
+  // P1.2: Comercial e Financeiro removidos desta lista — viraram funções
+  // determinísticas (sem LLM), então temperature não se aplica a eles.
+  // Cobertura desses dois agora vive em comercial-calculator.test.ts e
+  // financeiro-analyzer.test.ts.
   it.each<[keyof typeof agents, number]>([
     ["engenheiro_tecnico", 0.3],
     ["logistica", 0.2],
     ["orcamentista", 0.1],
     ["tributario", 0.0],
-    ["comercial", 0.0],
     ["gestao_projetos", 0.3],
-    ["financeiro", 0.0],
     ["juridico", 0.4],
     ["board", 0.2],
     ["auditor", 0.0],
   ])("agent %s reports temperature %s", (type, expected) => {
     expect(agents[type].getTemperature()).toBe(expected);
+  });
+
+  it("Comercial e Financeiro são determinísticos — não usam LLM (P1.2)", () => {
+    // Marker explícito na classe sinaliza para a UI mostrar badge instantâneo.
+    expect((agents.comercial as unknown as { isDeterministic: boolean }).isDeterministic).toBe(true);
+    expect((agents.financeiro as unknown as { isDeterministic: boolean }).isDeterministic).toBe(true);
   });
 });
 
@@ -184,6 +192,11 @@ describe("Agent Logic Validation", () => {
     });
   });
 
+  // P1.2: Comercial e Financeiro agora são funções determinísticas em
+  // server/services/. A cobertura completa vive em
+  // server/comercial-calculator.test.ts e server/financeiro-analyzer.test.ts.
+  // Os blocos abaixo permanecem como documentação das regras de negócio
+  // (math direto, sem mock de agente).
   describe("Comercial Agent - BDI sem Bitributação", () => {
     it("deve calcular preço final usando apenas custo base (sem impostos)", () => {
       // Dados de entrada

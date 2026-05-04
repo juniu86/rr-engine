@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, AlertCircle, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { Loader2, AlertCircle, ChevronDown, ChevronUp, RefreshCw, Zap } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { agentConfig, pipelineStatusConfig } from "@/lib/constants";
@@ -69,13 +69,23 @@ export default function AgentProgressPipeline({ executions, className, onRetry }
                 <Tooltip key={agent.type}>
                   <TooltipTrigger asChild>
                     <div className={cn(
-                      "flex flex-col items-center p-3 rounded-xl border cursor-pointer group transition-all duration-300",
+                      "relative flex flex-col items-center p-3 rounded-xl border cursor-pointer group transition-all duration-300",
                       "bg-[oklch(0.18_0.012_250)]",
                       isRunning && "border-primary/50 shadow-lg shadow-primary/10 animate-pulse",
                       isCompleted && "border-emerald-500/30",
                       isPending && "border-white/5",
                       status === "failed" && "border-red-500/30"
                     )}>
+                      {/* P1.2: badge "instantâneo" para agentes determinísticos (sem LLM) */}
+                      {agent.isDeterministic && (
+                        <div
+                          className="absolute top-1 right-1 flex items-center gap-0.5 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-300"
+                          title="Cálculo determinístico — não consome tokens de LLM"
+                        >
+                          <Zap className="h-2.5 w-2.5" aria-hidden />
+                          <span>instantâneo</span>
+                        </div>
+                      )}
                       <div className="relative mb-2">
                         <div className={cn(
                           "w-10 h-10 rounded-lg flex items-center justify-center transition-all",
@@ -194,13 +204,23 @@ export default function AgentProgressPipeline({ executions, className, onRetry }
                 <Tooltip key={agent.type}>
                   <TooltipTrigger asChild>
                     <div className={cn(
-                      "flex flex-col items-center p-3 rounded-xl border cursor-pointer group transition-all duration-300",
+                      "relative flex flex-col items-center p-3 rounded-xl border cursor-pointer group transition-all duration-300",
                       "bg-[oklch(0.18_0.012_250)]",
                       isRunning && "border-primary/50 shadow-lg shadow-primary/10 animate-pulse",
                       isCompleted && "border-emerald-500/30",
                       isPending && "border-white/5",
                       status === "failed" && "border-red-500/30"
                     )}>
+                      {/* P1.2: badge "instantâneo" para agentes determinísticos (sem LLM) */}
+                      {agent.isDeterministic && (
+                        <div
+                          className="absolute top-1 right-1 flex items-center gap-0.5 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-300"
+                          title="Cálculo determinístico — não consome tokens de LLM"
+                        >
+                          <Zap className="h-2.5 w-2.5" aria-hidden />
+                          <span>instantâneo</span>
+                        </div>
+                      )}
                       <div className="relative mb-2">
                         <div className={cn(
                           "w-10 h-10 rounded-lg flex items-center justify-center transition-all",

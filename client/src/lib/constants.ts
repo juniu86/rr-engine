@@ -57,6 +57,8 @@ export interface AgentConfigItem {
   details: string;
   color: string;
   bgColor: string;
+  /** P1.2: agente é determinístico (TS puro, sem LLM). UI mostra badge. */
+  isDeterministic?: boolean;
 }
 
 export const agentConfig: AgentConfigItem[] = [
@@ -101,9 +103,10 @@ export const agentConfig: AgentConfigItem[] = [
     name: "Comercial",
     icon: TrendingUp,
     description: "Aplica BDI e preço de venda",
-    details: "Aplica o BDI configurado sobre o custo base e define o preço de venda final.",
+    details: "Aplica o BDI configurado sobre o custo base e define o preço de venda final. Cálculo determinístico — não consome tokens de LLM.",
     color: "text-green-400",
     bgColor: "bg-green-500/10",
+    isDeterministic: true,
   },
   {
     type: "gestao_projetos",
@@ -119,9 +122,10 @@ export const agentConfig: AgentConfigItem[] = [
     name: "Financeiro",
     icon: DollarSign,
     description: "Analisa fluxo de caixa",
-    details: "Projeta fluxo de caixa com faturamento 40% entrada e 60% ao final.",
+    details: "Projeta fluxo de caixa com faturamento 40% entrada e 60% ao final. Análise determinística — não consome tokens de LLM.",
     color: "text-teal-400",
     bgColor: "bg-teal-500/10",
+    isDeterministic: true,
   },
   {
     type: "juridico",
