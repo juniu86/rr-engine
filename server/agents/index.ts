@@ -1216,7 +1216,9 @@ totalDirectCost = soma dos itens com isSummaryItem=false (não incluir itens PAI
 export class TributarioAgent extends BaseAgent<TributarioInput, TributarioOutput> {
   name = AGENT_NAMES.tributario;
   type: AgentType = "tributario";
-  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  // P1.1: migrado de Opus para Sonnet. Tarefa é classificação ISS/ICMS +
+  // aplicação de alíquotas — tabela de regras simples, Sonnet basta.
+  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
   getTemperature() { return 0.0; }
 
   getSystemPrompt(): string {
@@ -1814,7 +1816,9 @@ INSTRUÇÕES:
 // Agent 8: Jurídico
 export class JuridicoAgent extends BaseAgent<JuridicoInput, JuridicoOutput> {
   name = AGENT_NAMES.juridico;
-  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  // P1.1: migrado de Opus para Sonnet (ponte para P1.6 que vai trocar
+  // por templating estruturado e potencialmente Haiku).
+  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
   getTemperature() { return 0.4; }
   type: AgentType = "juridico";
   
@@ -1894,7 +1898,10 @@ Na cláusula de prazo, use "${durationDays} dias" como prazo de execução.`;
 export class BoardAgent extends BaseAgent<BoardInput, BoardOutput> {
   name = AGENT_NAMES.board;
   type: AgentType = "board";
-  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
+  // P1.1: migrado de Opus para Sonnet. Recebe margem e cashflow já
+  // calculados — só decide e justifica. Trabalho deliberativo dentro
+  // da capacidade do Sonnet.
+  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
   getTemperature() { return 0.2; }
   
   getSystemPrompt(): string {

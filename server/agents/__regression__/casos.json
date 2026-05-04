@@ -1,0 +1,380 @@
+{
+  "_meta": {
+    "purpose": "P1.1: regressão antes/depois da migração Opus → Sonnet em Tributário, Jurídico e Board.",
+    "usage": "Rodar com RUN_REGRESSION=1 pnpm test agents-regression.test.ts. Cada caso testa um cenário determinístico em que o output deve cair dentro de uma faixa esperada. Custos de execução são reais — não rodar em CI.",
+    "lastReviewed": "2026-05-04"
+  },
+  "tributario": [
+    {
+      "id": "trib_001",
+      "description": "Lucro Presumido + serviço de pintura puro (ISS típico)",
+      "input": {
+        "budgetItems": [
+          {
+            "id": 1,
+            "category": "Acabamento",
+            "code": "PINT-001",
+            "description": "Pintura acrílica branca interna 2 demãos",
+            "unit": "m²",
+            "quantity": 100,
+            "unitCostMaterial": 12,
+            "unitCostLabor": 18,
+            "unitCostLogistics": 0,
+            "unitCostTotal": 30,
+            "totalCost": 3000,
+            "taxType": "none",
+            "taxAmount": 0,
+            "bdiAmount": 0,
+            "finalPrice": 0,
+            "source": "sinapi",
+            "sourceCode": "SINAPI-001",
+            "sourceDate": "2025-01-01"
+          }
+        ],
+        "contractType": "manutencao",
+        "companyTaxSettings": {
+          "regimeTributario": "lucro_presumido",
+          "issPercentual": 5,
+          "pisPercentual": 0.65,
+          "cofinsPercentual": 3,
+          "irpjPercentual": 1.2,
+          "csllPercentual": 1.08,
+          "taxaLeisSociais": 128.23
+        }
+      },
+      "expectedTaxClassDominant": "iss",
+      "expectedTaxRange": [0.04, 0.12]
+    },
+    {
+      "id": "trib_002",
+      "description": "Lucro Presumido + obra com material > mão de obra (mix ICMS/ISS)",
+      "input": {
+        "budgetItems": [
+          {
+            "id": 1,
+            "category": "Estrutura",
+            "code": "AC-001",
+            "description": "Aço CA-50 para concreto armado",
+            "unit": "kg",
+            "quantity": 1000,
+            "unitCostMaterial": 12,
+            "unitCostLabor": 0,
+            "unitCostLogistics": 0,
+            "unitCostTotal": 12,
+            "totalCost": 12000,
+            "taxType": "none",
+            "taxAmount": 0,
+            "bdiAmount": 0,
+            "finalPrice": 0,
+            "source": "sinapi",
+            "sourceCode": "SINAPI-002",
+            "sourceDate": "2025-01-01"
+          }
+        ],
+        "contractType": "obra",
+        "companyTaxSettings": {
+          "regimeTributario": "lucro_presumido",
+          "issPercentual": 5,
+          "pisPercentual": 0.65,
+          "cofinsPercentual": 3,
+          "irpjPercentual": 1.2,
+          "csllPercentual": 1.08,
+          "taxaLeisSociais": 128.23
+        }
+      },
+      "expectedTaxRange": [0.05, 0.18]
+    },
+    {
+      "id": "trib_003",
+      "description": "Simples Nacional faixa 3 — ISS reduzido",
+      "input": {
+        "budgetItems": [
+          {
+            "id": 1,
+            "category": "Instalações",
+            "code": "ELET-001",
+            "description": "Ponto de tomada elétrica 110V",
+            "unit": "un",
+            "quantity": 20,
+            "unitCostMaterial": 25,
+            "unitCostLabor": 35,
+            "unitCostLogistics": 0,
+            "unitCostTotal": 60,
+            "totalCost": 1200,
+            "taxType": "none",
+            "taxAmount": 0,
+            "bdiAmount": 0,
+            "finalPrice": 0,
+            "source": "sinapi",
+            "sourceCode": "SINAPI-003",
+            "sourceDate": "2025-01-01"
+          }
+        ],
+        "contractType": "manutencao",
+        "companyTaxSettings": {
+          "regimeTributario": "simples_nacional",
+          "issPercentual": 4,
+          "pisPercentual": 0,
+          "cofinsPercentual": 0,
+          "irpjPercentual": 0,
+          "csllPercentual": 0,
+          "taxaLeisSociais": 100,
+          "faixaSimples": 3
+        }
+      },
+      "expectedTaxRange": [0.02, 0.08]
+    },
+    {
+      "id": "trib_004",
+      "description": "Lucro Real + alíquotas mais altas",
+      "input": {
+        "budgetItems": [
+          {
+            "id": 1,
+            "category": "Acabamento",
+            "code": "REV-001",
+            "description": "Revestimento porcelanato retificado",
+            "unit": "m²",
+            "quantity": 50,
+            "unitCostMaterial": 80,
+            "unitCostLabor": 30,
+            "unitCostLogistics": 0,
+            "unitCostTotal": 110,
+            "totalCost": 5500,
+            "taxType": "none",
+            "taxAmount": 0,
+            "bdiAmount": 0,
+            "finalPrice": 0,
+            "source": "sinapi",
+            "sourceCode": "SINAPI-004",
+            "sourceDate": "2025-01-01"
+          }
+        ],
+        "contractType": "obra",
+        "companyTaxSettings": {
+          "regimeTributario": "lucro_real",
+          "issPercentual": 5,
+          "pisPercentual": 1.65,
+          "cofinsPercentual": 7.6,
+          "irpjPercentual": 4.8,
+          "csllPercentual": 2.88,
+          "taxaLeisSociais": 128.23
+        }
+      },
+      "expectedTaxRange": [0.1, 0.3]
+    },
+    {
+      "id": "trib_005",
+      "description": "Lucro Presumido + múltiplos itens mistos",
+      "input": {
+        "budgetItems": [
+          {
+            "id": 1,
+            "category": "Estrutura",
+            "code": "CONC-001",
+            "description": "Concreto usinado fck 25",
+            "unit": "m³",
+            "quantity": 10,
+            "unitCostMaterial": 380,
+            "unitCostLabor": 0,
+            "unitCostLogistics": 0,
+            "unitCostTotal": 380,
+            "totalCost": 3800,
+            "taxType": "none",
+            "taxAmount": 0,
+            "bdiAmount": 0,
+            "finalPrice": 0,
+            "source": "sinapi",
+            "sourceCode": "SINAPI-005",
+            "sourceDate": "2025-01-01"
+          },
+          {
+            "id": 2,
+            "category": "Acabamento",
+            "code": "PINT-002",
+            "description": "Pintura externa fachada",
+            "unit": "m²",
+            "quantity": 200,
+            "unitCostMaterial": 14,
+            "unitCostLabor": 22,
+            "unitCostLogistics": 0,
+            "unitCostTotal": 36,
+            "totalCost": 7200,
+            "taxType": "none",
+            "taxAmount": 0,
+            "bdiAmount": 0,
+            "finalPrice": 0,
+            "source": "sinapi",
+            "sourceCode": "SINAPI-006",
+            "sourceDate": "2025-01-01"
+          }
+        ],
+        "contractType": "obra",
+        "companyTaxSettings": {
+          "regimeTributario": "lucro_presumido",
+          "issPercentual": 5,
+          "pisPercentual": 0.65,
+          "cofinsPercentual": 3,
+          "irpjPercentual": 1.2,
+          "csllPercentual": 1.08,
+          "taxaLeisSociais": 128.23
+        }
+      },
+      "expectedTaxRange": [0.05, 0.18]
+    }
+  ],
+  "juridico": [
+    {
+      "id": "jur_001",
+      "description": "Contrato simples de manutenção",
+      "input": {
+        "projectName": "Manutenção apartamento Vânia",
+        "duration": 4,
+        "totalPrice": 25000,
+        "contractType": "manutencao"
+      },
+      "minSections": 5,
+      "expectedKeywords": ["objeto", "prazo", "valor", "garantia"]
+    },
+    {
+      "id": "jur_002",
+      "description": "Contrato de obra com prazo médio",
+      "input": {
+        "projectName": "Reforma comercial Sala Comercial",
+        "duration": 12,
+        "totalPrice": 180000,
+        "contractType": "obra"
+      },
+      "minSections": 5,
+      "expectedKeywords": ["objeto", "cronograma", "pagamento"]
+    },
+    {
+      "id": "jur_003",
+      "description": "Obra grande com múltiplas fases",
+      "input": {
+        "projectName": "Construção edifício comercial",
+        "duration": 26,
+        "totalPrice": 1500000,
+        "contractType": "obra"
+      },
+      "minSections": 6,
+      "expectedKeywords": ["objeto", "prazo", "garantia", "rescisão"]
+    },
+    {
+      "id": "jur_004",
+      "description": "Manutenção curtíssima",
+      "input": {
+        "projectName": "Pintura fachada residência",
+        "duration": 2,
+        "totalPrice": 8000,
+        "contractType": "manutencao"
+      },
+      "minSections": 4,
+      "expectedKeywords": ["objeto", "valor"]
+    },
+    {
+      "id": "jur_005",
+      "description": "Reforma com escopo extenso",
+      "input": {
+        "projectName": "Reforma completa apartamento 200m²",
+        "duration": 16,
+        "totalPrice": 320000,
+        "contractType": "obra"
+      },
+      "minSections": 5,
+      "expectedKeywords": ["objeto", "cronograma", "garantia"]
+    }
+  ],
+  "board": [
+    {
+      "id": "board_001",
+      "description": "Margem saudável (>15%) deve aprovar",
+      "input": {
+        "totalDirectCost": 80000,
+        "totalIndirectCost": 12000,
+        "totalTaxes": 8000,
+        "totalBdi": 20000,
+        "totalPrice": 120000,
+        "grossMargin": 28000,
+        "grossMarginPercent": 23.3,
+        "estimatedDuration": 6,
+        "cashFlowFinalBalance": 25000,
+        "fiscalRisk": "low",
+        "logisticsComplexity": "low"
+      },
+      "expectedDecision": "approved"
+    },
+    {
+      "id": "board_002",
+      "description": "Margem baixa (<5%) deve gerar alerta ou rejeitar",
+      "input": {
+        "totalDirectCost": 95000,
+        "totalIndirectCost": 5000,
+        "totalTaxes": 8000,
+        "totalBdi": 5000,
+        "totalPrice": 105000,
+        "grossMargin": 5000,
+        "grossMarginPercent": 4.8,
+        "estimatedDuration": 4,
+        "cashFlowFinalBalance": 1000,
+        "fiscalRisk": "medium",
+        "logisticsComplexity": "low"
+      },
+      "expectedDecisionNotApproved": true
+    },
+    {
+      "id": "board_003",
+      "description": "Cashflow negativo deve sugerir cronograma de pagamento",
+      "input": {
+        "totalDirectCost": 80000,
+        "totalIndirectCost": 10000,
+        "totalTaxes": 7000,
+        "totalBdi": 15000,
+        "totalPrice": 112000,
+        "grossMargin": 22000,
+        "grossMarginPercent": 19.6,
+        "estimatedDuration": 8,
+        "cashFlowFinalBalance": -15000,
+        "fiscalRisk": "low",
+        "logisticsComplexity": "medium"
+      },
+      "expectsBillingScheduleSuggestion": true
+    },
+    {
+      "id": "board_004",
+      "description": "Risco fiscal alto + margem média",
+      "input": {
+        "totalDirectCost": 60000,
+        "totalIndirectCost": 8000,
+        "totalTaxes": 9000,
+        "totalBdi": 13000,
+        "totalPrice": 90000,
+        "grossMargin": 13000,
+        "grossMarginPercent": 14.4,
+        "estimatedDuration": 5,
+        "cashFlowFinalBalance": 10000,
+        "fiscalRisk": "high",
+        "logisticsComplexity": "low"
+      },
+      "expectsWarning": true
+    },
+    {
+      "id": "board_005",
+      "description": "Logística complexa deve ser refletida na decisão",
+      "input": {
+        "totalDirectCost": 150000,
+        "totalIndirectCost": 60000,
+        "totalTaxes": 18000,
+        "totalBdi": 40000,
+        "totalPrice": 268000,
+        "grossMargin": 50000,
+        "grossMarginPercent": 18.6,
+        "estimatedDuration": 12,
+        "cashFlowFinalBalance": 30000,
+        "fiscalRisk": "medium",
+        "logisticsComplexity": "high"
+      },
+      "expectsLogisticsAttention": true
+    }
+  ]
+}
