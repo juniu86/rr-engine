@@ -353,7 +353,12 @@ export const companySettings = mysqlTable("company_settings", {
     "lucro_presumido",
     "lucro_real"
   ]).default("lucro_presumido").notNull(),
-  
+
+  // P1.5.1: faixa do Simples Nacional (1-6). NULL para regimes diferentes.
+  // Validação cruzada (regime=simples_nacional → faixa obrigatória) é feita
+  // no input Zod do tRPC e em isCompleteTaxSettings (shared/types.ts).
+  faixaSimples: int("faixaSimples"),
+
   // Data de referência dos preços (formato YYYY/MM)
   dataReferenciaPrecos: varchar("dataReferenciaPrecos", { length: 10 }).default("2025/01"),
   

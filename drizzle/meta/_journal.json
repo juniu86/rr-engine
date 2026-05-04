@@ -134,6 +134,13 @@
       "when": 1777914129745,
       "tag": "0018_lucky_fixer",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1777917813400,
+      "tag": "0019_ancient_dexter_bennett",
+      "breakpoints": true
     }
   ]
 }

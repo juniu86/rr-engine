@@ -675,6 +675,7 @@ export async function getCompanySettingsOrDefault(userId: number): Promise<Compa
     despesasFinanceirasPercentual: "1.00",
     riscosPercentual: "1.00",
     regimeTributario: "lucro_presumido",
+    faixaSimples: null,
     dataReferenciaPrecos: "2025/01",
     billingInstallments: [{name: "Entrada", percentage: 40}, {name: "Final", percentage: 60}],
     createdAt: new Date(),
@@ -881,6 +882,14 @@ export async function getCompanyTaxSettings(
 ): Promise<Partial<import("../shared/types").CompanyTaxSettings> | null> {
   const settings = await getCompanySettingsByUserId(userId);
   if (!settings) return null;
+  // P1.5.1: faixaSimples agora existe no schema. NULL quando regime !==
+  // simples_nacional, ou quando ainda não foi configurado.
+  const faixa = settings.faixaSimples;
+  const faixaTyped =
+    faixa === 1 || faixa === 2 || faixa === 3 ||
+    faixa === 4 || faixa === 5 || faixa === 6
+      ? (faixa as 1 | 2 | 3 | 4 | 5 | 6)
+      : undefined;
   return {
     regimeTributario: settings.regimeTributario,
     issPercentual: parseFloat(settings.issPercentual as string),
@@ -889,10 +898,7 @@ export async function getCompanyTaxSettings(
     irpjPercentual: parseFloat(settings.irpjPercentual as string),
     csllPercentual: parseFloat(settings.csllPercentual as string),
     taxaLeisSociais: parseFloat(settings.taxaLeisSociais as string),
-    // faixaSimples ainda não está no schema (company_settings) — quando o
-    // regime for Simples Nacional, isCompleteTaxSettings vai falhar até
-    // que esse campo seja adicionado em uma migration separada (sinaliza
-    // que a UI precisa expor o seletor de faixa).
+    faixaSimples: faixaTyped,
   };
 }
 
