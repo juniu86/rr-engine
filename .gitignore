@@ -106,3 +106,12 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Manual test/output artifacts no root (P2.7) — devem ir para docs/exemplos/ ou scripts/experiments/
+/test-llm*.mjs
+/analise_*.pdf
+/analise_*.xls
+/memoria_calculo_*.pdf
+/memoria_calculo_*.xls
+/teste-*.md
+/test-*.md

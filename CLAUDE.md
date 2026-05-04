@@ -19,6 +19,7 @@ Versão atual: 3.1.0. Hospedado hoje em `rrengine.manus.space` (tenant Manus). D
 - **Pacote:** pnpm 10
 
 Comandos principais:
+
 ```bash
 pnpm install
 pnpm dev          # NODE_ENV=development tsx watch server/_core/index.ts
@@ -91,6 +92,7 @@ Board → Auditor
 ```
 
 Cada agente é uma classe que herda de `BaseAgent<TInput, TOutput>` em `server/agents/index.ts`. Implementa três métodos:
+
 - `getSystemPrompt()` — prompt fixo do agente
 - `getUserPrompt(input)` — prompt dinâmico com payload
 - `getOutputSchema()` — JSON schema do output (para `response_format`)
@@ -101,18 +103,18 @@ Cada agente é uma classe que herda de `BaseAgent<TInput, TOutput>` em `server/a
 
 Temperatura definida em `getTemperature()` de cada agente (ver `server/agents/index.ts`). Default do `BaseAgent` é 0.2; `invokeLLM` aplica 0.2 quando o caller omite (sobrescreve o default ~1.0 do provider para favorecer reprodutibilidade).
 
-| Agente | Modelo | Override | Temperatura |
-|---|---|---|---|
-| Engenheiro Técnico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.3 |
-| Logística | Gemini 2.5 Flash | `LLM_MODEL` (default) | 0.2 |
-| Orçamentista | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.1 |
-| Tributário | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus) | 0.0 |
-| Comercial | — (determinístico, sem LLM) | P1.2: pure fn em `services/comercialCalculator.ts` | — |
-| Gestão de Projetos | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.3 |
-| Financeiro | — (determinístico, sem LLM) | P1.2: pure fn em `services/financeiroAnalyzer.ts` | — |
-| Jurídico | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` — templating estruturado (P1.6) | 0.2 |
-| Board | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus) | 0.2 |
-| Auditor | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.0 |
+| Agente             | Modelo                      | Override                                                 | Temperatura |
+| ------------------ | --------------------------- | -------------------------------------------------------- | ----------- |
+| Engenheiro Técnico | Claude Opus 4.6             | `LLM_MODEL_CRITICAL`                                     | 0.3         |
+| Logística          | Gemini 2.5 Flash            | `LLM_MODEL` (default)                                    | 0.2         |
+| Orçamentista       | Claude Opus 4.6             | `LLM_MODEL_CRITICAL`                                     | 0.1         |
+| Tributário         | Claude Sonnet 4.6           | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus)         | 0.0         |
+| Comercial          | — (determinístico, sem LLM) | P1.2: pure fn em `services/comercialCalculator.ts`       | —           |
+| Gestão de Projetos | Claude Sonnet 4.6           | `LLM_MODEL_INTERMEDIATE`                                 | 0.3         |
+| Financeiro         | — (determinístico, sem LLM) | P1.2: pure fn em `services/financeiroAnalyzer.ts`        | —           |
+| Jurídico           | Claude Sonnet 4.6           | `LLM_MODEL_INTERMEDIATE` — templating estruturado (P1.6) | 0.2         |
+| Board              | Claude Sonnet 4.6           | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus)         | 0.2         |
+| Auditor            | Claude Sonnet 4.6           | `LLM_MODEL_INTERMEDIATE`                                 | 0.0         |
 
 ### Roteamento de provider
 
@@ -135,6 +137,7 @@ Esta fase de implementação cobre 18 débitos técnicos catalogados em `analise
 **Regra:** um débito = uma branch = um PR. Não acumular débitos no mesmo PR.
 
 **Naming:**
+
 ```
 feat/p0-1-engine-validacao-cruzada
 feat/p0-2-temperature-explicita
@@ -145,12 +148,14 @@ chore/p2-7-limpeza-arquivos-analise
 Use `feat/` para débitos que adicionam funcionalidade, `fix/` para correção de comportamento, `chore/` para limpeza/docs.
 
 **Antes de abrir PR:**
+
 1. `pnpm check` passa
 2. `pnpm test` passa (incluindo testes novos do ticket)
 3. `pnpm format` aplicado
 4. Mensagem de commit referencia o ticket: `feat(P0.1): plugar deterministicEngine como validacao cruzada`
 
 **Ordem sugerida de execução** (ver `implementacao/README.md` para dependências):
+
 1. P0.5 (CI) — desbloqueia tudo, deve ser o primeiro PR
 2. P0.2 (temperature) — barato e melhora reprodutibilidade dos testes
 3. P0.3 (telemetria de tokens) — necessário para validar P1.1 e P1.2
@@ -166,8 +171,10 @@ Use `feat/` para débitos que adicionam funcionalidade, `fix/` para correção d
 - `server/agents/index.ts` — implementação dos agentes (ler antes de qualquer mudança em prompt/lógica)
 - `server/routers.ts` — orquestração do pipeline
 - `drizzle/schema.ts` — schema atual do banco
-- `memoria_calculo_Reforma_Vania_-_REV08_*.pdf` — caso real médio para validação de mudanças
-- `analise_proposta.pdf` — exemplo de saída comercial atual
+- `docs/exemplos/memoria_calculo_reforma_vania.pdf` — caso real médio para validação de mudanças
+- `docs/exemplos/proposta_exemplo.pdf` — exemplo de saída comercial atual
+- `docs/legacy/documento_tecnico_v1.md` — referência histórica (9 agentes, será reescrita em P2.1)
+- `docs/archive/` — análises, sincronizações e testes manuais antigos (histórico, não tocar)
 
 ## Bases de preço — pontos de atenção
 
