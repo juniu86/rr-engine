@@ -8,4 +8,10 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  // P2.2: observabilidade externa via Langfuse. Default OFF — sem chaves
+  // configuradas, o tracing é no-op e o pipeline roda intacto.
+  langfuseEnabled: process.env.LANGFUSE_ENABLED === "true",
+  langfusePublicKey: process.env.LANGFUSE_PUBLIC_KEY ?? "",
+  langfuseSecretKey: process.env.LANGFUSE_SECRET_KEY ?? "",
+  langfuseHost: process.env.LANGFUSE_HOST ?? "https://cloud.langfuse.com",
 };

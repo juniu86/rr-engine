@@ -204,12 +204,16 @@ abstract class BaseAgent<TInput, TOutput> {
 
     // Telemetria (P0.3): _projectId e _agentExecutionId são propagados via
     // input pelos call sites em routers.ts; chunking helpers preservam.
+    // P2.2: _langfuseParent (span do agente) também é propagado quando o
+    // pipeline está dentro de um trace.
     const meta = input as unknown as {
       _projectId?: number;
       _agentExecutionId?: number;
+      _langfuseParent?: import("../_core/llm").LangfuseParent;
     };
     const projectId = meta._projectId;
     const agentExecutionId = meta._agentExecutionId;
+    const langfuseParent = meta._langfuseParent;
 
     const preferredModel = this.getPreferredModel();
     const t0 = Date.now();
@@ -241,6 +245,8 @@ abstract class BaseAgent<TInput, TOutput> {
             schema: this.getOutputSchema() as Record<string, unknown>,
           },
         },
+        _langfuseParent: langfuseParent,
+        _langfuseName: `agent.${this.type}.llm`,
       });
     } catch (llmError) {
       const latencyMs = Date.now() - t0;
@@ -1351,9 +1357,7 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
           price: number;
           category: string;
         }>;
-        getSinapiDataSync: (
-          state?: string
-        ) => Array<{
+        getSinapiDataSync: (state?: string) => Array<{
           code: string;
           description: string;
           unit: string;
@@ -1369,9 +1373,7 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
           unit: string;
           price: number;
         }>;
-        getPiniDataSync: (
-          region?: string
-        ) => Array<{
+        getPiniDataSync: (region?: string) => Array<{
           code: string;
           description: string;
           unit: string;

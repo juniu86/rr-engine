@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { stripeWebhookHandler } from "../stripe/webhook";
+import { shutdownTracing } from "../services/tracing";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,7 +33,11 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   // Stripe webhook MUST be registered BEFORE express.json() for signature verification
-  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookHandler);
+  app.post(
+    "/api/stripe/webhook",
+    express.raw({ type: "application/json" }),
+    stripeWebhookHandler
+  );
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -68,6 +73,22 @@ async function startServer() {
   // No-op em NODE_ENV=test (guard interno em scheduleRefreshJob).
   const { scheduleRefreshJob } = await import("../jobs/refreshPriceDatabases");
   scheduleRefreshJob();
+
+  // P2.2: graceful shutdown — flush dos eventos pendentes do Langfuse antes
+  // do processo encerrar. SIGTERM (orquestrador) e SIGINT (Ctrl+C local).
+  const gracefulShutdown = async (signal: string) => {
+    console.log(`[Server] ${signal} received, shutting down gracefully...`);
+    try {
+      await shutdownTracing();
+    } catch (err) {
+      console.warn("[Server] shutdownTracing falhou, ignorando:", err);
+    }
+    server.close(() => process.exit(0));
+    // Hard cap caso server.close trave em conexões ativas.
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 }
 
 startServer().catch(console.error);
