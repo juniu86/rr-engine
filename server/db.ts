@@ -866,6 +866,36 @@ export async function getAdminProjects() {
 }
 
 
+/**
+ * P1.5: retorna a configuração tributária do usuário tipada como
+ * Partial<CompanyTaxSettings>. Retorna null se não houver linha em
+ * company_settings — sinal de que o usuário NUNCA configurou e o pipeline
+ * deve recusar gerar orçamento. Não aplica fallback silencioso.
+ *
+ * O caller deve passar pelo `isCompleteTaxSettings` (de shared/types.ts)
+ * antes de usar — esta função apenas mapeia o registro do banco para o
+ * shape canônico, sem validar.
+ */
+export async function getCompanyTaxSettings(
+  userId: number
+): Promise<Partial<import("../shared/types").CompanyTaxSettings> | null> {
+  const settings = await getCompanySettingsByUserId(userId);
+  if (!settings) return null;
+  return {
+    regimeTributario: settings.regimeTributario,
+    issPercentual: parseFloat(settings.issPercentual as string),
+    pisPercentual: parseFloat(settings.pisPercentual as string),
+    cofinsPercentual: parseFloat(settings.cofinsPercentual as string),
+    irpjPercentual: parseFloat(settings.irpjPercentual as string),
+    csllPercentual: parseFloat(settings.csllPercentual as string),
+    taxaLeisSociais: parseFloat(settings.taxaLeisSociais as string),
+    // faixaSimples ainda não está no schema (company_settings) — quando o
+    // regime for Simples Nacional, isCompleteTaxSettings vai falhar até
+    // que esse campo seja adicionado em uma migration separada (sinaliza
+    // que a UI precisa expor o seletor de faixa).
+  };
+}
+
 // Função para verificar se o usuário já salvou configurações personalizadas
 // P2-10 FIX: Verificar se settings tem dados reais (não apenas se existe)
 export async function hasCustomCompanySettings(userId: number): Promise<boolean> {

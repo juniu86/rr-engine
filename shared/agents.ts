@@ -257,6 +257,11 @@ export interface OrcamentistaOutput {
 export interface TributarioInput {
   budgetItems: BudgetItemDetail[];
   contractType?: ContractType;
+  /**
+   * P1.5: configuração tributária canônica. Obrigatória em runtime — o
+   * pipeline em routers.ts bloqueia antes de chegar aqui se ausente.
+   */
+  companyTaxSettings?: import("./types").CompanyTaxSettings;
 }
 
 export interface TributarioOutput {

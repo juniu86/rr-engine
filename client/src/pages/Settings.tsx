@@ -113,6 +113,11 @@ export default function Settings() {
     enabled: !!user,
   });
   const { data: hasCustomSettings } = trpc.settings.hasCustomSettings.useQuery();
+  // P1.5: query usado para mostrar banner persistente quando a config
+  // tributária está incompleta. Same source of truth do backend.
+  const { data: taxStatus } = trpc.settings.isTaxSettingsComplete.useQuery(undefined, {
+    enabled: !!user,
+  });
 
   const updateSettings = trpc.settings.update.useMutation({
     onSuccess: () => {
@@ -560,6 +565,24 @@ export default function Settings() {
           { label: "Dashboard", href: "/dashboard" },
           { label: "Configuracoes" },
         ]} />
+
+        {/* P1.5: banner persistente quando config tributária está incompleta */}
+        {taxStatus && !taxStatus.isComplete && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900" role="alert">
+            <div className="flex items-start gap-3">
+              <span className="text-xl" aria-hidden>⚠️</span>
+              <div className="flex-1">
+                <p className="font-semibold">Configuração tributária incompleta</p>
+                <p className="text-sm mt-1">
+                  Orçamentos não poderão ser gerados até que você complete a aba <strong>Tributos</strong> abaixo.
+                  {taxStatus.regime === "simples_nacional" && (
+                    <> Regime <strong>Simples Nacional</strong> exige seleção de faixa.</>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
