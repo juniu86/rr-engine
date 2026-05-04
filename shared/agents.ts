@@ -461,6 +461,13 @@ export interface AuditorInput {
     contractType?: ContractType;
   };
   hasCustomSettings: boolean; // Se o usuário já salvou configurações personalizadas
+  /**
+   * P0.1: total (custoDireto + logística, pré-BDI) calculado por engine
+   * determinístico independente. Usado para cross-check.
+   * undefined quando feature flag desativada ou engine falhou — Auditor
+   * opera em modo "engine indisponível" sem alarme.
+   */
+  deterministicTotal?: number;
 }
 
 export interface AuditorValidation {
@@ -500,6 +507,18 @@ export interface AuditorOutput {
   auditSeal: "approved" | "approved_with_warnings" | "rejected";
   auditTimestamp: string;
   auditNotes: string;
+  /**
+   * P0.1: resultado da validação cruzada com engine determinístico.
+   * Soft alert na v1 — divergência crítica NÃO bloqueia proposta;
+   * apenas registra warning visível. Reavaliar após 30 dias de calibração.
+   */
+  deterministicValidation?: {
+    deterministicTotal: number;
+    llmTotal: number;
+    divergencePercent: number;
+    severity: "info" | "warning" | "critical";
+    notes: string;
+  };
   /** Correções sugeridas pelo Auditor para aprovação do usuário (v3.2) */
   corrections?: {
     budgetItemsToRemove: Array<{
