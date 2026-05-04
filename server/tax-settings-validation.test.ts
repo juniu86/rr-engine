@@ -86,3 +86,59 @@ describe("isCompleteTaxSettings (P1.5)", () => {
     );
   });
 });
+
+describe("isCompleteTaxSettings — coluna faixaSimples (P1.5.1)", () => {
+  const baseSimples = {
+    regimeTributario: "simples_nacional" as const,
+    issPercentual: 4,
+    pisPercentual: 0,
+    cofinsPercentual: 0,
+    irpjPercentual: 0,
+    csllPercentual: 0,
+    taxaLeisSociais: 100,
+  };
+
+  it("aceita Simples Nacional COM faixa preenchida (1-6)", () => {
+    for (const faixa of [1, 2, 3, 4, 5, 6] as const) {
+      expect(
+        isCompleteTaxSettings({ ...baseSimples, faixaSimples: faixa })
+      ).toBe(true);
+    }
+  });
+
+  it("rejeita Simples Nacional SEM faixa", () => {
+    expect(isCompleteTaxSettings(baseSimples)).toBe(false);
+  });
+
+  it("rejeita Simples Nacional com faixa null", () => {
+    expect(
+      isCompleteTaxSettings({ ...baseSimples, faixaSimples: undefined })
+    ).toBe(false);
+  });
+
+  it("aceita Lucro Presumido SEM faixa (faixa não se aplica)", () => {
+    const completeLP = {
+      regimeTributario: "lucro_presumido" as const,
+      issPercentual: 5,
+      pisPercentual: 0.65,
+      cofinsPercentual: 3,
+      irpjPercentual: 1.2,
+      csllPercentual: 1.08,
+      taxaLeisSociais: 128,
+    };
+    expect(isCompleteTaxSettings(completeLP)).toBe(true);
+  });
+
+  it("aceita Lucro Real SEM faixa (faixa não se aplica)", () => {
+    const completeLR = {
+      regimeTributario: "lucro_real" as const,
+      issPercentual: 5,
+      pisPercentual: 1.65,
+      cofinsPercentual: 7.6,
+      irpjPercentual: 4.8,
+      csllPercentual: 2.88,
+      taxaLeisSociais: 128,
+    };
+    expect(isCompleteTaxSettings(completeLR)).toBe(true);
+  });
+});

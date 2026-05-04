@@ -161,6 +161,9 @@ export default function Settings() {
     despesasFinanceirasPercentual: "1.00",
     riscosPercentual: "1.00",
     regimeTributario: "lucro_presumido",
+    // P1.5.1: faixa do Simples Nacional. "" = não selecionada.
+    // Visível apenas quando regimeTributario === "simples_nacional".
+    faixaSimples: "" as "" | "1" | "2" | "3" | "4" | "5" | "6",
     dataReferenciaPrecos: "2025/01",
   });
 
@@ -190,6 +193,9 @@ export default function Settings() {
         despesasFinanceirasPercentual: settings.despesasFinanceirasPercentual || "1.00",
         riscosPercentual: settings.riscosPercentual || "1.00",
         regimeTributario: settings.regimeTributario || "lucro_presumido",
+        faixaSimples: (settings.faixaSimples
+          ? String(settings.faixaSimples)
+          : "") as "" | "1" | "2" | "3" | "4" | "5" | "6",
         dataReferenciaPrecos: settings.dataReferenciaPrecos || "2025/01",
       });
       if (settings.billingInstallments && Array.isArray(settings.billingInstallments)) {
@@ -280,10 +286,27 @@ export default function Settings() {
       return;
     }
 
+    // P1.5.1: validação client-side de faixaSimples antes do mutate.
+    // Backend tambem valida (BAD_REQUEST), aqui dá feedback imediato.
+    if (
+      formData.regimeTributario === "simples_nacional" &&
+      !formData.faixaSimples
+    ) {
+      toast.error(
+        "Regime Simples Nacional exige seleção de faixa (1 a 6). Selecione na aba Tributos antes de salvar."
+      );
+      return;
+    }
+
     updateSettings.mutate({
       ...formData,
       priceRegion: formData.priceRegion as any,
       regimeTributario: formData.regimeTributario as any,
+      // Envia número quando regime é Simples; null caso contrário.
+      faixaSimples:
+        formData.regimeTributario === "simples_nacional" && formData.faixaSimples
+          ? (parseInt(formData.faixaSimples, 10) as 1 | 2 | 3 | 4 | 5 | 6)
+          : null,
       billingInstallments: JSON.stringify(installments),
     });
   };
@@ -299,11 +322,26 @@ export default function Settings() {
       return;
     }
 
+    // P1.5.1: wizard tambem valida faixaSimples quando regime e Simples
+    if (
+      formData.regimeTributario === "simples_nacional" &&
+      !formData.faixaSimples
+    ) {
+      toast.error(
+        "Regime Simples Nacional exige seleção de faixa (1 a 6) antes de salvar."
+      );
+      return;
+    }
+
     updateSettings.mutate({
       ...formData,
       bdiPercentual: bdi,
       priceRegion: formData.priceRegion as any,
       regimeTributario: formData.regimeTributario as any,
+      faixaSimples:
+        formData.regimeTributario === "simples_nacional" && formData.faixaSimples
+          ? (parseInt(formData.faixaSimples, 10) as 1 | 2 | 3 | 4 | 5 | 6)
+          : null,
       billingInstallments: JSON.stringify(installments),
     });
   };
@@ -566,23 +604,48 @@ export default function Settings() {
           { label: "Configuracoes" },
         ]} />
 
-        {/* P1.5: banner persistente quando config tributária está incompleta */}
-        {taxStatus && !taxStatus.isComplete && (
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900" role="alert">
-            <div className="flex items-start gap-3">
-              <span className="text-xl" aria-hidden>⚠️</span>
-              <div className="flex-1">
-                <p className="font-semibold">Configuração tributária incompleta</p>
-                <p className="text-sm mt-1">
-                  Orçamentos não poderão ser gerados até que você complete a aba <strong>Tributos</strong> abaixo.
-                  {taxStatus.regime === "simples_nacional" && (
-                    <> Regime <strong>Simples Nacional</strong> exige seleção de faixa.</>
-                  )}
-                </p>
+        {/* P1.5/P1.5.1: banner com copy distinto por motivo de incompletude */}
+        {taxStatus && !taxStatus.isComplete && (() => {
+          const isFaixaMissing = taxStatus.reason === "simples_faixa_missing";
+          const isNeverSaved = taxStatus.reason === "never_saved";
+          return (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900" role="alert">
+              <div className="flex items-start gap-3">
+                <span className="text-xl" aria-hidden>⚠️</span>
+                <div className="flex-1">
+                  <p className="font-semibold">
+                    {isFaixaMissing
+                      ? "Faixa do Simples Nacional pendente"
+                      : isNeverSaved
+                      ? "Configurações ainda não salvas"
+                      : "Configuração tributária incompleta"}
+                  </p>
+                  <p className="text-sm mt-1">
+                    {isFaixaMissing ? (
+                      <>
+                        Você selecionou regime <strong>Simples Nacional</strong> mas
+                        ainda não escolheu a faixa (1 a 6). Selecione na aba{" "}
+                        <strong>Tributos</strong> abaixo e salve para liberar a geração
+                        de orçamentos.
+                      </>
+                    ) : isNeverSaved ? (
+                      <>
+                        Preencha os dados da empresa, regime tributário e alíquotas nas
+                        abas abaixo e clique em <strong>Salvar Configurações</strong>.
+                        Sem isso, orçamentos não podem ser gerados.
+                      </>
+                    ) : (
+                      <>
+                        Orçamentos não poderão ser gerados até que você complete a aba{" "}
+                        <strong>Tributos</strong> abaixo.
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -654,7 +717,16 @@ export default function Settings() {
                   <Label htmlFor="regimeTributario">Regime Tributario</Label>
                   <Select
                     value={formData.regimeTributario}
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, regimeTributario: value }))}
+                    onValueChange={(value) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        regimeTributario: value,
+                        // P1.5.1: ao mudar de regime para fora do Simples,
+                        // zerar a faixa para evitar estado inconsistente.
+                        faixaSimples:
+                          value === "simples_nacional" ? prev.faixaSimples : "",
+                      }))
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o regime" />
@@ -671,6 +743,41 @@ export default function Settings() {
                     O regime tributario afeta as aliquotas de PIS, COFINS e outros tributos
                   </p>
                 </div>
+
+                {/* P1.5.1: Faixa do Simples Nacional — visível só para esse regime */}
+                {formData.regimeTributario === "simples_nacional" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="faixaSimples">
+                      Faixa do Simples Nacional <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={formData.faixaSimples}
+                      onValueChange={(value) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          faixaSimples: value as "" | "1" | "2" | "3" | "4" | "5" | "6",
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a faixa (1 a 6)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Faixa 1 — Receita até R$ 180 mil</SelectItem>
+                        <SelectItem value="2">Faixa 2 — Receita até R$ 360 mil</SelectItem>
+                        <SelectItem value="3">Faixa 3 — Receita até R$ 720 mil</SelectItem>
+                        <SelectItem value="4">Faixa 4 — Receita até R$ 1,8 milhão</SelectItem>
+                        <SelectItem value="5">Faixa 5 — Receita até R$ 3,6 milhões</SelectItem>
+                        <SelectItem value="6">Faixa 6 — Receita até R$ 4,8 milhões</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      A faixa determina as alíquotas efetivas aplicadas. Quando a receita
+                      bruta acumulada nos últimos 12 meses ultrapassar a faixa atual,
+                      atualize aqui — o sistema não detecta automaticamente.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

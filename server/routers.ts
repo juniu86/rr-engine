@@ -1425,12 +1425,33 @@ export const appRouter = router({
      * para decidir se a UI deve bloquear a geração de orçamento.
      * Source of truth: mesma função `isCompleteTaxSettings` que o backend
      * usa em executeAll/execute.
+     *
+     * P1.5.1: retorna `reason` distinguindo dois cenários para a UI poder
+     * mostrar copy específico:
+     * - 'never_saved': nenhuma linha em company_settings (banner azul)
+     * - 'simples_faixa_missing': regime=Simples mas faixaSimples null (banner amarelo)
+     * - null quando isComplete=true
      */
     isTaxSettingsComplete: protectedProcedure.query(async ({ ctx }) => {
       const taxSettings = await db.getCompanyTaxSettings(ctx.user.id);
+      const isComplete = isCompleteTaxSettings(taxSettings);
+      let reason: "never_saved" | "simples_faixa_missing" | "other_field_missing" | null = null;
+      if (!isComplete) {
+        if (!taxSettings) {
+          reason = "never_saved";
+        } else if (
+          taxSettings.regimeTributario === "simples_nacional" &&
+          !taxSettings.faixaSimples
+        ) {
+          reason = "simples_faixa_missing";
+        } else {
+          reason = "other_field_missing";
+        }
+      }
       return {
-        isComplete: isCompleteTaxSettings(taxSettings),
+        isComplete,
         regime: taxSettings?.regimeTributario ?? null,
+        reason,
       };
     }),
 
@@ -1451,11 +1472,38 @@ export const appRouter = router({
         despesasFinanceirasPercentual: z.string().optional(),
         riscosPercentual: z.string().optional(),
         regimeTributario: z.enum(["simples_nacional", "lucro_presumido", "lucro_real"]).optional(),
+        // P1.5.1: faixa do Simples Nacional. nullable + optional —
+        // null sinaliza explicitamente que o regime não exige faixa.
+        faixaSimples: z.union([
+          z.literal(1), z.literal(2), z.literal(3),
+          z.literal(4), z.literal(5), z.literal(6),
+        ]).nullable().optional(),
         dataReferenciaPrecos: z.string().optional(),
         billingInstallments: z.string().optional(), // JSON string de parcelas
       }))
       .mutation(async ({ ctx, input }) => {
-        return db.upsertCompanySettings(ctx.user.id, input);
+        // P1.5.1: validação cruzada — Simples Nacional exige faixa.
+        // Para regimes diferentes, normalizamos faixaSimples para null
+        // (caso o frontend tenha esquecido de zerar ao mudar de regime).
+        const { faixaSimples, regimeTributario } = input;
+        const normalizedInput = { ...input };
+
+        if (regimeTributario === "simples_nacional") {
+          if (faixaSimples == null) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Regime Simples Nacional exige seleção de faixa (1 a 6). Selecione a faixa em Configurações → Tributos antes de salvar.",
+            });
+          }
+        } else if (regimeTributario) {
+          // Regime explicitamente diferente de Simples — zera faixa para
+          // evitar estado inconsistente persistido (lucro_presumido com
+          // faixaSimples=3, por exemplo).
+          normalizedInput.faixaSimples = null;
+        }
+
+        return db.upsertCompanySettings(ctx.user.id, normalizedInput);
       }),
 
     // Calcular BDI baseado nos componentes
