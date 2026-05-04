@@ -1687,6 +1687,13 @@ interface JuridicoLLMOutput {
   templateChoice: "padrao" | "obra_publica" | "manutencao";
   escopoBreve: string;
   validityDays: number;
+  /**
+   * P1.6 (post-review): foro derivado da localização da obra pelo agente.
+   * Quando location for vago demais para extrair, vem com a string literal
+   * "[Comarca da obra — preencher antes da assinatura]" para sinalizar
+   * revisão humana antes da assinatura do contrato.
+   */
+  foro: string;
   clausulasExtras?: Array<{ title: string; content: string }>;
 }
 
@@ -1712,7 +1719,9 @@ VOCÊ NÃO REDIGE A PROPOSTA. O texto das cláusulas vem de templates aprovados 
 
 3. Definir "validityDays" — prazo de validade da proposta em dias. Default: 30. Aumentar para 45 ou 60 quando cliente é órgão público ou projeto envolve aprovações que dependem de terceiros.
 
-4. Adicionar "clausulasExtras" SOMENTE quando houver risco específico não coberto pelas cláusulas padrão (ex.: cláusula ambiental para obras em área protegida, cláusula de seguro para canteiros de risco elevado). Cada extra deve ter title e content curto (parágrafo).
+4. Para o campo "foro": extrai do "location" recebido no input a cidade e UF onde a obra está sendo executada. Formato: "Cidade - UF" (exemplo: "Niterói - RJ"). Se location for vago demais para extrair (ex.: campo vazio ou só "obra residencial"), retorna a string literal [Comarca da obra — preencher antes da assinatura] — sinaliza para revisão humana.
+
+5. Adicionar "clausulasExtras" SOMENTE quando houver risco específico não coberto pelas cláusulas padrão (ex.: cláusula ambiental para obras em área protegida, cláusula de seguro para canteiros de risco elevado). Cada extra deve ter title e content curto (parágrafo).
 
 NÃO inventar cláusulas para tópicos já cobertos pelo template (objeto, preço, pagamento, prazo, garantias, responsabilidades, confidencialidade, rescisão, foro).
 NÃO escrever cláusulas inteiras fora de "clausulasExtras".`;
@@ -1720,6 +1729,7 @@ NÃO escrever cláusulas inteiras fora de "clausulasExtras".`;
 
   getUserPrompt(input: JuridicoInput): string {
     const durationDays = (input as JuridicoInput & { durationDays?: number }).durationDays || input.duration || 30;
+    const location = (input as JuridicoInput & { location?: string }).location ?? "";
     return `Selecione o template e preencha os slots descritivos para esta proposta:
 
 PROJETO: ${input.projectName}
@@ -1727,6 +1737,7 @@ TIPO DE CONTRATO: ${input.contractType ?? "obra"}
 VALOR TOTAL: R$ ${input.totalPrice.toFixed(2)}
 PRAZO: ${durationDays} dias
 CONDIÇÕES DE PAGAMENTO: ${input.paymentTerms}
+LOCALIZAÇÃO DA OBRA: ${location || "(não informada)"}
 
 RESTRIÇÕES IDENTIFICADAS:
 ${input.restrictions.length ? input.restrictions.join("\n- ") : "(nenhuma)"}
@@ -1738,6 +1749,7 @@ Decida:
 - templateChoice: padrao | obra_publica | manutencao
 - escopoBreve: 1 frase curta sobre o escopo
 - validityDays: prazo de validade da proposta (default 30)
+- foro: comarca da obra no formato "Cidade - UF" extraída de LOCALIZAÇÃO DA OBRA acima. Se a localização for vaga demais, retorne literalmente "[Comarca da obra — preencher antes da assinatura]".
 - clausulasExtras (opcional): só inclua se houver risco específico não coberto por cláusulas padrão`;
   }
 
@@ -1758,6 +1770,10 @@ Decida:
           type: "number",
           description: "Prazo de validade da proposta em dias (default 30)"
         },
+        foro: {
+          type: "string",
+          description: "Comarca onde a obra está sendo executada, formato 'Cidade - UF'"
+        },
         clausulasExtras: {
           type: "array",
           description: "Cláusulas adicionais para riscos específicos. Vazio quando o template padrão cobre tudo.",
@@ -1772,7 +1788,7 @@ Decida:
           },
         },
       },
-      required: ["templateChoice", "escopoBreve", "validityDays"],
+      required: ["templateChoice", "escopoBreve", "validityDays", "foro"],
       additionalProperties: false,
     };
   }
@@ -1817,7 +1833,10 @@ Decida:
         memorialDate: i.memorialDate ?? new Date().toISOString(),
         escopoBreve: llmOutput.escopoBreve,
         enderecoObra: i.enderecoObra ?? "(a informar)",
-        foro: i.foro ?? "São Paulo - SP",
+        // P1.6 (post-review): foro vem da LLM, derivado da localização da obra.
+        // Quando a LLM não consegue extrair, retorna "[Comarca da obra —
+        // preencher antes da assinatura]" — sinaliza revisão humana no PDF.
+        foro: llmOutput.foro || "[Comarca da obra — preencher antes da assinatura]",
         companyAddress: i.companyAddress ?? "",
         companyCnpj: i.companyCnpj ?? "",
       });

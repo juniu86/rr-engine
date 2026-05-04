@@ -138,6 +138,25 @@ describe("renderProposta (P1.6) — template padrão", () => {
     // Cláusula de foro mantém o token visível para revisão fácil.
     expect(out.text).toContain("{{foro}}");
   });
+
+  // P1.6 (post-review): testes que validam que o foro vem derivado pela
+  // LLM a partir do location da obra (não mais default "São Paulo - SP").
+  it("preenche foro a partir da localização extraída pela LLM", async () => {
+    const out = await renderProposta("padrao", {
+      ...baseSlots,
+      foro: "Niterói - RJ",
+    });
+    expect(out.text).toContain("Niterói - RJ");
+    expect(out.text).toContain("renúncia expressa");
+  });
+
+  it("exibe placeholder quando foro não pôde ser derivado", async () => {
+    const out = await renderProposta("padrao", {
+      ...baseSlots,
+      foro: "[Comarca da obra — preencher antes da assinatura]",
+    });
+    expect(out.text).toContain("[Comarca da obra — preencher antes da assinatura]");
+  });
 });
 
 describe("renderProposta (P1.6) — variantes", () => {
