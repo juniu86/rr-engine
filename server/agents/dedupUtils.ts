@@ -3,7 +3,12 @@
  *
  * Aplicado em mergeEngenheiroOutputs (chunking.ts) e mergeOrcamentistaOutputs
  * (budgetChunking.ts). Determinístico, roda em milissegundos.
+ *
+ * P2.6 estende com `findBudgetDuplicates` e `findInvalidSummaryItems`,
+ * usadas pelo AuditorAgent para substituir a detecção via LLM.
  */
+
+import type { BudgetItemDetail } from "../../shared/agents";
 
 export interface DedupableItem {
   description: string;
@@ -245,4 +250,86 @@ export function countActualRemovals(records: DuplicateRecord[]): number {
 
 export function countSuspects(records: DuplicateRecord[]): number {
   return records.filter(r => r.reason === "suspect_only_logged").length;
+}
+
+/**
+ * P2.6: shape mínimo aceito por findBudgetDuplicates / findInvalidSummaryItems.
+ * BudgetItemDetail não declara `isSummaryItem`, mas o runtime carrega esse
+ * campo (vinda do Engenheiro/Orçamentista). Aceitamos qualquer item com
+ * a forma necessária para o algoritmo decidir.
+ */
+export type AuditorBudgetItem = Partial<BudgetItemDetail> & {
+  description: string;
+  isSummaryItem?: boolean;
+};
+
+export interface DuplicateFinding {
+  description: string;
+  reason: string;
+  estimatedImpact: number;
+  similarItem?: { description: string; quantity: number; unit: string };
+}
+
+/**
+ * P2.6: Detecta duplicatas no orçamento e retorna no formato de
+ * `corrections.budgetItemsToRemove` esperado pelo AuditorOutput.
+ *
+ * Ignora "suspect_only_logged" — apenas remoções decididas viram findings.
+ * Reutiliza `dedupItems` (P1.3) com thresholds calibrados para Auditor:
+ * `strictThreshold=0.85`, `suspectThreshold=0.65` (mesmos defaults).
+ */
+export function findBudgetDuplicates(
+  items: AuditorBudgetItem[]
+): DuplicateFinding[] {
+  if (items.length < 2) return [];
+  const result = dedupItems(items, {
+    strictThreshold: 0.85,
+    suspectThreshold: 0.65,
+  });
+  const findings: DuplicateFinding[] = [];
+
+  for (const removal of result.duplicatesRemoved) {
+    if (removal.reason === "suspect_only_logged") continue;
+
+    const removed = items[removal.removedIndex];
+    const keeper = items[removal.keeperIndex];
+    const qty = Number(removed.quantity ?? 0);
+    const unitCost = Number(removed.unitCostTotal ?? 0);
+    const estimatedImpact =
+      qty > 0 && unitCost > 0 ? qty * unitCost : Number(removed.totalCost ?? 0);
+
+    findings.push({
+      description: removed.description,
+      reason:
+        removal.reason === "exact_match"
+          ? `Duplicata exata de "${keeper.description}"`
+          : `Alta similaridade (${(removal.similarity * 100).toFixed(0)}%) com "${keeper.description}"`,
+      estimatedImpact,
+      similarItem: {
+        description: keeper.description,
+        quantity: Number(keeper.quantity ?? 0),
+        unit: keeper.unit ?? "",
+      },
+    });
+  }
+
+  return findings;
+}
+
+/**
+ * P2.6: Detecta itens-pai (`isSummaryItem=true`) com `totalCost > 0`.
+ * Item pai deve ter custo zerado (custo está nos filhos); valor > 0
+ * caracteriza dupla contabilização.
+ */
+export function findInvalidSummaryItems(
+  items: AuditorBudgetItem[]
+): DuplicateFinding[] {
+  return items
+    .filter(i => i.isSummaryItem === true && Number(i.totalCost ?? 0) > 0)
+    .map(i => ({
+      description: i.description,
+      reason:
+        "Item PAI (isSummaryItem=true) com custo diferente de zero — somar com filhos é duplicação",
+      estimatedImpact: Number(i.totalCost ?? 0),
+    }));
 }

@@ -3,6 +3,12 @@ import { recordLlmCall } from "../services/llmTelemetry";
 import { summarizeByCategory } from "./gestaoSummarizer";
 import { isCompleteTaxSettings } from "../../shared/types";
 import { compactJson } from "../utils/promptHelpers";
+import {
+  findBudgetDuplicates,
+  findInvalidSummaryItems,
+  type DuplicateFinding,
+  type AuditorBudgetItem,
+} from "./dedupUtils";
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -66,64 +72,88 @@ abstract class BaseAgent<TInput, TOutput> {
    * - Conteúdo string direto
    * - Array multimodal (extrai parte de texto)
    * - Fallback para reasoning_content
-   * 
+   *
    * @param response - Resposta bruta da LLM
    * @returns Conteúdo string extraído para parsing
    * @throws Error se a resposta for inválida ou vazia
    */
   private _processLLMResponse(response: unknown): string {
     // Validação da estrutura da resposta
-    const typedResponse = response as { choices?: Array<{ message?: { content?: unknown } }> };
-    
-    if (!typedResponse?.choices || !Array.isArray(typedResponse.choices) || typedResponse.choices.length === 0) {
-      console.error(`[Agent ${this.name}] Invalid response structure:`, JSON.stringify(response).substring(0, 500));
+    const typedResponse = response as {
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+
+    if (
+      !typedResponse?.choices ||
+      !Array.isArray(typedResponse.choices) ||
+      typedResponse.choices.length === 0
+    ) {
+      console.error(
+        `[Agent ${this.name}] Invalid response structure:`,
+        JSON.stringify(response).substring(0, 500)
+      );
       throw new Error(`Agent ${this.name} returned invalid response structure`);
     }
-    
+
     const choice = typedResponse.choices[0];
-    
+
     if (!choice?.message) {
-      console.error(`[Agent ${this.name}] Empty choice:`, JSON.stringify(choice));
+      console.error(
+        `[Agent ${this.name}] Empty choice:`,
+        JSON.stringify(choice)
+      );
       throw new Error(`Agent ${this.name} returned empty choice`);
     }
-    
+
     // Extrai conteúdo da mensagem
     let content = choice.message.content;
     const messageAny = choice.message as Record<string, unknown>;
-    
-    console.log(`[Agent ${this.name}] Message keys:`, Object.keys(choice.message));
-    
+
+    console.log(
+      `[Agent ${this.name}] Message keys:`,
+      Object.keys(choice.message)
+    );
+
     // Cenário 1: Conteúdo é array multimodal
     if (Array.isArray(content)) {
-      console.log(`[Agent ${this.name}] Content is array, extracting text part...`);
-      const textPart = content.find((part) => part.type === 'text') as { type: 'text'; text: string } | undefined;
-      content = textPart?.text || '';
+      console.log(
+        `[Agent ${this.name}] Content is array, extracting text part...`
+      );
+      const textPart = content.find(part => part.type === "text") as
+        | { type: "text"; text: string }
+        | undefined;
+      content = textPart?.text || "";
     }
-    
+
     // Cenário 2: Conteúdo vazio, tentar reasoning_content
-    if ((!content || content === '') && messageAny.reasoning_content) {
-      console.log(`[Agent ${this.name}] Content empty, checking reasoning_content...`);
+    if ((!content || content === "") && messageAny.reasoning_content) {
+      console.log(
+        `[Agent ${this.name}] Content empty, checking reasoning_content...`
+      );
       const reasoningContent = messageAny.reasoning_content as string;
       const jsonMatch = reasoningContent.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         content = jsonMatch[0];
       }
     }
-    
+
     // Validação final do conteúdo
-    if (!content || typeof content !== 'string') {
+    if (!content || typeof content !== "string") {
       console.error(`[Agent ${this.name}] Invalid content:`, content);
-      console.error(`[Agent ${this.name}] Full message:`, JSON.stringify(choice.message).substring(0, 1000));
+      console.error(
+        `[Agent ${this.name}] Full message:`,
+        JSON.stringify(choice.message).substring(0, 1000)
+      );
       throw new Error(`Agent ${this.name} returned empty or invalid content`);
     }
-    
+
     return content;
   }
-  
+
   /**
    * Executa uma função com retry automático para erros 5xx.
    * Implementa backoff exponencial: 1s, 3s, 5s
-   * 
+   *
    * @param fn - Função a executar
    * @returns Resultado da função
    * @throws Error se falhar após 3 tentativas
@@ -141,9 +171,16 @@ abstract class BaseAgent<TInput, TOutput> {
         const statusCode = status ? parseInt(status, 10) : null;
 
         // Retry apenas para erros 5xx (Server Error)
-        if (attempt < maxAttempts && statusCode && statusCode >= 500 && statusCode < 600) {
+        if (
+          attempt < maxAttempts &&
+          statusCode &&
+          statusCode >= 500 &&
+          statusCode < 600
+        ) {
           const waitTime = backoffs[attempt - 1];
-          console.warn(`[Agent ${this.name}] Attempt ${attempt} failed with status ${statusCode}. Retrying in ${waitTime}ms...`);
+          console.warn(
+            `[Agent ${this.name}] Attempt ${attempt} failed with status ${statusCode}. Retrying in ${waitTime}ms...`
+          );
           await new Promise(res => setTimeout(res, waitTime));
           continue;
         }
@@ -183,8 +220,10 @@ abstract class BaseAgent<TInput, TOutput> {
       console.log(`[Agent ${this.name}] Using model: ${preferredModel}`);
 
       // strict: true é exclusivo do OpenAI; Gemini/Claude não suportam
-      const { supportsStrictSchema } = await import("../_core/llm-providers").then(m => ({
-        supportsStrictSchema: m.supportsStrictSchema(preferredModel)
+      const { supportsStrictSchema } = await import(
+        "../_core/llm-providers"
+      ).then(m => ({
+        supportsStrictSchema: m.supportsStrictSchema(preferredModel),
       }));
 
       response = await invokeLLM({
@@ -218,7 +257,8 @@ abstract class BaseAgent<TInput, TOutput> {
           totalTokens: 0,
           latencyMs,
           finishReason: "error",
-          errorMessage: llmError instanceof Error ? llmError.message : String(llmError),
+          errorMessage:
+            llmError instanceof Error ? llmError.message : String(llmError),
         });
       }
       throw llmError;
@@ -228,7 +268,11 @@ abstract class BaseAgent<TInput, TOutput> {
     // perder a métrica por causa de falha downstream.
     if (projectId !== undefined) {
       const latencyMs = Date.now() - t0;
-      const usage = response.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      const usage = response.usage ?? {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+      };
       await recordLlmCall({
         projectId,
         agentExecutionId: agentExecutionId ?? null,
@@ -241,21 +285,26 @@ abstract class BaseAgent<TInput, TOutput> {
         finishReason: response.choices?.[0]?.finish_reason ?? null,
       });
     }
-    
+
     // Etapa 2: Detectar truncamento via finish_reason
     const finishReason = response.choices?.[0]?.finish_reason;
     if (finishReason === "max_tokens" || finishReason === "length") {
-      console.error(`[Agent ${this.name}] Response truncated! finish_reason: ${finishReason}`);
+      console.error(
+        `[Agent ${this.name}] Response truncated! finish_reason: ${finishReason}`
+      );
       throw new Error(
         `Agent ${this.name} response was truncated (finish_reason: ${finishReason}). ` +
-        `The output exceeded the token limit. Consider simplifying the input or increasing maxOutputTokens.`
+          `The output exceeded the token limit. Consider simplifying the input or increasing maxOutputTokens.`
       );
     }
-    
+
     // Etapa 3: Processar resposta (lógica extraída para método privado)
     const content = this._processLLMResponse(response);
-    console.log(`[Agent ${this.name}] Content preview:`, content.substring(0, 200));
-    
+    console.log(
+      `[Agent ${this.name}] Content preview:`,
+      content.substring(0, 200)
+    );
+
     // Etapa 4: Parse do JSON
     try {
       const parsed = JSON.parse(content) as TOutput;
@@ -263,21 +312,23 @@ abstract class BaseAgent<TInput, TOutput> {
       return parsed;
     } catch (parseError) {
       console.error(`[Agent ${this.name}] JSON parse error:`, parseError);
-      
+
       // Detectar JSON truncado via estrutura
       const trimmed = content.trim();
-      const isLikelyTruncated = 
-        (trimmed.startsWith('{') && !trimmed.endsWith('}')) ||
-        (trimmed.startsWith('[') && !trimmed.endsWith(']'));
-      
+      const isLikelyTruncated =
+        (trimmed.startsWith("{") && !trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && !trimmed.endsWith("]"));
+
       if (isLikelyTruncated) {
         throw new Error(
           `Agent ${this.name} response was truncated mid-JSON. ` +
-          `The output exceeded the token limit. Consider simplifying the input.`
+            `The output exceeded the token limit. Consider simplifying the input.`
         );
       }
-      
-      throw new Error(`Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`);
+
+      throw new Error(
+        `Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`
+      );
     }
   }
 
@@ -290,11 +341,18 @@ abstract class BaseAgent<TInput, TOutput> {
 }
 
 // Agent 1: Engenheiro Técnico (com suporte a interatividade v2.1)
-export class EngenheiroTecnicoAgent extends BaseAgent<EngenheiroTecnicoInput, EngenheiroTecnicoOutput> {
+export class EngenheiroTecnicoAgent extends BaseAgent<
+  EngenheiroTecnicoInput,
+  EngenheiroTecnicoOutput
+> {
   name = AGENT_NAMES.engenheiro_tecnico;
   type: AgentType = "engenheiro_tecnico";
-  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
-  getTemperature() { return 0.3; }
+  getPreferredModel() {
+    return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6";
+  }
+  getTemperature() {
+    return 0.3;
+  }
 
   getSystemPrompt(): string {
     return `Você é o Engenheiro Técnico da RR Engenharia, responsável por auditar e traduzir Memoriais Descritivos em tarefas de engenharia específicas.
@@ -549,14 +607,19 @@ COMO USAR:
    - Existem conflitos (ex: "econômico" mas menciona "porcelanato importado")
 7. Para campos com confiança média, use suggestedValue no MissingInfoRequest`;
   }
-  
+
   getUserPrompt(input: EngenheiroTecnicoInput): string {
     // Se há respostas do usuário, incluir no prompt
-    const userResponsesSection = input.userResponses && Object.keys(input.userResponses).length > 0
-      ? `\n\nDADOS COMPLEMENTARES FORNECIDOS PELO USUÁRIO:\n${Object.entries(input.userResponses)
-          .map(([key, value]) => `- ${key}: ${value}`)
-          .join('\n')}\n\nUse esses dados para completar a análise. Se ainda faltar informação, solicite novamente.`
-      : '';
+    const userResponsesSection =
+      input.userResponses && Object.keys(input.userResponses).length > 0
+        ? `\n\nDADOS COMPLEMENTARES FORNECIDOS PELO USUÁRIO:\n${Object.entries(
+            input.userResponses
+          )
+            .map(([key, value]) => `- ${key}: ${value}`)
+            .join(
+              "\n"
+            )}\n\nUse esses dados para completar a análise. Se ainda faltar informação, solicite novamente.`
+        : "";
 
     return `Analise o seguinte Memorial Descritivo e extraia TODOS os itens de engenharia.
 
@@ -596,7 +659,7 @@ Retorne um JSON com:
 IMPORTANTE: Use as REGRAS DE INFERÊNCIA para completar especificações automaticamente.
 Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
@@ -604,29 +667,69 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
         analysisStatus: {
           type: "string",
           enum: ["completed", "waiting_for_user_input"],
-          description: "Status da análise: completed se dados suficientes, waiting_for_user_input se faltam dados"
+          description:
+            "Status da análise: completed se dados suficientes, waiting_for_user_input se faltam dados",
         },
         missingInfoRequests: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              fieldId: { type: "string", description: "ID único para o campo, ex: area_pintura_sala" },
-              question: { type: "string", description: "Pergunta clara para o usuário" },
-              type: { type: "string", enum: ["number", "text", "select", "textarea"], description: "Tipo de input" },
-              unit: { type: "string", description: "Unidade de medida, ex: m²" },
-              options: { type: "array", items: { type: "string" }, description: "Opções para select" },
-              hint: { type: "string", description: "Dica para ajudar o usuário" },
-              required: { type: "boolean", description: "Se o campo é obrigatório (padrão: true)" },
-              allowZero: { type: "boolean", description: "Se permite valor 0 para campos numéricos (padrão: true)" },
-              suggestedValue: { type: ["string", "number"], description: "Valor sugerido pela IA baseado em inferência (frontend pré-preenche)" },
-              isAutoInferrable: { type: "boolean", description: "Se este campo poderia ter sido inferido (confiança média)" },
-              suggestionReason: { type: "string", description: "Razão da sugestão, ex: 'Padrão médio inferido do memorial'" },
+              fieldId: {
+                type: "string",
+                description: "ID único para o campo, ex: area_pintura_sala",
+              },
+              question: {
+                type: "string",
+                description: "Pergunta clara para o usuário",
+              },
+              type: {
+                type: "string",
+                enum: ["number", "text", "select", "textarea"],
+                description: "Tipo de input",
+              },
+              unit: {
+                type: "string",
+                description: "Unidade de medida, ex: m²",
+              },
+              options: {
+                type: "array",
+                items: { type: "string" },
+                description: "Opções para select",
+              },
+              hint: {
+                type: "string",
+                description: "Dica para ajudar o usuário",
+              },
+              required: {
+                type: "boolean",
+                description: "Se o campo é obrigatório (padrão: true)",
+              },
+              allowZero: {
+                type: "boolean",
+                description:
+                  "Se permite valor 0 para campos numéricos (padrão: true)",
+              },
+              suggestedValue: {
+                type: ["string", "number"],
+                description:
+                  "Valor sugerido pela IA baseado em inferência (frontend pré-preenche)",
+              },
+              isAutoInferrable: {
+                type: "boolean",
+                description:
+                  "Se este campo poderia ter sido inferido (confiança média)",
+              },
+              suggestionReason: {
+                type: "string",
+                description:
+                  "Razão da sugestão, ex: 'Padrão médio inferido do memorial'",
+              },
             },
             required: ["fieldId", "question", "type"],
             additionalProperties: false,
           },
-          description: "Lista de informações faltantes a solicitar ao usuário"
+          description: "Lista de informações faltantes a solicitar ao usuário",
         },
         items: {
           type: "array",
@@ -641,13 +744,41 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
               specifications: { type: "string" },
               nbrReference: { type: "string" },
               isPendingVistoria: { type: "boolean" },
-              isSummaryItem: { type: "boolean", description: "Se é item resumo/pai (NÃO somar no total, pois é soma dos filhos)" },
-              parentGroupNumber: { type: "string", description: "Número do grupo pai (se for item filho)" },
-              isInferred: { type: "boolean", description: "Se as especificações foram inferidas automaticamente do padrão de qualidade" },
-              inferenceReason: { type: "string", description: "Razão da inferência, ex: 'Padrão alto detectado → metais Deca Unic'" },
-              qualityTier: { type: "string", enum: ["economico", "medio", "alto"], description: "Padrão de qualidade detectado no memorial" },
+              isSummaryItem: {
+                type: "boolean",
+                description:
+                  "Se é item resumo/pai (NÃO somar no total, pois é soma dos filhos)",
+              },
+              parentGroupNumber: {
+                type: "string",
+                description: "Número do grupo pai (se for item filho)",
+              },
+              isInferred: {
+                type: "boolean",
+                description:
+                  "Se as especificações foram inferidas automaticamente do padrão de qualidade",
+              },
+              inferenceReason: {
+                type: "string",
+                description:
+                  "Razão da inferência, ex: 'Padrão alto detectado → metais Deca Unic'",
+              },
+              qualityTier: {
+                type: "string",
+                enum: ["economico", "medio", "alto"],
+                description: "Padrão de qualidade detectado no memorial",
+              },
             },
-            required: ["group", "itemNumber", "description", "quantity", "unit", "specifications", "nbrReference", "isPendingVistoria"],
+            required: [
+              "group",
+              "itemNumber",
+              "description",
+              "quantity",
+              "unit",
+              "specifications",
+              "nbrReference",
+              "isPendingVistoria",
+            ],
             additionalProperties: false,
           },
         },
@@ -657,11 +788,20 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
         groupsProcessed: { type: "array", items: { type: "string" } },
         totalItemsExtracted: { type: "number" },
       },
-      required: ["analysisStatus", "missingInfoRequests", "items", "pendingItems", "nbrReferences", "criticalNotes", "groupsProcessed", "totalItemsExtracted"],
+      required: [
+        "analysisStatus",
+        "missingInfoRequests",
+        "items",
+        "pendingItems",
+        "nbrReferences",
+        "criticalNotes",
+        "groupsProcessed",
+        "totalItemsExtracted",
+      ],
       additionalProperties: false,
     };
   }
-  
+
   /**
    * Verifica se o memorial é vago (sem metragens ou quantidades explícitas).
    */
@@ -678,102 +818,197 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
     }
     return memorial.length < 200;
   }
-  
+
   /**
    * Gera perguntas específicas baseadas no tipo de serviço.
    */
   private _generateQuestionsForService(memorial: string): MissingInfoRequest[] {
     const questions: MissingInfoRequest[] = [];
     const m = memorial.toLowerCase();
-    
-    if (m.includes('pint') || m.includes('parede') || m.includes('tinta')) {
-      questions.push({ fieldId: 'area_pintura', question: 'Qual a área total das paredes a serem pintadas?', type: 'number', unit: 'm²', hint: 'Some a área de todas as paredes', required: true });
-      questions.push({ fieldId: 'tipo_tinta', question: 'Qual o tipo de tinta desejado?', type: 'select', options: ['Acrílica fosca', 'Acrílica acetinada', 'Latex PVA', 'Esmalte sintético'], required: true });
-      questions.push({ fieldId: 'num_demaos', question: 'Quantas demãos de tinta?', type: 'select', options: ['2 demãos', '3 demãos'], required: true });
-    } else if (m.includes('piso') || m.includes('cerâmica') || m.includes('porcelanato')) {
-      questions.push({ fieldId: 'area_piso', question: 'Qual a área total do piso?', type: 'number', unit: 'm²', required: true });
-      questions.push({ fieldId: 'tipo_piso', question: 'Qual o tipo de piso?', type: 'select', options: ['Cerâmica', 'Porcelanato', 'Laminado', 'Vinílico'], required: true });
-    } else if (m.includes('elétric') || m.includes('tomada') || m.includes('ponto')) {
-      questions.push({ fieldId: 'num_pontos', question: 'Quantos pontos elétricos?', type: 'number', unit: 'pontos', required: true });
-      questions.push({ fieldId: 'tipo_instalacao', question: 'Tipo de instalação?', type: 'select', options: ['Embutida', 'Aparente', 'Mista'], required: true });
+
+    if (m.includes("pint") || m.includes("parede") || m.includes("tinta")) {
+      questions.push({
+        fieldId: "area_pintura",
+        question: "Qual a área total das paredes a serem pintadas?",
+        type: "number",
+        unit: "m²",
+        hint: "Some a área de todas as paredes",
+        required: true,
+      });
+      questions.push({
+        fieldId: "tipo_tinta",
+        question: "Qual o tipo de tinta desejado?",
+        type: "select",
+        options: [
+          "Acrílica fosca",
+          "Acrílica acetinada",
+          "Latex PVA",
+          "Esmalte sintético",
+        ],
+        required: true,
+      });
+      questions.push({
+        fieldId: "num_demaos",
+        question: "Quantas demãos de tinta?",
+        type: "select",
+        options: ["2 demãos", "3 demãos"],
+        required: true,
+      });
+    } else if (
+      m.includes("piso") ||
+      m.includes("cerâmica") ||
+      m.includes("porcelanato")
+    ) {
+      questions.push({
+        fieldId: "area_piso",
+        question: "Qual a área total do piso?",
+        type: "number",
+        unit: "m²",
+        required: true,
+      });
+      questions.push({
+        fieldId: "tipo_piso",
+        question: "Qual o tipo de piso?",
+        type: "select",
+        options: ["Cerâmica", "Porcelanato", "Laminado", "Vinílico"],
+        required: true,
+      });
+    } else if (
+      m.includes("elétric") ||
+      m.includes("tomada") ||
+      m.includes("ponto")
+    ) {
+      questions.push({
+        fieldId: "num_pontos",
+        question: "Quantos pontos elétricos?",
+        type: "number",
+        unit: "pontos",
+        required: true,
+      });
+      questions.push({
+        fieldId: "tipo_instalacao",
+        question: "Tipo de instalação?",
+        type: "select",
+        options: ["Embutida", "Aparente", "Mista"],
+        required: true,
+      });
     } else {
-      questions.push({ fieldId: 'area_servico', question: 'Qual a área ou quantidade do serviço?', type: 'text', hint: 'Informe em m², metros lineares ou unidades', required: true });
-      questions.push({ fieldId: 'detalhes_servico', question: 'Descreva com mais detalhes o serviço', type: 'textarea', hint: 'Inclua especificações de material, acabamento, etc.', required: true });
+      questions.push({
+        fieldId: "area_servico",
+        question: "Qual a área ou quantidade do serviço?",
+        type: "text",
+        hint: "Informe em m², metros lineares ou unidades",
+        required: true,
+      });
+      questions.push({
+        fieldId: "detalhes_servico",
+        question: "Descreva com mais detalhes o serviço",
+        type: "textarea",
+        hint: "Inclua especificações de material, acabamento, etc.",
+        required: true,
+      });
     }
     return questions;
   }
-  
+
   /**
    * Override do execute com estratégia dupla: PRÉ-LLM e PÓS-LLM.
    */
-  async execute(input: EngenheiroTecnicoInput): Promise<EngenheiroTecnicoOutput> {
+  async execute(
+    input: EngenheiroTecnicoInput
+  ): Promise<EngenheiroTecnicoOutput> {
     const memorial = input.memorialDescritivo;
-    const temRespostasUsuario = input.userResponses && Object.keys(input.userResponses).length > 0;
-    
-    console.log(`[EngenheiroTecnico] Memorial length: ${memorial.length}, temRespostas: ${temRespostasUsuario}`);
-    
+    const temRespostasUsuario =
+      input.userResponses && Object.keys(input.userResponses).length > 0;
+
+    console.log(
+      `[EngenheiroTecnico] Memorial length: ${memorial.length}, temRespostas: ${temRespostasUsuario}`
+    );
+
     // ESTRATÉGIA PRÉ-LLM: Se memorial vago, sem respostas, E sem padrão de qualidade detectável,
     // retornar perguntas direto sem chamar LLM. Se há padrão (ex: "AAA"), deixar o LLM inferir.
-    const hasQualityTier = /\b(luxo|aaa|premium|alto\s*padr[aã]o|econ[oô]mico|popular|b[aá]sico|padr[aã]o\s*(m[eé]dio|alto))\b/i.test(memorial);
-    if (this._isMemorialVago(memorial) && !temRespostasUsuario && !hasQualityTier) {
-      console.log(`[EngenheiroTecnico] MEMORIAL VAGO - Retornando perguntas sem chamar LLM`);
+    const hasQualityTier =
+      /\b(luxo|aaa|premium|alto\s*padr[aã]o|econ[oô]mico|popular|b[aá]sico|padr[aã]o\s*(m[eé]dio|alto))\b/i.test(
+        memorial
+      );
+    if (
+      this._isMemorialVago(memorial) &&
+      !temRespostasUsuario &&
+      !hasQualityTier
+    ) {
+      console.log(
+        `[EngenheiroTecnico] MEMORIAL VAGO - Retornando perguntas sem chamar LLM`
+      );
       return {
-        analysisStatus: 'waiting_for_user_input',
+        analysisStatus: "waiting_for_user_input",
         missingInfoRequests: this._generateQuestionsForService(memorial),
         items: [],
         pendingItems: [],
         nbrReferences: [],
-        criticalNotes: ['Memorial incompleto - aguardando dados do usuário'],
+        criticalNotes: ["Memorial incompleto - aguardando dados do usuário"],
         groupsProcessed: [],
-        totalItemsExtracted: 0
+        totalItemsExtracted: 0,
       };
     }
-    
+
     // Verificar se precisa de chunking (memoriais grandes)
-    const { needsChunking, createChunkedInputs, mergeEngenheiroOutputs } = await import("./chunking");
-    
+    const { needsChunking, createChunkedInputs, mergeEngenheiroOutputs } =
+      await import("./chunking");
+
     if (needsChunking(memorial)) {
-      console.log(`[EngenheiroTecnico] Memorial grande detectado - usando chunking`);
+      console.log(
+        `[EngenheiroTecnico] Memorial grande detectado - usando chunking`
+      );
       const chunkedInputs = createChunkedInputs(input);
-      console.log(`[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks`);
-      
+      console.log(
+        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks`
+      );
+
       const outputs: EngenheiroTecnicoOutput[] = [];
       for (let i = 0; i < chunkedInputs.length; i++) {
-        console.log(`[EngenheiroTecnico] Processando chunk ${i + 1}/${chunkedInputs.length}...`);
+        console.log(
+          `[EngenheiroTecnico] Processando chunk ${i + 1}/${chunkedInputs.length}...`
+        );
         const chunkOutput = await super.execute(chunkedInputs[i]);
         outputs.push(chunkOutput);
       }
-      
+
       const merged = mergeEngenheiroOutputs(outputs);
-      console.log(`[EngenheiroTecnico] Chunks merged: ${merged.items?.length || 0} items`);
+      console.log(
+        `[EngenheiroTecnico] Chunks merged: ${merged.items?.length || 0} items`
+      );
       return merged;
     }
-    
+
     // Chamar LLM (memorial cabe em uma chamada)
     console.log(`[EngenheiroTecnico] Chamando LLM...`);
     const output = await super.execute(input);
-    
-    console.log(`[EngenheiroTecnico] Output items: ${output.items?.length || 0}`);
+
+    console.log(
+      `[EngenheiroTecnico] Output items: ${output.items?.length || 0}`
+    );
     console.log(`[EngenheiroTecnico] analysisStatus: ${output.analysisStatus}`);
-    
+
     // ESTRATÉGIA PÓS-LLM: Se LLM retornou items=0 e não solicitou info, forçar
-    const llmFalhou = 
-      (output.items?.length === 0) && 
-      (output.missingInfoRequests?.length === 0) &&
+    const llmFalhou =
+      output.items?.length === 0 &&
+      output.missingInfoRequests?.length === 0 &&
       !temRespostasUsuario;
-    
+
     if (llmFalhou) {
-      console.log(`[EngenheiroTecnico] LLM NÃO GEROU ITEMS - Forçando interatividade`);
+      console.log(
+        `[EngenheiroTecnico] LLM NÃO GEROU ITEMS - Forçando interatividade`
+      );
       return {
         ...output,
-        analysisStatus: 'waiting_for_user_input',
+        analysisStatus: "waiting_for_user_input",
         missingInfoRequests: this._generateQuestionsForService(memorial),
         items: [],
         pendingItems: [],
-        criticalNotes: ['Memorial incompleto - aguardando dados do usuário']
+        criticalNotes: ["Memorial incompleto - aguardando dados do usuário"],
       };
     }
-    
+
     return output;
   }
 }
@@ -782,7 +1017,9 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
 export class LogisticaAgent extends BaseAgent<LogisticaInput, LogisticaOutput> {
   name = AGENT_NAMES.logistica;
   type: AgentType = "logistica";
-  getTemperature() { return 0.2; }
+  getTemperature() {
+    return 0.2;
+  }
 
   getSystemPrompt(): string {
     return `Você é o Agente de Logística e Mobilização da RR Engenharia.
@@ -876,13 +1113,19 @@ EXCEÇÃO DE FRETE: Se a obra estiver a mais de 30km da base ou do fornecedor
 principal, calcule apenas o custo do frete EXCEDENTE (diferença acima dos 30km
 já inclusos na composição SINAPI).`;
   }
-  
+
   getUserPrompt(input: LogisticaInput): string {
     // Resumo dos itens orçados para ajudar a estimar prazo
-    const budgetSummary = input.budgetItems && input.budgetItems.length > 0
-      ? `\nITENS ORÇADOS (resumo):\n${input.budgetItems.slice(0, 15).map((b: any) => `- ${b.description}: ${b.quantity} ${b.unit}`).join('\n')}${input.budgetItems.length > 15 ? `\n... e mais ${input.budgetItems.length - 15} itens` : ''}`
-      : '';
-    
+    const budgetSummary =
+      input.budgetItems && input.budgetItems.length > 0
+        ? `\nITENS ORÇADOS (resumo):\n${input.budgetItems
+            .slice(0, 15)
+            .map((b: any) => `- ${b.description}: ${b.quantity} ${b.unit}`)
+            .join(
+              "\n"
+            )}${input.budgetItems.length > 15 ? `\n... e mais ${input.budgetItems.length - 15} itens` : ""}`
+        : "";
+
     return `Analise os itens da obra e calcule os custos logísticos:
 
 ITENS DA OBRA:
@@ -904,7 +1147,7 @@ Use índices de produtividade para estimar o prazo:
 
 Fórmula: Duração (semanas) = (Quantitativo × Índice Hh) ÷ (8h/dia × 5dias/semana × Nº profissionais)`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
@@ -921,7 +1164,14 @@ Fórmula: Duração (semanas) = (Quantitativo × Índice Hh) ÷ (8h/dia × 5dias
               unitCost: { type: "number" },
               totalCost: { type: "number" },
             },
-            required: ["category", "description", "quantity", "unit", "unitCost", "totalCost"],
+            required: [
+              "category",
+              "description",
+              "quantity",
+              "unit",
+              "unitCost",
+              "totalCost",
+            ],
             additionalProperties: false,
           },
         },
@@ -938,7 +1188,15 @@ Fórmula: Duração (semanas) = (Quantitativo × Índice Hh) ÷ (8h/dia × 5dias
               totalCost: { type: "number" },
               reason: { type: "string" },
             },
-            required: ["category", "description", "quantity", "unit", "unitCost", "totalCost", "reason"],
+            required: [
+              "category",
+              "description",
+              "quantity",
+              "unit",
+              "unitCost",
+              "totalCost",
+              "reason",
+            ],
             additionalProperties: false,
           },
         },
@@ -946,18 +1204,31 @@ Fórmula: Duração (semanas) = (Quantitativo × Índice Hh) ÷ (8h/dia × 5dias
         totalOptionalCost: { type: "number" },
         restrictions: { type: "array", items: { type: "string" } },
       },
-      required: ["costs", "optionalItems", "totalLogisticsCost", "totalOptionalCost", "restrictions"],
+      required: [
+        "costs",
+        "optionalItems",
+        "totalLogisticsCost",
+        "totalOptionalCost",
+        "restrictions",
+      ],
       additionalProperties: false,
     };
   }
 }
 
 // Agent 3: Orçamentista & Suprimentos
-export class OrcamentistaAgent extends BaseAgent<OrcamentistaInput, OrcamentistaOutput> {
+export class OrcamentistaAgent extends BaseAgent<
+  OrcamentistaInput,
+  OrcamentistaOutput
+> {
   name = AGENT_NAMES.orcamentista;
   type: AgentType = "orcamentista";
-  getPreferredModel() { return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6"; }
-  getTemperature() { return 0.1; }
+  getPreferredModel() {
+    return process.env.LLM_MODEL_CRITICAL ?? "claude-opus-4-6";
+  }
+  getTemperature() {
+    return 0.1;
+  }
 
   /**
    * Override execute() para chunking de orçamentos grandes.
@@ -965,23 +1236,32 @@ export class OrcamentistaAgent extends BaseAgent<OrcamentistaInput, Orcamentista
    * separadamente, e consolida os resultados.
    */
   async execute(input: OrcamentistaInput): Promise<OrcamentistaOutput> {
-    const { needsBudgetChunking, createOrcamentistaChunkedInputs, mergeOrcamentistaOutputs }
-      = await import("./budgetChunking");
+    const {
+      needsBudgetChunking,
+      createOrcamentistaChunkedInputs,
+      mergeOrcamentistaOutputs,
+    } = await import("./budgetChunking");
 
     if (needsBudgetChunking(input.items)) {
-      console.log(`[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`);
+      console.log(
+        `[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`
+      );
       const chunkedInputs = createOrcamentistaChunkedInputs(input);
       console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas`);
 
       const outputs: OrcamentistaOutput[] = [];
       for (let i = 0; i < chunkedInputs.length; i++) {
-        console.log(`[Orcamentista] Frente ${i + 1}/${chunkedInputs.length} (${chunkedInputs[i].items.length} itens)...`);
+        console.log(
+          `[Orcamentista] Frente ${i + 1}/${chunkedInputs.length} (${chunkedInputs[i].items.length} itens)...`
+        );
         const out = await super.execute(chunkedInputs[i]);
         outputs.push(out);
       }
 
       const merged = mergeOrcamentistaOutputs(outputs);
-      console.log(`[Orcamentista] Merge: ${merged.budgetItems?.length} itens, R$ ${merged.totalDirectCost?.toFixed(2)}`);
+      console.log(
+        `[Orcamentista] Merge: ${merged.budgetItems?.length} itens, R$ ${merged.totalDirectCost?.toFixed(2)}`
+      );
       return merged;
     }
 
@@ -1051,7 +1331,7 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
 - Porta de entrada completa: R$ 1.500-3.000/un
 - Porta interna completa: R$ 600-1.200/un`;
   }
-  
+
   /**
    * Build price anchor references from SINAPI/PINI databases.
    * Returns top-15 items by estimated value for prompt injection.
@@ -1064,13 +1344,39 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
       // troca disparamos um warm-up ass\u00edncrono que popula o cache para a pr\u00f3xima
       // execu\u00e7\u00e3o. Em ambientes sem banco (CI, dev), nunca sai da constante.
       const sinapiMod = require("../services/sinapi") as {
-        SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }>;
-        getSinapiDataSync: (state?: string) => Array<{ code: string; description: string; unit: string; price: number; category: string }>;
+        SINAPI_DB: Array<{
+          code: string;
+          description: string;
+          unit: string;
+          price: number;
+          category: string;
+        }>;
+        getSinapiDataSync: (
+          state?: string
+        ) => Array<{
+          code: string;
+          description: string;
+          unit: string;
+          price: number;
+          category: string;
+        }>;
         getSinapiData: (state?: string) => Promise<unknown>;
       };
       const piniMod = require("../services/pini") as {
-        PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }>;
-        getPiniDataSync: (region?: string) => Array<{ code: string; description: string; unit: string; price: number }>;
+        PINI_DATABASE: Array<{
+          code: string;
+          description: string;
+          unit: string;
+          price: number;
+        }>;
+        getPiniDataSync: (
+          region?: string
+        ) => Array<{
+          code: string;
+          description: string;
+          unit: string;
+          price: number;
+        }>;
         getPiniData: (region?: string) => Promise<unknown>;
       };
       const SINAPI_DB = sinapiMod.getSinapiDataSync("SP");
@@ -1079,29 +1385,58 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
       void sinapiMod.getSinapiData("SP");
       void piniMod.getPiniData("S\u00e3o Paulo");
 
-      const normalizeText = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').trim();
+      const normalizeText = (t: string) =>
+        t
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9\s]/g, "")
+          .trim();
 
-      const anchors: Array<{ description: string; source: string; code: string; price: number; unit: string; estValue: number }> = [];
+      const anchors: Array<{
+        description: string;
+        source: string;
+        code: string;
+        price: number;
+        unit: string;
+        estValue: number;
+      }> = [];
 
       for (const item of items) {
         if (item.isSummaryItem) continue;
-        const descNorm = normalizeText(item.description || '');
-        const keywords = descNorm.split(/\s+/).filter((k: string) => k.length > 2);
+        const descNorm = normalizeText(item.description || "");
+        const keywords = descNorm
+          .split(/\s+/)
+          .filter((k: string) => k.length > 2);
         if (keywords.length === 0) continue;
 
         // Search SINAPI first
-        let bestMatch: { code: string; description: string; price: number; unit: string; source: string } | null = null;
+        let bestMatch: {
+          code: string;
+          description: string;
+          price: number;
+          unit: string;
+          source: string;
+        } | null = null;
         let bestScore = 0;
 
         for (const comp of SINAPI_DB) {
-          if (comp.unit === 'H') continue;
+          if (comp.unit === "H") continue;
           const compNorm = normalizeText(comp.description);
           let matched = 0;
-          for (const kw of keywords) { if (compNorm.includes(kw)) matched++; }
+          for (const kw of keywords) {
+            if (compNorm.includes(kw)) matched++;
+          }
           const score = matched / keywords.length;
           if (score > bestScore && score >= 0.4) {
             bestScore = score;
-            bestMatch = { code: comp.code, description: comp.description, price: comp.price, unit: comp.unit, source: 'SINAPI' };
+            bestMatch = {
+              code: comp.code,
+              description: comp.description,
+              price: comp.price,
+              unit: comp.unit,
+              source: "SINAPI",
+            };
           }
         }
 
@@ -1110,11 +1445,19 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
           for (const comp of PINI_DATABASE) {
             const compNorm = normalizeText(comp.description);
             let matched = 0;
-            for (const kw of keywords) { if (compNorm.includes(kw)) matched++; }
+            for (const kw of keywords) {
+              if (compNorm.includes(kw)) matched++;
+            }
             const score = matched / keywords.length;
             if (score > bestScore && score >= 0.4) {
               bestScore = score;
-              bestMatch = { code: comp.code, description: comp.description, price: comp.price, unit: comp.unit, source: 'PINI' };
+              bestMatch = {
+                code: comp.code,
+                description: comp.description,
+                price: comp.price,
+                unit: comp.unit,
+                source: "PINI",
+              };
             }
           }
         }
@@ -1129,10 +1472,13 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
       return anchors
         .sort((a, b) => b.estValue - a.estValue)
         .slice(0, 15)
-        .map(a => `- "${a.description}": ${a.source} ${a.code} = R$ ${a.price.toFixed(2)}/${a.unit}`)
-        .join('\n');
+        .map(
+          a =>
+            `- "${a.description}": ${a.source} ${a.code} = R$ ${a.price.toFixed(2)}/${a.unit}`
+        )
+        .join("\n");
     } catch {
-      return '';
+      return "";
     }
   }
 
@@ -1143,14 +1489,16 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
     const anchors = this.buildPriceAnchors(input.items || []);
 
     // Detect chunk context for large budgets split into fronts
-    const chunkInfo = (input as any)._chunkInfo as { index: number; total: number; frontName: string } | undefined;
+    const chunkInfo = (input as any)._chunkInfo as
+      | { index: number; total: number; frontName: string }
+      | undefined;
     const chunkHeader = chunkInfo
       ? `
 ⚠️ ESTA É A FRENTE ${chunkInfo.index} de ${chunkInfo.total} — "${chunkInfo.frontName}".
 Precifique APENAS os ${totalItems} itens abaixo.
 Não se preocupe com itens de outras frentes — eles serão precificados separadamente.
 `
-      : '';
+      : "";
 
     return `Precifique os itens de obra listados abaixo.
 ${chunkHeader}
@@ -1158,12 +1506,16 @@ ${chunkHeader}
 Itens PAI (isSummaryItem=true) devem estar no output com unitCostTotal=0 e totalCost=0.
 O budgetItems pode ter IGUAL OU MENOS itens que ${totalItems} (menos quando há itens resumo).
 totalDirectCost = soma APENAS dos itens com isSummaryItem=false.
-${anchors ? `
+${
+  anchors
+    ? `
 === PREÇOS DE REFERÊNCIA (SINAPI/PINI Jan/2025, base SP) ===
 ${anchors}
 
 ⚠️ Use estes preços como base. Se divergir >15% de alguma referência, justifique.
-` : ''}
+`
+    : ""
+}
 ITENS (${totalItems} no total):
 ${compactJson(input.items)}
 
@@ -1189,7 +1541,7 @@ INSTRUÇÕES:
 VALIDAÇÃO: Itens PAI devem ter isSummaryItem=true e totalCost=0.
 totalDirectCost = soma dos itens com isSummaryItem=false (não incluir itens PAI na soma).`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
@@ -1213,10 +1565,32 @@ totalDirectCost = soma dos itens com isSummaryItem=false (não incluir itens PAI
               source: { type: "string" },
               sourceCode: { type: "string" },
               sourceDate: { type: "string" },
-              isSummaryItem: { type: "boolean", description: "true se este item é PAI/RESUMO (soma dos filhos). false se é item filho a ser precificado." },
-              parentGroupNumber: { type: "string", description: "Número do grupo pai, se for item filho" },
+              isSummaryItem: {
+                type: "boolean",
+                description:
+                  "true se este item é PAI/RESUMO (soma dos filhos). false se é item filho a ser precificado.",
+              },
+              parentGroupNumber: {
+                type: "string",
+                description: "Número do grupo pai, se for item filho",
+              },
             },
-            required: ["id", "category", "code", "description", "unit", "quantity", "unitCostMaterial", "unitCostLabor", "unitCostLogistics", "unitCostTotal", "totalCost", "source", "sourceCode", "sourceDate"],
+            required: [
+              "id",
+              "category",
+              "code",
+              "description",
+              "unit",
+              "quantity",
+              "unitCostMaterial",
+              "unitCostLabor",
+              "unitCostLogistics",
+              "unitCostTotal",
+              "totalCost",
+              "source",
+              "sourceCode",
+              "sourceDate",
+            ],
             additionalProperties: false,
           },
         },
@@ -1225,20 +1599,33 @@ totalDirectCost = soma dos itens com isSummaryItem=false (não incluir itens PAI
         curvaAItems: { type: "array", items: { type: "string" } },
         curvaCItems: { type: "array", items: { type: "string" } },
       },
-      required: ["budgetItems", "totalDirectCost", "totalIndirectCost", "curvaAItems", "curvaCItems"],
+      required: [
+        "budgetItems",
+        "totalDirectCost",
+        "totalIndirectCost",
+        "curvaAItems",
+        "curvaCItems",
+      ],
       additionalProperties: false,
     };
   }
 }
 
 // Agent 4: Tributário
-export class TributarioAgent extends BaseAgent<TributarioInput, TributarioOutput> {
+export class TributarioAgent extends BaseAgent<
+  TributarioInput,
+  TributarioOutput
+> {
   name = AGENT_NAMES.tributario;
   type: AgentType = "tributario";
   // P1.1: migrado de Opus para Sonnet. Tarefa é classificação ISS/ICMS +
   // aplicação de alíquotas — tabela de regras simples, Sonnet basta.
-  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
-  getTemperature() { return 0.0; }
+  getPreferredModel() {
+    return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6";
+  }
+  getTemperature() {
+    return 0.0;
+  }
 
   getSystemPrompt(): string {
     return `Você é o Agente Tributário da RR Engenharia.
@@ -1294,15 +1681,15 @@ Lucro Real:
 - IR retido: 1.5% para serviços de engenharia
 - PIS/COFINS/CSLL retido: 4.65% para órgãos públicos`;
   }
-  
+
   getUserPrompt(input: TributarioInput): string {
     // Calcular custo total dos itens para referência
     const totalCost = input.budgetItems.reduce((sum, item) => {
       const qty = Number(item.quantity) || 0;
       const unitCost = Number(item.unitCostTotal) || 0;
-      return sum + (qty * unitCost);
+      return sum + qty * unitCost;
     }, 0);
-    
+
     // P1.5: removido fallback silencioso. O Tributário NÃO assume mais
     // 'lucro_presumido + ISS 5%' quando companyTaxSettings está ausente —
     // a orquestração (routers.ts) já bloqueia o pipeline com
@@ -1316,7 +1703,7 @@ Lucro Real:
     }
 
     const pisCofins = taxSettings.pisPercentual + taxSettings.cofinsPercentual;
-    
+
     return `Classifique tributariamente os seguintes itens:
 
 ITENS DO ORÇAMENTO:
@@ -1342,8 +1729,8 @@ INSTRUÇÕES OBRIGATÓRIAS:
    - PIS/COFINS: ${pisCofins.toFixed(2)}% do valor
 4. totalTaxes DEVE ser a soma de todos os taxAmount dos itens
 5. Se o custo total é R$ ${totalCost.toFixed(2)}, os impostos devem ser aproximadamente:
-   - Mínimo esperado (ISS): R$ ${(totalCost * taxSettings.issPercentual / 100).toFixed(2)}
-   - Com PIS/COFINS: R$ ${(totalCost * (taxSettings.issPercentual + pisCofins) / 100).toFixed(2)}
+   - Mínimo esperado (ISS): R$ ${((totalCost * taxSettings.issPercentual) / 100).toFixed(2)}
+   - Com PIS/COFINS: R$ ${((totalCost * (taxSettings.issPercentual + pisCofins)) / 100).toFixed(2)}
 
 IMPORTANTE: totalTaxes NÃO pode ser zero se houver itens no orçamento!
 
@@ -1352,7 +1739,7 @@ Para cada item, defina:
 - Valor do imposto (taxAmount)
 - Retenções aplicáveis`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
@@ -1363,7 +1750,10 @@ Para cada item, defina:
             type: "object",
             properties: {
               itemId: { type: "number" },
-              taxType: { type: "string", enum: ["iss", "icms", "both", "none"] },
+              taxType: {
+                type: "string",
+                enum: ["iss", "icms", "both", "none"],
+              },
               taxAmount: { type: "number" },
               retentions: { type: "array", items: { type: "string" } },
             },
@@ -1397,7 +1787,9 @@ export class ComercialAgent extends BaseAgent<ComercialInput, ComercialOutput> {
   readonly isDeterministic = true;
 
   async execute(input: ComercialInput): Promise<ComercialOutput> {
-    const { computeComercial } = await import("../services/comercialCalculator");
+    const { computeComercial } = await import(
+      "../services/comercialCalculator"
+    );
     const ctx = input as unknown as {
       projectBdi?: number;
       bdiPreset?: string;
@@ -1413,18 +1805,31 @@ export class ComercialAgent extends BaseAgent<ComercialInput, ComercialOutput> {
   // Os métodos abaixo nunca são chamados (execute() acima short-circuita
   // antes do BaseAgent._execute). Mantidos como NO-OP para satisfazer o
   // contrato abstrato de BaseAgent.
-  getSystemPrompt(): string { return ""; }
-  getUserPrompt(): string { return ""; }
-  getOutputSchema(): object { return {}; }
+  getSystemPrompt(): string {
+    return "";
+  }
+  getUserPrompt(): string {
+    return "";
+  }
+  getOutputSchema(): object {
+    return {};
+  }
 }
 
 // Agent 6: Gestão de Projetos
-export class GestaoProjAgent extends BaseAgent<GestaoProjInput, GestaoProjOutput> {
-  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
-  getTemperature() { return 0.3; }
+export class GestaoProjAgent extends BaseAgent<
+  GestaoProjInput,
+  GestaoProjOutput
+> {
+  getPreferredModel() {
+    return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6";
+  }
+  getTemperature() {
+    return 0.3;
+  }
   name = AGENT_NAMES.gestao_projetos;
   type: AgentType = "gestao_projetos";
-  
+
   getSystemPrompt(): string {
     return `Você é o Agente de Gestão de Projetos da RR Engenharia.
 
@@ -1534,7 +1939,7 @@ IMPORTANTE:
 - Considere dependências (não pode pintar antes de rebocar)
 - Adicione 20% de folga para imprevistos`;
   }
-  
+
   getUserPrompt(input: GestaoProjInput): string {
     // P0.4: substitui slice(0, 30) por sumário agregado — o agente vê 100%
     // dos itens via agregação por categoria, sem estourar tokens.
@@ -1576,7 +1981,7 @@ Dia 2: Demolição
 - Remoção de entulho para caçamba
 - Entrega: Área limpa para nova construção`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
@@ -1606,7 +2011,14 @@ Dia 2: Demolição
               isWorkDay: { type: "boolean" },
               notes: { type: "string" },
             },
-            required: ["day", "date", "phase", "activities", "isWorkDay", "notes"],
+            required: [
+              "day",
+              "date",
+              "phase",
+              "activities",
+              "isWorkDay",
+              "notes",
+            ],
             additionalProperties: false,
           },
         },
@@ -1621,7 +2033,13 @@ Dia 2: Demolição
               endDay: { type: "number" },
               duration: { type: "number" },
             },
-            required: ["phase", "description", "startDay", "endDay", "duration"],
+            required: [
+              "phase",
+              "description",
+              "startDay",
+              "endDay",
+              "duration",
+            ],
             additionalProperties: false,
           },
         },
@@ -1643,7 +2061,16 @@ Dia 2: Demolição
         teamSummary: { type: "string" },
         materialsSummary: { type: "string" },
       },
-      required: ["dailySchedule", "scheduleItems", "totalDuration", "totalDays", "criticalPath", "milestones", "teamSummary", "materialsSummary"],
+      required: [
+        "dailySchedule",
+        "scheduleItems",
+        "totalDuration",
+        "totalDays",
+        "criticalPath",
+        "milestones",
+        "teamSummary",
+        "materialsSummary",
+      ],
       additionalProperties: false,
     };
   }
@@ -1655,7 +2082,10 @@ Dia 2: Demolição
 // recebido e gerar `alerts` em texto. Migrado para função TypeScript pura
 // (server/services/financeiroAnalyzer.ts) — não chama invokeLLM, custo
 // zero de tokens.
-export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput> {
+export class FinanceiroAgent extends BaseAgent<
+  FinanceiroInput,
+  FinanceiroOutput
+> {
   name = AGENT_NAMES.financeiro;
   type: AgentType = "financeiro";
 
@@ -1663,13 +2093,21 @@ export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput
   readonly isDeterministic = true;
 
   async execute(input: FinanceiroInput): Promise<FinanceiroOutput> {
-    const { analyzeFinanceiro } = await import("../services/financeiroAnalyzer");
+    const { analyzeFinanceiro } = await import(
+      "../services/financeiroAnalyzer"
+    );
     return analyzeFinanceiro(input);
   }
 
-  getSystemPrompt(): string { return ""; }
-  getUserPrompt(): string { return ""; }
-  getOutputSchema(): object { return {}; }
+  getSystemPrompt(): string {
+    return "";
+  }
+  getUserPrompt(): string {
+    return "";
+  }
+  getOutputSchema(): object {
+    return {};
+  }
 }
 
 // Agent 8: Jurídico — TEMPLATING ESTRUTURADO (P1.6)
@@ -1701,8 +2139,12 @@ interface JuridicoLLMOutput {
 export class JuridicoAgent extends BaseAgent<JuridicoInput, JuridicoOutput> {
   name = AGENT_NAMES.juridico;
   type: AgentType = "juridico";
-  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
-  getTemperature() { return 0.2; }
+  getPreferredModel() {
+    return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6";
+  }
+  getTemperature() {
+    return 0.2;
+  }
 
   getSystemPrompt(): string {
     return `Você é o Agente Jurídico da RR Engenharia.
@@ -1729,8 +2171,12 @@ NÃO escrever cláusulas inteiras fora de "clausulasExtras".`;
   }
 
   getUserPrompt(input: JuridicoInput): string {
-    const durationDays = (input as JuridicoInput & { durationDays?: number }).durationDays || input.duration || 30;
-    const location = (input as JuridicoInput & { location?: string }).location ?? "";
+    const durationDays =
+      (input as JuridicoInput & { durationDays?: number }).durationDays ||
+      input.duration ||
+      30;
+    const location =
+      (input as JuridicoInput & { location?: string }).location ?? "";
     return `Selecione o template e preencha os slots descritivos para esta proposta:
 
 PROJETO: ${input.projectName}
@@ -1761,23 +2207,25 @@ Decida:
         templateChoice: {
           type: "string",
           enum: ["padrao", "obra_publica", "manutencao"],
-          description: "Template a renderizar"
+          description: "Template a renderizar",
         },
         escopoBreve: {
           type: "string",
-          description: "Uma frase curta descrevendo o escopo do projeto"
+          description: "Uma frase curta descrevendo o escopo do projeto",
         },
         validityDays: {
           type: "number",
-          description: "Prazo de validade da proposta em dias (default 30)"
+          description: "Prazo de validade da proposta em dias (default 30)",
         },
         foro: {
           type: "string",
-          description: "Comarca onde a obra está sendo executada, formato 'Cidade - UF'"
+          description:
+            "Comarca onde a obra está sendo executada, formato 'Cidade - UF'",
         },
         clausulasExtras: {
           type: "array",
-          description: "Cláusulas adicionais para riscos específicos. Vazio quando o template padrão cobre tudo.",
+          description:
+            "Cláusulas adicionais para riscos específicos. Vazio quando o template padrão cobre tudo.",
           items: {
             type: "object",
             properties: {
@@ -1799,7 +2247,9 @@ Decida:
    * depois renderiza o template Markdown + monta JuridicoOutput.
    */
   async execute(input: JuridicoInput): Promise<JuridicoOutput> {
-    const llmOutput = (await super.execute(input)) as unknown as JuridicoLLMOutput;
+    const llmOutput = (await super.execute(
+      input
+    )) as unknown as JuridicoLLMOutput;
     const { renderProposta } = await import("../services/juridicoTemplating");
     const i = input as JuridicoInput & {
       durationDays?: number;
@@ -1816,7 +2266,10 @@ Decida:
     const durationDays = i.durationDays || i.duration || 30;
     const durationWeeksLabel = formatDurationLabel(durationDays);
 
-    let rendered: { text: string; clauses: Array<{ title: string; content: string }> };
+    let rendered: {
+      text: string;
+      clauses: Array<{ title: string; content: string }>;
+    };
     try {
       rendered = await renderProposta(llmOutput.templateChoice, {
         projectName: input.projectName,
@@ -1830,29 +2283,31 @@ Decida:
         contractType: (input.contractType ?? "obra") as "obra" | "manutencao",
         contratada: i.contratada ?? "RR Engenharia",
         contratante: i.contratante ?? i.clientName ?? "Contratante",
-        tipoObra: i.contractType === "manutencao" ? "manutenção predial" : "obra civil",
+        tipoObra:
+          i.contractType === "manutencao" ? "manutenção predial" : "obra civil",
         memorialDate: i.memorialDate ?? new Date().toISOString(),
         escopoBreve: llmOutput.escopoBreve,
         enderecoObra: i.enderecoObra ?? "(a informar)",
         // P1.6 (post-review): foro vem da LLM, derivado da localização da obra.
         // Quando a LLM não consegue extrair, retorna "[Comarca da obra —
         // preencher antes da assinatura]" — sinaliza revisão humana no PDF.
-        foro: llmOutput.foro || "[Comarca da obra — preencher antes da assinatura]",
+        foro:
+          llmOutput.foro || "[Comarca da obra — preencher antes da assinatura]",
         companyAddress: i.companyAddress ?? "",
         companyCnpj: i.companyCnpj ?? "",
       });
     } catch (err) {
-      console.warn("[Juridico] template render falhou, usando fallback minimo:", err);
+      console.warn(
+        "[Juridico] template render falhou, usando fallback minimo:",
+        err
+      );
       rendered = {
         text: `# Proposta — ${input.projectName}\n\nValor total: R$ ${input.totalPrice.toFixed(2)}\nPrazo: ${durationDays} dias\nValidade: ${llmOutput.validityDays} dias.\n\n${llmOutput.escopoBreve ?? ""}`,
         clauses: [],
       };
     }
 
-    const clauses = [
-      ...rendered.clauses,
-      ...(llmOutput.clausulasExtras ?? []),
-    ];
+    const clauses = [...rendered.clauses, ...(llmOutput.clausulasExtras ?? [])];
 
     // Cláusula de confidencialidade extraída para o campo dedicado do
     // schema (mantém compatibilidade com consumidores antigos).
@@ -1887,9 +2342,13 @@ export class BoardAgent extends BaseAgent<BoardInput, BoardOutput> {
   // P1.1: migrado de Opus para Sonnet. Recebe margem e cashflow já
   // calculados — só decide e justifica. Trabalho deliberativo dentro
   // da capacidade do Sonnet.
-  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
-  getTemperature() { return 0.2; }
-  
+  getPreferredModel() {
+    return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6";
+  }
+  getTemperature() {
+    return 0.2;
+  }
+
   getSystemPrompt(): string {
     return `Você é o BOARD EXECUTIVO da RR Engenharia, composto por especialistas sêniores em Gestão de Negócios:
 - CEO (Chief Executive Officer): Visão estratégica e continuidade do negócio
@@ -2016,19 +2475,22 @@ blockProposal = true SOMENTE quando:
 Para TODOS os outros casos → approved=true ou requiresUserConfirmation=true
 com soluções e condições claras. Nunca bloqueie por problemas que têm solução.`;
   }
-  
+
   getUserPrompt(input: BoardInput): string {
     // Resumir os outputs dos agentes para evitar payload muito grande
     const resumo = {
       engenheiro: {
         totalItens: input.allAgentOutputs.engenheiro?.items?.length || 0,
-        itensPendentes: input.allAgentOutputs.engenheiro?.pendingItems?.length || 0,
+        itensPendentes:
+          input.allAgentOutputs.engenheiro?.pendingItems?.length || 0,
         notasCriticas: input.allAgentOutputs.engenheiro?.criticalNotes || [],
       },
       orcamentista: {
-        totalItens: input.allAgentOutputs.orcamentista?.budgetItems?.length || 0,
+        totalItens:
+          input.allAgentOutputs.orcamentista?.budgetItems?.length || 0,
         custoDireto: input.allAgentOutputs.orcamentista?.totalDirectCost || 0,
-        custoIndireto: input.allAgentOutputs.orcamentista?.totalIndirectCost || 0,
+        custoIndireto:
+          input.allAgentOutputs.orcamentista?.totalIndirectCost || 0,
         itensCurvaA: input.allAgentOutputs.orcamentista?.curvaAItems || [],
       },
       logistica: {
@@ -2042,7 +2504,8 @@ com soluções e condições claras. Nunca bloqueie por problemas que têm solu�
       comercial: {
         bdiAjustado: input.allAgentOutputs.comercial?.adjustedBdi || 0,
         precoFinal: input.allAgentOutputs.comercial?.finalPrice || 0,
-        justificativaBdi: input.allAgentOutputs.comercial?.bdiJustification || "",
+        justificativaBdi:
+          input.allAgentOutputs.comercial?.bdiJustification || "",
       },
       gestao: {
         duracaoTotal: input.allAgentOutputs.gestao?.totalDuration || 0,
@@ -2051,8 +2514,10 @@ com soluções e condições claras. Nunca bloqueie por problemas que têm solu�
       },
       financeiro: {
         exposicaoMaxima: input.allAgentOutputs.financeiro?.maxExposure || 0,
-        precisaAdiantamento: input.allAgentOutputs.financeiro?.needsAdvance || false,
-        adiantamentoSugerido: input.allAgentOutputs.financeiro?.suggestedAdvance || 0,
+        precisaAdiantamento:
+          input.allAgentOutputs.financeiro?.needsAdvance || false,
+        adiantamentoSugerido:
+          input.allAgentOutputs.financeiro?.suggestedAdvance || 0,
         alertas: input.allAgentOutputs.financeiro?.alerts || [],
       },
       juridico: {
@@ -2060,28 +2525,27 @@ com soluções e condições claras. Nunca bloqueie por problemas que têm solu�
         totalClausulas: input.allAgentOutputs.juridico?.clauses?.length || 0,
       },
     };
-    
+
     // === CÁLCULOS FINANCEIROS PRÉ-CALCULADOS ===
     const custoDireto = resumo.orcamentista.custoDireto;
     const custoIndireto = resumo.orcamentista.custoIndireto;
     const custoLogistica = resumo.logistica.custoTotal;
     const totalImpostos = resumo.tributario.totalImpostos;
     const precoFinal = resumo.comercial.precoFinal;
-    
+
     // Custo Total = Direto + Indireto + Logística
     const custoTotal = custoDireto + custoIndireto + custoLogistica;
-    
+
     // Margem Bruta = Preço Final - Custo Total
     const margemBruta = precoFinal - custoTotal;
-    
+
     // Margem Líquida = Margem Bruta - Impostos
     const margemLiquida = margemBruta - totalImpostos;
-    
+
     // Margem Percentual = (Margem Líquida / Preço Final) x 100
-    const margemPercentual = precoFinal > 0 
-      ? (margemLiquida / precoFinal) * 100 
-      : 0;
-    
+    const margemPercentual =
+      precoFinal > 0 ? (margemLiquida / precoFinal) * 100 : 0;
+
     // Adicionar cálculos ao resumo
     const calculosFinanceiros = {
       custoDireto,
@@ -2094,18 +2558,23 @@ com soluções e condições claras. Nunca bloqueie por problemas que têm solu�
       margemLiquida,
       margemPercentual: margemPercentual.toFixed(2),
     };
-    
+
     // Validar dados de entrada
     const dadosFaltantes: string[] = [];
-    if (!custoDireto || custoDireto <= 0) dadosFaltantes.push("Custo direto ausente ou inválido");
-    if (custoLogistica === undefined) dadosFaltantes.push("Custo logístico não informado");
-    if (totalImpostos === undefined) dadosFaltantes.push("Impostos não calculados");
-    if (!precoFinal || precoFinal <= 0) dadosFaltantes.push("Preço final ausente ou inválido");
-    
-    const alertaDados = dadosFaltantes.length > 0
-      ? `\n\n⚠️ ALERTA: DADOS INCOMPLETOS\n- ${dadosFaltantes.join("\n- ")}\nCONSIDERE REPROVAR ATÉ QUE OS DADOS ESTEJAM COMPLETOS.`
-      : "";
-    
+    if (!custoDireto || custoDireto <= 0)
+      dadosFaltantes.push("Custo direto ausente ou inválido");
+    if (custoLogistica === undefined)
+      dadosFaltantes.push("Custo logístico não informado");
+    if (totalImpostos === undefined)
+      dadosFaltantes.push("Impostos não calculados");
+    if (!precoFinal || precoFinal <= 0)
+      dadosFaltantes.push("Preço final ausente ou inválido");
+
+    const alertaDados =
+      dadosFaltantes.length > 0
+        ? `\n\n⚠️ ALERTA: DADOS INCOMPLETOS\n- ${dadosFaltantes.join("\n- ")}\nCONSIDERE REPROVAR ATÉ QUE OS DADOS ESTEJAM COMPLETOS.`
+        : "";
+
     return `REUNIÃO DO BOARD EXECUTIVO - ANÁLISE E DECISÃO
 
 === CÁLCULOS FINANCEIROS (PRÉ-CALCULADOS) ===
@@ -2144,30 +2613,57 @@ AÇÃO REQUERIDA:
 
 Lembre-se: Você é o DECISOR, não apenas um revisor.`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
       properties: {
         approved: { type: "boolean" },
-        blockProposal: { type: "boolean", description: "Se true, a proposta NÃO será gerada. Usuário deve corrigir problemas." },
-        requiresUserConfirmation: { type: "boolean", description: "Se true, proposta será gerada mas usuário deve confirmar ciência dos alertas." },
-        blockReason: { type: "string", description: "Motivo do bloqueio (se blockProposal = true)" },
-        warningMessages: { 
-          type: "array", 
+        blockProposal: {
+          type: "boolean",
+          description:
+            "Se true, a proposta NÃO será gerada. Usuário deve corrigir problemas.",
+        },
+        requiresUserConfirmation: {
+          type: "boolean",
+          description:
+            "Se true, proposta será gerada mas usuário deve confirmar ciência dos alertas.",
+        },
+        blockReason: {
+          type: "string",
+          description: "Motivo do bloqueio (se blockProposal = true)",
+        },
+        warningMessages: {
+          type: "array",
           items: { type: "string" },
-          description: "Lista de alertas que o usuário deve estar ciente (se requiresUserConfirmation = true)" 
+          description:
+            "Lista de alertas que o usuário deve estar ciente (se requiresUserConfirmation = true)",
         },
         projectViability: {
           type: "object",
           properties: {
             isViable: { type: "boolean" },
             profitMargin: { type: "string" },
-            calculatedMargin: { type: "number", description: "Margem calculada em percentual" },
-            riskLevel: { type: "string", enum: ["baixo", "medio", "alto", "critico"] },
-            recommendation: { type: "string", enum: ["aprovar", "aprovar_com_ressalvas", "revisar", "rejeitar"] },
+            calculatedMargin: {
+              type: "number",
+              description: "Margem calculada em percentual",
+            },
+            riskLevel: {
+              type: "string",
+              enum: ["baixo", "medio", "alto", "critico"],
+            },
+            recommendation: {
+              type: "string",
+              enum: ["aprovar", "aprovar_com_ressalvas", "revisar", "rejeitar"],
+            },
           },
-          required: ["isViable", "profitMargin", "calculatedMargin", "riskLevel", "recommendation"],
+          required: [
+            "isViable",
+            "profitMargin",
+            "calculatedMargin",
+            "riskLevel",
+            "recommendation",
+          ],
           additionalProperties: false,
         },
         validationResults: {
@@ -2182,7 +2678,16 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
             allItemsPriced: { type: "boolean" },
             unpricedItems: { type: "array", items: { type: "string" } },
           },
-          required: ["priceCalculationCorrect", "priceCalculationDetails", "scheduleCoherent", "scheduleDetails", "cashFlowSustainable", "cashFlowDetails", "allItemsPriced", "unpricedItems"],
+          required: [
+            "priceCalculationCorrect",
+            "priceCalculationDetails",
+            "scheduleCoherent",
+            "scheduleDetails",
+            "cashFlowSustainable",
+            "cashFlowDetails",
+            "allItemsPriced",
+            "unpricedItems",
+          ],
           additionalProperties: false,
         },
         decisions: {
@@ -2198,7 +2703,15 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
               actionRequired: { type: "string" },
               responsible: { type: "string" },
             },
-            required: ["issue", "agentsInvolved", "businessImpact", "decision", "justification", "actionRequired", "responsible"],
+            required: [
+              "issue",
+              "agentsInvolved",
+              "businessImpact",
+              "decision",
+              "justification",
+              "actionRequired",
+              "responsible",
+            ],
             additionalProperties: false,
           },
         },
@@ -2218,53 +2731,97 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
         },
         conditionsForApproval: { type: "string" },
         // Campos de auto-correção financeira
-        isFinancialOnlyRejection: { 
-          type: "boolean", 
-          description: "Se true, a rejeição é EXCLUSIVAMENTE por motivos financeiros (margem, BDI, preço), sem problemas operacionais ou técnicos" 
+        isFinancialOnlyRejection: {
+          type: "boolean",
+          description:
+            "Se true, a rejeição é EXCLUSIVAMENTE por motivos financeiros (margem, BDI, preço), sem problemas operacionais ou técnicos",
         },
-        requestFinancialRevision: { 
-          type: "boolean", 
-          description: "Se true, solicita ciclo de revisão automático dos agentes Orçamentista, Logística, Tributário e Comercial" 
+        requestFinancialRevision: {
+          type: "boolean",
+          description:
+            "Se true, solicita ciclo de revisão automático dos agentes Orçamentista, Logística, Tributário e Comercial",
         },
-        financialRevisionReason: { 
-          type: "string", 
-          description: "Motivo da solicitação de revisão financeira (ex: Margem de 3.8% abaixo do mínimo de 10%)" 
+        financialRevisionReason: {
+          type: "string",
+          description:
+            "Motivo da solicitação de revisão financeira (ex: Margem de 3.8% abaixo do mínimo de 10%)",
         },
         financialRevisionInstructions: {
           type: "object",
           properties: {
-            orcamentista: { type: "string", description: "Instruções específicas para o Orçamentista" },
-            logistica: { type: "string", description: "Instruções específicas para a Logística" },
-            tributario: { type: "string", description: "Instruções específicas para o Tributário" },
-            comercial: { type: "string", description: "Instruções específicas para o Comercial" },
+            orcamentista: {
+              type: "string",
+              description: "Instruções específicas para o Orçamentista",
+            },
+            logistica: {
+              type: "string",
+              description: "Instruções específicas para a Logística",
+            },
+            tributario: {
+              type: "string",
+              description: "Instruções específicas para o Tributário",
+            },
+            comercial: {
+              type: "string",
+              description: "Instruções específicas para o Comercial",
+            },
           },
           required: ["orcamentista", "logistica", "tributario", "comercial"],
           additionalProperties: false,
         },
         suggestedBillingSchedule: {
           type: "object",
-          description: "Cronograma de pagamento sugerido para resolver problemas de caixa",
+          description:
+            "Cronograma de pagamento sugerido para resolver problemas de caixa",
           properties: {
             installments: {
               type: "array",
               items: {
                 type: "object",
                 properties: {
-                  name: { type: "string", description: "Nome da parcela (Entrada, Medição, Final)" },
-                  percentage: { type: "number", description: "Percentual do preço total (0-100)" },
+                  name: {
+                    type: "string",
+                    description: "Nome da parcela (Entrada, Medição, Final)",
+                  },
+                  percentage: {
+                    type: "number",
+                    description: "Percentual do preço total (0-100)",
+                  },
                 },
                 required: ["name", "percentage"],
                 additionalProperties: false,
               },
             },
-            reason: { type: "string", description: "Justificativa para o cronograma sugerido" },
-            projectedMaxExposure: { type: "number", description: "Exposição máxima projetada com o novo cronograma" },
+            reason: {
+              type: "string",
+              description: "Justificativa para o cronograma sugerido",
+            },
+            projectedMaxExposure: {
+              type: "number",
+              description: "Exposição máxima projetada com o novo cronograma",
+            },
           },
           required: ["installments", "reason", "projectedMaxExposure"],
           additionalProperties: false,
         },
       },
-      required: ["approved", "blockProposal", "requiresUserConfirmation", "blockReason", "warningMessages", "projectViability", "validationResults", "decisions", "executiveSummary", "finalApproval", "conditionsForApproval", "isFinancialOnlyRejection", "requestFinancialRevision", "financialRevisionReason", "financialRevisionInstructions"],
+      required: [
+        "approved",
+        "blockProposal",
+        "requiresUserConfirmation",
+        "blockReason",
+        "warningMessages",
+        "projectViability",
+        "validationResults",
+        "decisions",
+        "executiveSummary",
+        "finalApproval",
+        "conditionsForApproval",
+        "isFinancialOnlyRejection",
+        "requestFinancialRevision",
+        "financialRevisionReason",
+        "financialRevisionInstructions",
+      ],
       additionalProperties: false,
     };
   }
@@ -2272,34 +2829,118 @@ Lembre-se: Você é o DECISOR, não apenas um revisor.`;
 
 // Agent 10: Auditor de Consistência
 export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
-  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
-  getTemperature() { return 0.0; }
+  getPreferredModel() {
+    return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6";
+  }
+  getTemperature() {
+    return 0.0;
+  }
   name = AGENT_NAMES.auditor;
   type: AgentType = "auditor";
 
   /**
-   * P0.4: Override execute() para auditar 100% dos itens em obras grandes
-   * via chunking. Sem isso, o slice(0, 80) anterior auditava apenas 32%
-   * do orçamento em obras de 250+ itens.
+   * P0.4: chunking para auditar 100% dos itens em obras grandes.
+   * P2.6: dedup determinístico (findBudgetDuplicates / findInvalidSummaryItems)
+   * roda ANTES da LLM sobre o orçamento completo, e o resultado sobrescreve
+   * `corrections.budgetItemsToRemove` no output final. A LLM mantém o papel
+   * narrativo (auditNotes, validações matemáticas, logisticsToRemove).
+   *
+   * Feature flag: AUDITOR_USE_LLM_DEDUP=true preserva o caminho legado
+   * (LLM detecta duplicatas) por 30 dias para comparação A/B.
    */
   async execute(input: AuditorInput): Promise<AuditorOutput> {
-    const { needsAuditorChunking, createAuditorChunkedInputs, mergeAuditorOutputs } =
-      await import("./auditorChunking");
+    const {
+      needsAuditorChunking,
+      createAuditorChunkedInputs,
+      mergeAuditorOutputs,
+    } = await import("./auditorChunking");
 
-    if (needsAuditorChunking(input)) {
-      const chunks = createAuditorChunkedInputs(input);
-      console.log(`[Auditor] Projeto com ${input.allAgentOutputs.orcamentista?.budgetItems?.length} itens — auditoria em ${chunks.length} chunks`);
+    const useLlmDedup = process.env.AUDITOR_USE_LLM_DEDUP === "true";
+    const allItems = (input.allAgentOutputs?.orcamentista?.budgetItems ??
+      []) as AuditorBudgetItem[];
+
+    // P2.6: dedup determinístico calculado ANTES da LLM, sobre o orçamento
+    // completo (independente de chunking — duplicatas podem cruzar chunks).
+    const deterministicDuplicates: DuplicateFinding[] = useLlmDedup
+      ? []
+      : [
+          ...findBudgetDuplicates(allItems),
+          ...findInvalidSummaryItems(allItems),
+        ];
+    const deterministicTotalImpact = deterministicDuplicates.reduce(
+      (s, d) => s + d.estimatedImpact,
+      0
+    );
+
+    // Anexa o pré-cálculo ao input para que o user prompt cite a lista
+    // já decidida e a LLM não duplique trabalho.
+    const inputWithPreComputed = useLlmDedup
+      ? input
+      : ({
+          ...input,
+          _preComputed: {
+            duplicates: deterministicDuplicates,
+            duplicatesTotalImpact: deterministicTotalImpact,
+          },
+        } as AuditorInput);
+
+    let llmOutput: AuditorOutput;
+    if (needsAuditorChunking(inputWithPreComputed)) {
+      const chunks = createAuditorChunkedInputs(inputWithPreComputed);
+      console.log(
+        `[Auditor] Projeto com ${allItems.length} itens — auditoria em ${chunks.length} chunks`
+      );
 
       const outputs: AuditorOutput[] = [];
       for (let i = 0; i < chunks.length; i++) {
         console.log(`[Auditor] Chunk ${i + 1}/${chunks.length}`);
-        const out = await super.execute(chunks[i]);
+        // Propaga _preComputed para cada chunk
+        const chunkInput = useLlmDedup
+          ? chunks[i]
+          : ({
+              ...chunks[i],
+              _preComputed: {
+                duplicates: deterministicDuplicates,
+                duplicatesTotalImpact: deterministicTotalImpact,
+              },
+            } as AuditorInput);
+        const out = await super.execute(chunkInput);
         outputs.push(out);
       }
-      return mergeAuditorOutputs(outputs);
+      llmOutput = mergeAuditorOutputs(outputs);
+    } else {
+      llmOutput = await super.execute(inputWithPreComputed);
     }
 
-    return super.execute(input);
+    if (useLlmDedup) return llmOutput;
+
+    // P2.6: sobrescreve corrections.budgetItemsToRemove com o resultado
+    // determinístico. Mantém logisticsToRemove da LLM (P2.6 não cobre
+    // logística — ainda exige inferência). Recalcula totalImpact e
+    // correctedDirectCost coerentes com a nova lista.
+    const logisticsToRemove = llmOutput.corrections?.logisticsToRemove ?? [];
+    const logisticsImpact = logisticsToRemove.reduce(
+      (s, l) => s + l.estimatedImpact,
+      0
+    );
+    const directCost = input.allAgentOutputs.orcamentista?.totalDirectCost ?? 0;
+    const logisticsCost =
+      input.allAgentOutputs.logistica?.totalLogisticsCost ?? 0;
+
+    return {
+      ...llmOutput,
+      corrections: {
+        budgetItemsToRemove: deterministicDuplicates.map(d => ({
+          description: d.description,
+          reason: d.reason,
+          estimatedImpact: d.estimatedImpact,
+        })),
+        logisticsToRemove,
+        totalImpact: deterministicTotalImpact + logisticsImpact,
+        correctedDirectCost: directCost - deterministicTotalImpact,
+        correctedLogisticsCost: logisticsCost - logisticsImpact,
+      },
+    };
   }
 
   getSystemPrompt(): string {
@@ -2350,9 +2991,9 @@ allAgentOutputs.orcamentista.budgetItems e um campo _chunkInfo
 
 REGRA — VALIDAÇÕES GLOBAIS (margem, fluxo de caixa, BDI vs preço final,
 deterministicTotal): rodam SOMENTE no chunk com _chunkInfo.isFirst === true.
-Nos demais chunks, FOQUE APENAS em (a) duplicatas internas ao chunk e
-(b) validação matemática dos itens recebidos. Os outputs serão merged
-no final.
+Nos demais chunks, FOQUE APENAS em validação matemática dos itens
+recebidos. Os outputs serão merged no final. (Duplicatas são tratadas
+fora do loop por algoritmo determinístico — não busque por chunk.)
 
 Quando _chunkInfo está ausente, você está auditando o orçamento inteiro
 em uma única chamada — execute todas as validações (1-8).
@@ -2397,49 +3038,40 @@ Calcule o score de 0 a 100:
 
 Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da proposta ser enviada ao cliente.
 
-=== VALIDAÇÃO DE DUPLICATAS (CRÍTICO) ===
-VERIFIQUE se há itens duplicados no orçamento:
-1. Itens com descrição idêntica ou muito similar (>80% de sobreposição textual)
-2. Itens PAI (isSummaryItem=true) que também foram precificados individualmente como filhos
-3. Mesmo serviço aparecendo em pacotes/grupos diferentes (ex: "piso banheiro" nos pacotes 6 e 8)
-4. Premissas operacionais (ex: "destinação de resíduos", "SAO") com linha de custo autônoma
-5. Itens de cobertura (telha, estrutura) que aparecem como sub-item E como item separado
+=== DUPLICATAS NO ORÇAMENTO (P2.6 — PRÉ-COMPUTADO) ===
+A detecção de duplicatas é feita ANTES desta chamada por algoritmo
+determinístico (P1.3 + P2.6). Você recebe a lista já identificada em
+\`_preComputed.duplicates\`. NÃO tente detectar duplicatas adicionais
+no orçamento — o caller sobrescreve corrections.budgetItemsToRemove com
+o resultado do algoritmo, ignorando o que você colocar lá.
 
-Se encontrar duplicatas, liste-as no campo "corrections" (ver abaixo).
+Sua tarefa relativa às duplicatas: gerar \`auditNotes\` resumindo o que
+o algoritmo encontrou (quantos itens, impacto total, padrão recorrente
+se houver) e ajustar \`auditSeal\` conforme regra abaixo.
 
-=== MODO EDITOR-CHEFE (v3.2) ===
-Além de validar, você DEVE identificar e RECOMENDAR CORREÇÕES no campo "corrections".
-Não basta dizer "há duplicatas" — você deve listar EXATAMENTE quais itens remover.
-
-O usuário verá suas recomendações e decidirá quais aplicar.
-
-PREENCHA corrections.budgetItemsToRemove com itens do orçamento a remover:
-- Itens duplicados (mesma descrição ou descrição contida em outro item)
-- Pacote global quando componentes já estão detalhados (ex: "Sistema VRF" + condensadora + fan coils)
-- Premissas operacionais que não são custos (ex: "SAO - Destinação inicial")
-- Para cada: description (EXATA como aparece na lista), reason (justificativa clara), estimatedImpact (R$)
-
-PREENCHA corrections.logisticsToRemove com custos logísticos sobrepostos:
+=== MODO EDITOR-CHEFE — LOGÍSTICA (v3.2) ===
+PREENCHA corrections.logisticsToRemove com custos logísticos sobrepostos
+(esta detecção CONTINUA via LLM — exige inferência sobre composições):
 - Frete já embutido em composições SINAPI (até 30km)
 - Equipamentos já inclusos nas composições (betoneira, serra)
 - Limpeza que já aparece como item orçamentário
 - Para cada: description, reason, estimatedImpact
 
-PREENCHA corrections.totalImpact = soma de todos os estimatedImpact
-PREENCHA corrections.correctedDirectCost = custo direto atual - impacto orçamento
-PREENCHA corrections.correctedLogisticsCost = logística atual - impacto logística
+NÃO PREENCHA corrections.budgetItemsToRemove — será sobrescrito pelo
+caller com o resultado determinístico. Pode retornar array vazio.
+NÃO PREENCHA corrections.totalImpact / correctedDirectCost /
+correctedLogisticsCost — também recalculados pelo caller.
 
 REGRA DE SELO:
-- Se encontrar duplicatas MAS todas são corrigíveis via corrections → auditSeal = "approved_with_warnings"
-- Se NÃO encontrar duplicatas e tudo está consistente → auditSeal = "approved"
-- SOMENTE use auditSeal = "rejected" para erros NÃO-CORRIGÍVEIS (margem negativa, dados faltantes)
-
-Se NÃO houver correções necessárias, retorne corrections com arrays vazios e totalImpact = 0.`;
+- Se _preComputed.duplicates não estiver vazio MAS sem erros não-corrigíveis
+  → auditSeal = "approved_with_warnings"
+- Se _preComputed.duplicates estiver vazio E tudo consistente → auditSeal = "approved"
+- SOMENTE use auditSeal = "rejected" para erros NÃO-CORRIGÍVEIS (margem negativa, dados faltantes).`;
   }
-  
+
   getUserPrompt(input: AuditorInput): string {
     const { allAgentOutputs, projectConfig, hasCustomSettings } = input;
-    
+
     // Extrair dados para auditoria
     const directCost = allAgentOutputs.orcamentista?.totalDirectCost || 0;
     const logisticsCost = allAgentOutputs.logistica?.totalLogisticsCost || 0;
@@ -2448,14 +3080,17 @@ Se NÃO houver correções necessárias, retorne corrections com arrays vazios e
     const expectedPrice = baseCost * (1 + bdiPercent / 100);
     const actualPrice = allAgentOutputs.comercial?.finalPrice || 0;
     const totalTaxes = allAgentOutputs.tributario?.totalTaxes || 0;
-    const cashFlowFinal = allAgentOutputs.financeiro?.cashFlow?.slice(-1)[0]?.balance || 0;
+    const cashFlowFinal =
+      allAgentOutputs.financeiro?.cashFlow?.slice(-1)[0]?.balance || 0;
     const totalDays = allAgentOutputs.gestao?.totalDuration || 0;
 
     // Calcular margens
     const grossMargin = actualPrice - baseCost;
-    const grossMarginPercent = actualPrice > 0 ? (grossMargin / actualPrice) * 100 : 0;
+    const grossMarginPercent =
+      actualPrice > 0 ? (grossMargin / actualPrice) * 100 : 0;
     const netMargin = actualPrice - baseCost - totalTaxes;
-    const netMarginPercent = actualPrice > 0 ? (netMargin / actualPrice) * 100 : 0;
+    const netMarginPercent =
+      actualPrice > 0 ? (netMargin / actualPrice) * 100 : 0;
 
     // P0.1: cross-check com engine determinístico
     const deterministicTotal = (input as AuditorInput).deterministicTotal;
@@ -2480,27 +3115,77 @@ Registre validação INFO "engine determinístico indisponível" e prossiga.\n`;
     // o input em chunks de CHUNK_SIZE itens quando necessário (ver
     // auditorChunking.ts). Aqui processamos TODOS os itens recebidos.
     const budgetItems = allAgentOutputs.orcamentista?.budgetItems || [];
-    const budgetItemsSummary = budgetItems.map((item: any, i: number) => {
-      const qty = Number(item.quantity) || 0;
-      const cost = Number(item.unitCostTotal) || 0;
-      const total = qty * cost;
-      const isSummary = item.isSummaryItem ? ' [PAI]' : '';
-      return `${i + 1}. ${item.code || '-'} | ${item.description}${isSummary} | ${qty} ${item.unit || ''} × R$${cost.toFixed(2)} = R$${total.toFixed(2)} | Fonte: ${item.source || '?'}`;
-    }).join('\n');
+    const budgetItemsSummary = budgetItems
+      .map((item: any, i: number) => {
+        const qty = Number(item.quantity) || 0;
+        const cost = Number(item.unitCostTotal) || 0;
+        const total = qty * cost;
+        const isSummary = item.isSummaryItem ? " [PAI]" : "";
+        return `${i + 1}. ${item.code || "-"} | ${item.description}${isSummary} | ${qty} ${item.unit || ""} × R$${cost.toFixed(2)} = R$${total.toFixed(2)} | Fonte: ${item.source || "?"}`;
+      })
+      .join("\n");
     const budgetItemsCount = budgetItems.length;
-    const chunkInfo = (input as unknown as { _chunkInfo?: { index: number; total: number; isFirst: boolean } })._chunkInfo;
+    const chunkInfo = (
+      input as unknown as {
+        _chunkInfo?: { index: number; total: number; isFirst: boolean };
+      }
+    )._chunkInfo;
     const chunkSection = chunkInfo
-      ? `\n\n=== CHUNK ${chunkInfo.index}/${chunkInfo.total} ===\n${chunkInfo.isFirst ? "PRIMEIRO chunk: execute as validações GLOBAIS (margem, fluxo de caixa, BDI, deterministicTotal) ALÉM da validação dos itens deste chunk." : "Chunk subsequente: foque APENAS em duplicatas internas e validação matemática dos itens recebidos. Pule margem global, fluxo de caixa e cross-check determinístico — esses já rodaram no chunk 1."}`
+      ? `\n\n=== CHUNK ${chunkInfo.index}/${chunkInfo.total} ===\n${chunkInfo.isFirst ? "PRIMEIRO chunk: execute as validações GLOBAIS (margem, fluxo de caixa, BDI, deterministicTotal) ALÉM da validação dos itens deste chunk." : "Chunk subsequente: foque APENAS em validação matemática dos itens recebidos. Pule margem global, fluxo de caixa e cross-check determinístico — esses já rodaram no chunk 1. Duplicatas são detectadas fora do loop (P2.6)."}`
       : "";
     const budgetSumCalculated = budgetItems
       .filter((item: any) => !item.isSummaryItem)
-      .reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.unitCostTotal) || 0), 0);
+      .reduce(
+        (sum: number, item: any) =>
+          sum +
+          (Number(item.quantity) || 0) * (Number(item.unitCostTotal) || 0),
+        0
+      );
+
+    // P2.6: lista de duplicatas pré-computada por algoritmo determinístico.
+    // Anexada pelo execute() override ao input antes da chamada à LLM.
+    const preComputed = (
+      input as unknown as {
+        _preComputed?: {
+          duplicates: Array<{
+            description: string;
+            reason: string;
+            estimatedImpact: number;
+          }>;
+          duplicatesTotalImpact: number;
+        };
+      }
+    )._preComputed;
+    const preComputedSection = preComputed
+      ? `\n=== DUPLICATAS PRÉ-COMPUTADAS (P2.6) ===
+Algoritmo determinístico identificou ${preComputed.duplicates.length} duplicata(s)
+totalizando R$ ${preComputed.duplicatesTotalImpact.toFixed(2)} de impacto.
+${
+  preComputed.duplicates.length === 0
+    ? "Nenhuma duplicata encontrada — orçamento limpo."
+    : preComputed.duplicates
+        .slice(0, 30)
+        .map(
+          (d, i) =>
+            `${i + 1}. ${d.description} | ${d.reason} | R$ ${d.estimatedImpact.toFixed(2)}`
+        )
+        .join("\n") +
+      (preComputed.duplicates.length > 30
+        ? `\n... e mais ${preComputed.duplicates.length - 30} (truncado para o prompt)`
+        : "")
+}
+Use essa lista para escrever auditNotes. NÃO refaça a detecção e NÃO
+preencha corrections.budgetItemsToRemove — o caller sobrescreve.\n`
+      : "";
 
     // Extrair logisticsCosts para validação cruzada
     const logisticsCosts = allAgentOutputs.logistica?.costs || [];
-    const logisticsSummary = logisticsCosts.slice(0, 20).map((c: any, i: number) => {
-      return `${i+1}. ${c.description} | ${c.quantity} ${c.unit || ''} × R$${Number(c.unitCost || 0).toFixed(2)} = R$${Number(c.totalCost || 0).toFixed(2)}`;
-    }).join('\n');
+    const logisticsSummary = logisticsCosts
+      .slice(0, 20)
+      .map((c: any, i: number) => {
+        return `${i + 1}. ${c.description} | ${c.quantity} ${c.unit || ""} × R$${Number(c.unitCost || 0).toFixed(2)} = R$${Number(c.totalCost || 0).toFixed(2)}`;
+      })
+      .join("\n");
 
     return `AUDITORIA DE CONSISTÊNCIA - PROJETO: ${projectConfig.name}
 
@@ -2532,8 +3217,8 @@ PRAZO:
 - Duração Total (Gestão): ${totalDays} dias
 
 DECISÃO DO BOARD:
-- Aprovado: ${allAgentOutputs.board?.approved ? 'Sim' : 'Não'}
-- Bloqueado: ${allAgentOutputs.board?.blockProposal ? 'Sim' : 'Não'}
+- Aprovado: ${allAgentOutputs.board?.approved ? "Sim" : "Não"}
+- Bloqueado: ${allAgentOutputs.board?.blockProposal ? "Sim" : "Não"}
 
 CONSISTÊNCIA ENTRE DOCUMENTOS:
 - Comercial.finalPrice: R$ ${actualPrice.toFixed(2)} (deve aparecer em todos os documentos)
@@ -2541,15 +3226,15 @@ CONSISTÊNCIA ENTRE DOCUMENTOS:
 - Jurídico validade: ${allAgentOutputs.juridico?.validityDays || 30} dias
 
 CONFIGURAÇÕES DA EMPRESA:
-- Configurações Personalizadas: ${hasCustomSettings ? 'Sim (usuário salvou configurações)' : 'NÃO (usando valores padrão - EMITIR WARNING)'}
-${deterministicSection}${chunkSection}
+- Configurações Personalizadas: ${hasCustomSettings ? "Sim (usuário salvou configurações)" : "NÃO (usando valores padrão - EMITIR WARNING)"}
+${deterministicSection}${preComputedSection}${chunkSection}
 === ITENS DO ORÇAMENTO (${budgetItemsCount} itens) ===
 Soma calculada dos itens (excluindo PAI): R$ ${budgetSumCalculated.toFixed(2)}
 Custo Direto declarado pelo Orçamentista: R$ ${directCost.toFixed(2)}
-${budgetItemsSummary || 'Nenhum item disponível'}
+${budgetItemsSummary || "Nenhum item disponível"}
 
 === CUSTOS LOGÍSTICOS (${logisticsCosts.length} itens) ===
-${logisticsSummary || 'Nenhum custo logístico disponível'}
+${logisticsSummary || "Nenhum custo logístico disponível"}
 
 === AÇÃO REQUERIDA ===
 
@@ -2561,14 +3246,20 @@ ${logisticsSummary || 'Nenhum custo logístico disponível'}
 
 Retorne o JSON com o resultado completo da auditoria.`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
       properties: {
-        isValid: { type: "boolean", description: "True se não houver erros críticos" },
+        isValid: {
+          type: "boolean",
+          description: "True se não houver erros críticos",
+        },
         validationScore: { type: "number", description: "Score de 0 a 100" },
-        criticalErrors: { type: "number", description: "Número de erros críticos" },
+        criticalErrors: {
+          type: "number",
+          description: "Número de erros críticos",
+        },
         warnings: { type: "number", description: "Número de warnings" },
         validations: {
           type: "array",
@@ -2580,10 +3271,21 @@ Retorne o JSON com o resultado completo da auditoria.`;
               expected: { type: "string" },
               actual: { type: "string" },
               passed: { type: "boolean" },
-              severity: { type: "string", enum: ["critical", "warning", "info"] },
+              severity: {
+                type: "string",
+                enum: ["critical", "warning", "info"],
+              },
               recommendation: { type: "string" },
             },
-            required: ["rule", "description", "expected", "actual", "passed", "severity", "recommendation"],
+            required: [
+              "rule",
+              "description",
+              "expected",
+              "actual",
+              "passed",
+              "severity",
+              "recommendation",
+            ],
             additionalProperties: false,
           },
         },
@@ -2615,37 +3317,81 @@ Retorne o JSON com o resultado completo da auditoria.`;
             netMargin: { type: "number" },
             netMarginPercent: { type: "number" },
           },
-          required: ["directCost", "logisticsCost", "baseCost", "bdiAmount", "taxes", "finalPrice", "grossMargin", "grossMarginPercent", "netMargin", "netMarginPercent"],
+          required: [
+            "directCost",
+            "logisticsCost",
+            "baseCost",
+            "bdiAmount",
+            "taxes",
+            "finalPrice",
+            "grossMargin",
+            "grossMarginPercent",
+            "netMargin",
+            "netMarginPercent",
+          ],
           additionalProperties: false,
         },
-        auditSeal: { type: "string", enum: ["approved", "approved_with_warnings", "rejected"] },
+        auditSeal: {
+          type: "string",
+          enum: ["approved", "approved_with_warnings", "rejected"],
+        },
         auditTimestamp: { type: "string" },
         auditNotes: { type: "string" },
         deterministicValidation: {
           type: "object",
-          description: "P0.1: cross-check com engine determinístico. Soft alert v1.",
+          description:
+            "P0.1: cross-check com engine determinístico. Soft alert v1.",
           properties: {
-            deterministicTotal: { type: "number", description: "Total custoDireto+logística do engine determinístico" },
-            llmTotal: { type: "number", description: "Total custoDireto+logística dos agentes LLM" },
-            divergencePercent: { type: "number", description: "|Δ| em pontos percentuais" },
+            deterministicTotal: {
+              type: "number",
+              description:
+                "Total custoDireto+logística do engine determinístico",
+            },
+            llmTotal: {
+              type: "number",
+              description: "Total custoDireto+logística dos agentes LLM",
+            },
+            divergencePercent: {
+              type: "number",
+              description: "|Δ| em pontos percentuais",
+            },
             severity: { type: "string", enum: ["info", "warning", "critical"] },
             notes: { type: "string", description: "Resumo da comparação" },
           },
-          required: ["deterministicTotal", "llmTotal", "divergencePercent", "severity", "notes"],
+          required: [
+            "deterministicTotal",
+            "llmTotal",
+            "divergencePercent",
+            "severity",
+            "notes",
+          ],
           additionalProperties: false,
         },
         corrections: {
           type: "object",
-          description: "Correções sugeridas pelo Auditor para aprovação do usuário",
+          description:
+            "Correções sugeridas pelo Auditor para aprovação do usuário",
           properties: {
             budgetItemsToRemove: {
               type: "array",
               items: {
                 type: "object",
                 properties: {
-                  description: { type: "string", description: "Descrição exata do item a remover (como aparece no orçamento)" },
-                  reason: { type: "string", description: "Justificativa: duplicata de X, contido em Y, premissa operacional, etc." },
-                  estimatedImpact: { type: "number", description: "Valor em R$ que será removido do custo direto" },
+                  description: {
+                    type: "string",
+                    description:
+                      "Descrição exata do item a remover (como aparece no orçamento)",
+                  },
+                  reason: {
+                    type: "string",
+                    description:
+                      "Justificativa: duplicata de X, contido em Y, premissa operacional, etc.",
+                  },
+                  estimatedImpact: {
+                    type: "number",
+                    description:
+                      "Valor em R$ que será removido do custo direto",
+                  },
                 },
                 required: ["description", "reason", "estimatedImpact"],
                 additionalProperties: false,
@@ -2656,23 +3402,60 @@ Retorne o JSON com o resultado completo da auditoria.`;
               items: {
                 type: "object",
                 properties: {
-                  description: { type: "string", description: "Descrição exata do custo logístico a remover" },
-                  reason: { type: "string", description: "Justificativa: já embutido em SINAPI, duplica item X, etc." },
-                  estimatedImpact: { type: "number", description: "Valor em R$ que será removido da logística" },
+                  description: {
+                    type: "string",
+                    description: "Descrição exata do custo logístico a remover",
+                  },
+                  reason: {
+                    type: "string",
+                    description:
+                      "Justificativa: já embutido em SINAPI, duplica item X, etc.",
+                  },
+                  estimatedImpact: {
+                    type: "number",
+                    description: "Valor em R$ que será removido da logística",
+                  },
                 },
                 required: ["description", "reason", "estimatedImpact"],
                 additionalProperties: false,
               },
             },
-            totalImpact: { type: "number", description: "Soma total de todos os estimatedImpact (redução no custo)" },
-            correctedDirectCost: { type: "number", description: "Custo direto após remoção dos itens duplicados" },
-            correctedLogisticsCost: { type: "number", description: "Custo logístico após remoção das sobreposições" },
+            totalImpact: {
+              type: "number",
+              description:
+                "Soma total de todos os estimatedImpact (redução no custo)",
+            },
+            correctedDirectCost: {
+              type: "number",
+              description: "Custo direto após remoção dos itens duplicados",
+            },
+            correctedLogisticsCost: {
+              type: "number",
+              description: "Custo logístico após remoção das sobreposições",
+            },
           },
-          required: ["budgetItemsToRemove", "logisticsToRemove", "totalImpact", "correctedDirectCost", "correctedLogisticsCost"],
+          required: [
+            "budgetItemsToRemove",
+            "logisticsToRemove",
+            "totalImpact",
+            "correctedDirectCost",
+            "correctedLogisticsCost",
+          ],
           additionalProperties: false,
         },
       },
-      required: ["isValid", "validationScore", "criticalErrors", "warnings", "validations", "crossAgentChecks", "financialSummary", "auditSeal", "auditTimestamp", "auditNotes"],
+      required: [
+        "isValid",
+        "validationScore",
+        "criticalErrors",
+        "warnings",
+        "validations",
+        "crossAgentChecks",
+        "financialSummary",
+        "auditSeal",
+        "auditTimestamp",
+        "auditNotes",
+      ],
       additionalProperties: false,
     };
   }
