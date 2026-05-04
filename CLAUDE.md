@@ -110,7 +110,7 @@ Temperatura definida em `getTemperature()` de cada agente (ver `server/agents/in
 | Comercial | — (determinístico, sem LLM) | P1.2: pure fn em `services/comercialCalculator.ts` | — |
 | Gestão de Projetos | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.3 |
 | Financeiro | — (determinístico, sem LLM) | P1.2: pure fn em `services/financeiroAnalyzer.ts` | — |
-| Jurídico | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus, P1.6 vai templificar) | 0.4 |
+| Jurídico | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` — templating estruturado (P1.6) | 0.2 |
 | Board | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus) | 0.2 |
 | Auditor | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.0 |
 

@@ -128,7 +128,9 @@ describe("Agent temperature configuration (P0.2)", () => {
     ["orcamentista", 0.1],
     ["tributario", 0.0],
     ["gestao_projetos", 0.3],
-    ["juridico", 0.4],
+    // P1.6: Jurídico passou de 0.4 → 0.2 — agora seleciona template e
+    // preenche slots curtos, não redige cláusulas livres.
+    ["juridico", 0.2],
     ["board", 0.2],
     ["auditor", 0.0],
   ])("agent %s reports temperature %s", (type, expected) => {
