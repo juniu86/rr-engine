@@ -1671,68 +1671,112 @@ export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput
   getOutputSchema(): object { return {}; }
 }
 
-// Agent 8: Jurídico
+// Agent 8: Jurídico — TEMPLATING ESTRUTURADO (P1.6)
+//
+// Antes era LLM redigindo proposta livre — risco de cláusula divergente
+// a cada execução. Agora a LLM tem 2 responsabilidades restritas:
+//   1. Selecionar o template (padrao | obra_publica | manutencao)
+//   2. Preencher slots descritivos curtos (escopoBreve, validityDays,
+//      e opcionalmente clausulasExtras quando houver risco específico)
+//
+// O texto base das 9 cláusulas vem de arquivos versionados em
+// server/templates/juridico/clausulas/. Cláusulas críticas (foro,
+// validade, prazo) foram redigidas com slots e marcadas para review
+// humano via comentário HTML no .md.
+interface JuridicoLLMOutput {
+  templateChoice: "padrao" | "obra_publica" | "manutencao";
+  escopoBreve: string;
+  validityDays: number;
+  /**
+   * P1.6 (post-review): foro derivado da localização da obra pelo agente.
+   * Quando location for vago demais para extrair, vem com a string literal
+   * "[Comarca da obra — preencher antes da assinatura]" para sinalizar
+   * revisão humana antes da assinatura do contrato.
+   */
+  foro: string;
+  clausulasExtras?: Array<{ title: string; content: string }>;
+}
+
 export class JuridicoAgent extends BaseAgent<JuridicoInput, JuridicoOutput> {
   name = AGENT_NAMES.juridico;
-  // P1.1: migrado de Opus para Sonnet (ponte para P1.6 que vai trocar
-  // por templating estruturado e potencialmente Haiku).
-  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
-  getTemperature() { return 0.4; }
   type: AgentType = "juridico";
-  
+  getPreferredModel() { return process.env.LLM_MODEL_INTERMEDIATE ?? "claude-sonnet-4-6"; }
+  getTemperature() { return 0.2; }
+
   getSystemPrompt(): string {
     return `Você é o Agente Jurídico da RR Engenharia.
 
-MISSÃO: Redação contratual e Compliance.
+MISSÃO: Selecionar o template de proposta e preencher campos descritivos curtos.
 
-RESPONSABILIDADES:
-1. Redigir proposta técnica profissional
-2. Incluir cláusulas de proteção contra riscos
-3. Definir termos de confidencialidade
-4. Estabelecer validade da proposta
+VOCÊ NÃO REDIGE A PROPOSTA. O texto das cláusulas vem de templates aprovados (em PT-BR jurídico padrão de obra civil, já revisados). Sua tarefa é:
 
-CLÁUSULAS ESSENCIAIS:
-- Objeto e escopo
-- Preço e condições de pagamento
-- Prazo de execução
-- Garantias
-- Responsabilidades
-- Rescisão
-- Foro`;
+1. Escolher o template apropriado:
+   - "padrao": projeto privado padrão (residencial, comercial)
+   - "obra_publica": licitação ou contratação pública (Lei 14.133/2021)
+   - "manutencao": contrato contínuo de manutenção predial (NBR 5674)
+
+2. Preencher "escopoBreve" — UMA frase descrevendo o escopo (ex.: "reforma de 3 banheiros e cozinha em apartamento de 120m²").
+
+3. Definir "validityDays" — prazo de validade da proposta em dias. Default: 30. Aumentar para 45 ou 60 quando cliente é órgão público ou projeto envolve aprovações que dependem de terceiros.
+
+4. Para o campo "foro": extrai do "location" recebido no input a cidade e UF onde a obra está sendo executada. Formato: "Cidade - UF" (exemplo: "Niterói - RJ"). Se location for vago demais para extrair (ex.: campo vazio ou só "obra residencial"), retorna a string literal [Comarca da obra — preencher antes da assinatura] — sinaliza para revisão humana.
+
+5. Adicionar "clausulasExtras" SOMENTE quando houver risco específico não coberto pelas cláusulas padrão (ex.: cláusula ambiental para obras em área protegida, cláusula de seguro para canteiros de risco elevado). Cada extra deve ter title e content curto (parágrafo).
+
+NÃO inventar cláusulas para tópicos já cobertos pelo template (objeto, preço, pagamento, prazo, garantias, responsabilidades, confidencialidade, rescisão, foro).
+NÃO escrever cláusulas inteiras fora de "clausulasExtras".`;
   }
-  
+
   getUserPrompt(input: JuridicoInput): string {
-    // Calcular prazo em dias e semanas para clareza
-    const durationDays = (input as any).durationDays || 30;
-    const durationWeeks = Math.ceil(durationDays / 7);
-    
-    return `Redija a proposta técnica para o projeto:
+    const durationDays = (input as JuridicoInput & { durationDays?: number }).durationDays || input.duration || 30;
+    const location = (input as JuridicoInput & { location?: string }).location ?? "";
+    return `Selecione o template e preencha os slots descritivos para esta proposta:
 
 PROJETO: ${input.projectName}
+TIPO DE CONTRATO: ${input.contractType ?? "obra"}
 VALOR TOTAL: R$ ${input.totalPrice.toFixed(2)}
+PRAZO: ${durationDays} dias
 CONDIÇÕES DE PAGAMENTO: ${input.paymentTerms}
-PRAZO: ${durationDays} dias (≈ ${durationWeeks} semanas)
-
-⚠️ IMPORTANTE: O prazo de ${durationDays} dias foi calculado pelo Agente de Gestão de Projetos.
-Use EXATAMENTE este prazo na proposta - NÃO arredonde para semanas.
+LOCALIZAÇÃO DA OBRA: ${location || "(não informada)"}
 
 RESTRIÇÕES IDENTIFICADAS:
-${input.restrictions.join("\n")}
+${input.restrictions.length ? input.restrictions.join("\n- ") : "(nenhuma)"}
 
 ALERTAS FINANCEIROS:
-${input.financialAlerts.join("\n")}
+${input.financialAlerts.length ? input.financialAlerts.join("\n- ") : "(nenhum)"}
 
-Gere o texto da proposta com todas as cláusulas necessárias.
-Na cláusula de prazo, use "${durationDays} dias" como prazo de execução.`;
+Decida:
+- templateChoice: padrao | obra_publica | manutencao
+- escopoBreve: 1 frase curta sobre o escopo
+- validityDays: prazo de validade da proposta (default 30)
+- foro: comarca da obra no formato "Cidade - UF" extraída de LOCALIZAÇÃO DA OBRA acima. Se a localização for vaga demais, retorne literalmente "[Comarca da obra — preencher antes da assinatura]".
+- clausulasExtras (opcional): só inclua se houver risco específico não coberto por cláusulas padrão`;
   }
-  
+
   getOutputSchema(): object {
     return {
       type: "object",
       properties: {
-        proposalText: { type: "string" },
-        clauses: {
+        templateChoice: {
+          type: "string",
+          enum: ["padrao", "obra_publica", "manutencao"],
+          description: "Template a renderizar"
+        },
+        escopoBreve: {
+          type: "string",
+          description: "Uma frase curta descrevendo o escopo do projeto"
+        },
+        validityDays: {
+          type: "number",
+          description: "Prazo de validade da proposta em dias (default 30)"
+        },
+        foro: {
+          type: "string",
+          description: "Comarca onde a obra está sendo executada, formato 'Cidade - UF'"
+        },
+        clausulasExtras: {
           type: "array",
+          description: "Cláusulas adicionais para riscos específicos. Vazio quando o template padrão cobre tudo.",
           items: {
             type: "object",
             properties: {
@@ -1743,13 +1787,96 @@ Na cláusula de prazo, use "${durationDays} dias" como prazo de execução.`;
             additionalProperties: false,
           },
         },
-        validityDays: { type: "number" },
-        confidentialityTerms: { type: "string" },
       },
-      required: ["proposalText", "clauses", "validityDays", "confidentialityTerms"],
+      required: ["templateChoice", "escopoBreve", "validityDays", "foro"],
       additionalProperties: false,
     };
   }
+
+  /**
+   * Override execute: chama a LLM (super.execute) só para os slots,
+   * depois renderiza o template Markdown + monta JuridicoOutput.
+   */
+  async execute(input: JuridicoInput): Promise<JuridicoOutput> {
+    const llmOutput = (await super.execute(input)) as unknown as JuridicoLLMOutput;
+    const { renderProposta } = await import("../services/juridicoTemplating");
+    const i = input as JuridicoInput & {
+      durationDays?: number;
+      clientName?: string;
+      enderecoObra?: string;
+      foro?: string;
+      companyAddress?: string;
+      companyCnpj?: string;
+      contratada?: string;
+      contratante?: string;
+      memorialDate?: string;
+    };
+
+    const durationDays = i.durationDays || i.duration || 30;
+    const durationWeeksLabel = formatDurationLabel(durationDays);
+
+    let rendered: { text: string; clauses: Array<{ title: string; content: string }> };
+    try {
+      rendered = await renderProposta(llmOutput.templateChoice, {
+        projectName: input.projectName,
+        clientName: i.clientName ?? "Cliente",
+        proposalDate: new Date().toISOString(),
+        validityDays: llmOutput.validityDays,
+        totalPrice: input.totalPrice,
+        paymentTerms: input.paymentTerms,
+        durationDays,
+        durationWeeksLabel,
+        contractType: (input.contractType ?? "obra") as "obra" | "manutencao",
+        contratada: i.contratada ?? "RR Engenharia",
+        contratante: i.contratante ?? i.clientName ?? "Contratante",
+        tipoObra: i.contractType === "manutencao" ? "manutenção predial" : "obra civil",
+        memorialDate: i.memorialDate ?? new Date().toISOString(),
+        escopoBreve: llmOutput.escopoBreve,
+        enderecoObra: i.enderecoObra ?? "(a informar)",
+        // P1.6 (post-review): foro vem da LLM, derivado da localização da obra.
+        // Quando a LLM não consegue extrair, retorna "[Comarca da obra —
+        // preencher antes da assinatura]" — sinaliza revisão humana no PDF.
+        foro: llmOutput.foro || "[Comarca da obra — preencher antes da assinatura]",
+        companyAddress: i.companyAddress ?? "",
+        companyCnpj: i.companyCnpj ?? "",
+      });
+    } catch (err) {
+      console.warn("[Juridico] template render falhou, usando fallback minimo:", err);
+      rendered = {
+        text: `# Proposta — ${input.projectName}\n\nValor total: R$ ${input.totalPrice.toFixed(2)}\nPrazo: ${durationDays} dias\nValidade: ${llmOutput.validityDays} dias.\n\n${llmOutput.escopoBreve ?? ""}`,
+        clauses: [],
+      };
+    }
+
+    const clauses = [
+      ...rendered.clauses,
+      ...(llmOutput.clausulasExtras ?? []),
+    ];
+
+    // Cláusula de confidencialidade extraída para o campo dedicado do
+    // schema (mantém compatibilidade com consumidores antigos).
+    const confidentialityClause = rendered.clauses.find(c =>
+      c.title.toLowerCase().includes("confidenc")
+    );
+
+    return {
+      proposalText: rendered.text,
+      clauses,
+      validityDays: llmOutput.validityDays,
+      confidentialityTerms: confidentialityClause?.content ?? "",
+    };
+  }
+}
+
+/** Helper local: "45 dias" → "6 semanas e 3 dias" para humanizar o prazo. */
+function formatDurationLabel(days: number): string {
+  if (days <= 0) return "0 dias";
+  if (days < 7) return `${days} dia${days === 1 ? "" : "s"}`;
+  const weeks = Math.floor(days / 7);
+  const remDays = days % 7;
+  const weeksLabel = `${weeks} semana${weeks === 1 ? "" : "s"}`;
+  if (remDays === 0) return weeksLabel;
+  return `${weeksLabel} e ${remDays} dia${remDays === 1 ? "" : "s"}`;
 }
 
 // Agent 9: Board (Decisor)

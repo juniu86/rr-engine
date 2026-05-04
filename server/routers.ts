@@ -2075,6 +2075,9 @@ async function buildAgentInput(
         durationDays: gestOutput.totalDays || 30,
         restrictions: getOutput("logistica").restrictions || [],
         financialAlerts: finOutput.alerts || [],
+        // P1.6 (post-review): location é base para o agente derivar o
+        // campo `foro` (comarca da obra) — extrai cidade + UF.
+        location: project.location || "",
       };
       
     case "board":
