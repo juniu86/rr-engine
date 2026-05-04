@@ -10,7 +10,8 @@
 
 import type { OrcamentistaInput, OrcamentistaOutput, MemorialItem } from "../../shared/agents";
 import { filterItemsForPricing } from "../utils/hierarchy";
-import { normalizeForDedup } from "../services/agentPersistence";
+import { dedupItems, countActualRemovals, countSuspects } from "./dedupUtils";
+import { logger, incrementStat } from "../utils/logger";
 
 export interface BudgetChunkConfig {
   /** Máximo de itens por chunk (default: 25) */
@@ -301,11 +302,34 @@ export function mergeOrcamentistaOutputs(outputs: OrcamentistaOutput[]): Orcamen
   // Concatenar todos os budgetItems
   const allItems = outputs.flatMap(o => o.budgetItems || []);
 
-  // Dedup por description+unit+category (safety net — chunks processam itens distintos por design)
-  // Exceção: itens PAI duplicados do Ajuste 2 são removidos aqui
-  const dedupedItems = deduplicateBudgetItems(allItems);
+  // P1.3: dedup pós-merge usando Jaccard com pré-filtro por unit/category +
+  // preservação de itens summary. Substitui o deduplicateBudgetItems anterior
+  // (chave composta description+unit+category) que não pegava variações
+  // textuais como "Pintura 2 demãos" vs "Pintura em duas demãos".
+  const dedup = dedupItems(allItems as any[]);
+  const dedupedItems = dedup.items;
+  const removedCount = countActualRemovals(dedup.duplicatesRemoved);
+  const suspectCount = countSuspects(dedup.duplicatesRemoved);
 
-  // Recalcular totalDirectCost via filterItemsForPricing (Ajuste 1)
+  if (allItems.length > 0) {
+    incrementStat("chunkMergesDeduped");
+  }
+  if (removedCount > 0) {
+    logger.warn(
+      `[ChunkMerge] Orcamentista: ${removedCount} duplicatas removidas`,
+      { details: dedup.duplicatesRemoved.filter(d => d.reason !== "suspect_only_logged") }
+    );
+    incrementStat("duplicatesRemoved", removedCount);
+  }
+  if (suspectCount > 0) {
+    logger.info(
+      `[ChunkMerge] Orcamentista: ${suspectCount} suspeitas (não removidas)`,
+      { details: dedup.duplicatesRemoved.filter(d => d.reason === "suspect_only_logged") }
+    );
+  }
+
+  // P1.3: recalcular totalDirectCost APENAS de itens isSummaryItem=false.
+  // filterItemsForPricing já faz isso; não confiar no total que veio dos chunks.
   const pricingItems = filterItemsForPricing(dedupedItems as any[]);
   const totalDirectCost = pricingItems.reduce(
     (sum, item: any) => sum + (Number(item.totalCost) || 0),
@@ -338,38 +362,4 @@ export function mergeOrcamentistaOutputs(outputs: OrcamentistaOutput[]): Orcamen
     curvaAItems,
     curvaCItems,
   };
-}
-
-/**
- * Deduplica budgetItems por chave composta description+unit+category.
- * Mantém o item com maior totalCost em caso de duplicata.
- */
-function deduplicateBudgetItems(items: any[]): any[] {
-  const seen = new Map<string, { item: any; index: number }>();
-
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const desc = normalizeForDedup(item.description || "");
-    const unit = (item.unit || "").toLowerCase();
-    const category = (item.category || "").toLowerCase();
-    const key = `${desc}|${unit}|${category}`;
-
-    const existing = seen.get(key);
-    if (existing) {
-      // Keep item with higher totalCost (same logic as agentPersistence.ts)
-      const existingCost = Number(existing.item.totalCost) || 0;
-      const newCost = Number(item.totalCost) || 0;
-
-      if (newCost > existingCost) {
-        seen.set(key, { item, index: i });
-      }
-    } else {
-      seen.set(key, { item, index: i });
-    }
-  }
-
-  // Return in original order
-  return Array.from(seen.values())
-    .sort((a, b) => a.index - b.index)
-    .map(v => v.item);
 }

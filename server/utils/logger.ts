@@ -29,10 +29,15 @@ const stats = {
   piniScrapeFail: 0,
   piniCacheHit: 0,
   piniFallback: 0,
+  // P1.3: contadores de dedup pós-merge entre chunks
+  /** Número de chunk-merges que rodaram dedup (tenham removido algo ou não). */
+  chunkMergesDeduped: 0,
+  /** Total de duplicatas efetivamente removidas (excluindo suspeitas só logadas). */
+  duplicatesRemoved: 0,
 };
 
-export function incrementStat(key: keyof typeof stats): void {
-  stats[key]++;
+export function incrementStat(key: keyof typeof stats, count = 1): void {
+  stats[key] += count;
 }
 
 export function getScrapingStats() {
