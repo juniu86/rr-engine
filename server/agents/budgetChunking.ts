@@ -245,12 +245,24 @@ export function createOrcamentistaChunkedInputs(
 ): OrcamentistaInput[] {
   const fronts = splitItemsIntoFronts(input.items, config);
 
+  // Preserva campos meta (_projectId, _agentExecutionId) propagados pelo
+  // routers para telemetria do BaseAgent. Campos com prefixo `_` não
+  // aparecem nos tipos mas trafegam em runtime.
+  const meta = input as unknown as Record<string, unknown>;
+
   return fronts.map((frontItems, index) => {
     const chunkedInput: OrcamentistaInput = {
       items: frontItems as MemorialItem[],
       logisticsCosts: input.logisticsCosts,
       region: input.region,
     };
+
+    if (meta._projectId !== undefined) {
+      (chunkedInput as any)._projectId = meta._projectId;
+    }
+    if (meta._agentExecutionId !== undefined) {
+      (chunkedInput as any)._agentExecutionId = meta._agentExecutionId;
+    }
 
     // Attach chunk metadata (accessed via (input as any)._chunkInfo in getUserPrompt)
     (chunkedInput as any)._chunkInfo = {

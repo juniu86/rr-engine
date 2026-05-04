@@ -4,10 +4,11 @@ import { eq, desc, and, gte, sql } from "drizzle-orm";
 type TransactionClient = any;
 import { AGENT_ORDER } from "../shared/agents";
 import type { AgentType } from "../shared/agents";
-import { 
-  InsertUser, users, 
+import {
+  InsertUser, users,
   projects, InsertProject, Project,
   agentExecutions, InsertAgentExecution,
+  agentLlmCalls,
   budgetItems, InsertBudgetItem,
   logisticsCosts, InsertLogisticsCost,
   scheduleItems, InsertScheduleItem,
@@ -216,8 +217,87 @@ export async function getAgentExecutionsByProjectId(projectId: number) {
 export async function updateAgentExecution(id: number, data: Partial<InsertAgentExecution>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
   await db.update(agentExecutions).set(data).where(eq(agentExecutions.id, id));
+}
+
+// ==================== TOKEN USAGE / LLM TELEMETRY ====================
+
+export interface ProjectTokenUsage {
+  totalCalls: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  totalCostBrl: number;
+  byAgent: Array<{
+    agentType: string;
+    calls: number;
+    totalTokens: number;
+    costUsd: number;
+    costBrl: number;
+  }>;
+}
+
+/**
+ * Agrega o consumo de tokens e custo de um projeto a partir da tabela
+ * `agent_llm_calls`. Retorna zeros quando o banco está indisponível ou o
+ * projeto ainda não fez chamadas — nunca lança.
+ */
+export async function getProjectTokenUsage(projectId: number): Promise<ProjectTokenUsage> {
+  const empty: ProjectTokenUsage = {
+    totalCalls: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalTokens: 0,
+    totalCostUsd: 0,
+    totalCostBrl: 0,
+    byAgent: [],
+  };
+
+  const db = await getDb();
+  if (!db) return empty;
+
+  const totals = await db
+    .select({
+      totalCalls: sql<number>`count(*)`,
+      totalPromptTokens: sql<number>`coalesce(sum(${agentLlmCalls.promptTokens}), 0)`,
+      totalCompletionTokens: sql<number>`coalesce(sum(${agentLlmCalls.completionTokens}), 0)`,
+      totalTokens: sql<number>`coalesce(sum(${agentLlmCalls.totalTokens}), 0)`,
+      totalCostUsd: sql<string>`coalesce(sum(${agentLlmCalls.costUsd}), 0)`,
+      totalCostBrl: sql<string>`coalesce(sum(${agentLlmCalls.costBrl}), 0)`,
+    })
+    .from(agentLlmCalls)
+    .where(eq(agentLlmCalls.projectId, projectId));
+
+  const byAgentRows = await db
+    .select({
+      agentType: agentLlmCalls.agentType,
+      calls: sql<number>`count(*)`,
+      totalTokens: sql<number>`coalesce(sum(${agentLlmCalls.totalTokens}), 0)`,
+      costUsd: sql<string>`coalesce(sum(${agentLlmCalls.costUsd}), 0)`,
+      costBrl: sql<string>`coalesce(sum(${agentLlmCalls.costBrl}), 0)`,
+    })
+    .from(agentLlmCalls)
+    .where(eq(agentLlmCalls.projectId, projectId))
+    .groupBy(agentLlmCalls.agentType);
+
+  const t = totals[0];
+  return {
+    totalCalls: Number(t?.totalCalls ?? 0),
+    totalPromptTokens: Number(t?.totalPromptTokens ?? 0),
+    totalCompletionTokens: Number(t?.totalCompletionTokens ?? 0),
+    totalTokens: Number(t?.totalTokens ?? 0),
+    totalCostUsd: parseFloat(String(t?.totalCostUsd ?? "0")),
+    totalCostBrl: parseFloat(String(t?.totalCostBrl ?? "0")),
+    byAgent: byAgentRows.map(r => ({
+      agentType: r.agentType,
+      calls: Number(r.calls),
+      totalTokens: Number(r.totalTokens),
+      costUsd: parseFloat(String(r.costUsd)),
+      costBrl: parseFloat(String(r.costBrl)),
+    })),
+  };
 }
 
 // ==================== BUDGET ITEM QUERIES ====================
