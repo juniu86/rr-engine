@@ -2,6 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import { recordLlmCall } from "../services/llmTelemetry";
 import { summarizeByCategory } from "./gestaoSummarizer";
 import { isCompleteTaxSettings } from "../../shared/types";
+import { compactJson } from "../utils/promptHelpers";
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -885,7 +886,7 @@ já inclusos na composição SINAPI).`;
     return `Analise os itens da obra e calcule os custos logísticos:
 
 ITENS DA OBRA:
-${JSON.stringify(input.items, null, 2)}
+${compactJson(input.items)}
 ${budgetSummary}
 
 LOCALIZAÇÃO: ${input.location}
@@ -1164,10 +1165,10 @@ ${anchors}
 ⚠️ Use estes preços como base. Se divergir >15% de alguma referência, justifique.
 ` : ''}
 ITENS (${totalItems} no total):
-${JSON.stringify(input.items, null, 2)}
+${compactJson(input.items)}
 
 CUSTOS LOGÍSTICOS:
-${JSON.stringify(input.logisticsCosts, null, 2)}
+${compactJson(input.logisticsCosts)}
 
 REGIÃO: ${input.region}
 
@@ -1319,7 +1320,7 @@ Lucro Real:
     return `Classifique tributariamente os seguintes itens:
 
 ITENS DO ORÇAMENTO:
-${JSON.stringify(input.budgetItems, null, 2)}
+${compactJson(input.budgetItems)}
 
 CUSTO TOTAL DOS ITENS: R$ ${totalCost.toFixed(2)}
 
@@ -1543,12 +1544,12 @@ IMPORTANTE:
     return `Crie o cronograma físico DETALHADO DIA A DIA para o projeto:
 
 RESUMO DO ORÇAMENTO POR CATEGORIA (${summary.length} categorias):
-${JSON.stringify(summary, null, 2)}
+${compactJson(summary)}
 
 TOTAL_DE_ITENS: ${totalItems}
 
 CUSTOS LOGÍSTICOS:
-${JSON.stringify(input.logisticsCosts, null, 2)}
+${compactJson(input.logisticsCosts)}
 
 RESTRIÇÕES: ${input.restrictions}
 
@@ -2133,7 +2134,7 @@ PROJETO EM ANÁLISE:
 - Prazo de Execução: ${input.projectSummary.duration} semanas
 
 RESUMO DOS LAUDOS DOS AGENTES:
-${JSON.stringify(resumo, null, 2)}
+${compactJson(resumo)}
 
 AÇÃO REQUERIDA:
 1. Analise os resumos e identifique divergências ou riscos
