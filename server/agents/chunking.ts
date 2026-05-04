@@ -64,6 +64,10 @@ export function createChunkedInputs(
   const chunks = splitMemorialIntoChunks(input.memorialDescritivo, config);
 
   return chunks.map((chunk, index) => ({
+    // Spread preserva campos meta (_projectId, _agentExecutionId) usados
+    // pela telemetria do BaseAgent — campos com prefixo `_` não são
+    // visíveis via tipos mas trafegam em runtime.
+    ...input,
     memorialDescritivo: `[PARTE ${index + 1} de ${chunks.length}]\n\n${chunk}`,
     location: input.location,
     restrictions: input.restrictions,

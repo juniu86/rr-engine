@@ -192,6 +192,16 @@ export const appRouter = router({
         };
       }),
 
+    getTokenUsage: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+
+        return db.getProjectTokenUsage(input.projectId);
+      }),
+
     getDetails: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -262,9 +272,11 @@ export const appRouter = router({
         
         try {
           const agentInput = await buildAgentInput(input.agentType, project, executions, ctx.user.id);
+          (agentInput as any)._projectId = input.projectId;
+          (agentInput as any)._agentExecutionId = execution.id;
           const agent = agents[input.agentType];
           const output = await agent.execute(agentInput);
-          
+
           // Persistir dados derivados conforme tipo de agente
           const companySettingsSingle = await db.getCompanySettingsOrDefault(ctx.user.id);
           const singleBdiValue = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) / 100 : (parseFloat(companySettingsSingle.bdiPercentual as string) / 100 || 0.25);
@@ -327,11 +339,14 @@ export const appRouter = router({
           
           try {
             const agentInput = await buildAgentInput(agentType, project, executions, ctx.user.id);
+            (agentInput as any)._projectId = input.projectId;
+            (agentInput as any)._agentExecutionId = execution.id;
             const agent = agents[agentType];
             let output = await agent.execute(agentInput);
-            
+
             results[agentType] = output;
-            
+
+
             // Verificar se o agente precisa de mais dados do usuário (interatividade)
             if (agentType === 'engenheiro_tecnico') {
               const typedOutput = output as any;
@@ -529,7 +544,9 @@ export const appRouter = router({
                 
                 // Construir input com instruções de correção
                 let agentInput = await buildAgentInput(agentType, updatedProject!, updatedExecutions, ctx.user.id);
-                
+                (agentInput as any)._projectId = input.projectId;
+                (agentInput as any)._agentExecutionId = exec.id;
+
                 // Adicionar instruções de correção ao input
                 const instruction = revisionInstructions[agentType as keyof typeof revisionInstructions];
                 if (instruction) {
@@ -537,7 +554,7 @@ export const appRouter = router({
                   (agentInput as any).isFinancialRevision = true;
                   (agentInput as any).targetMargin = 15; // Margem alvo mínima
                 }
-                
+
                 const agent = agents[agentType];
                 let output = await agent.execute(agentInput);
                 
@@ -881,6 +898,8 @@ export const appRouter = router({
             try {
               const updatedExecs = await db.getAgentExecutionsByProjectId(input.projectId);
               const depInput = await buildAgentInput(depAgent, project, updatedExecs, ctx.user.id);
+              (depInput as any)._projectId = input.projectId;
+              (depInput as any)._agentExecutionId = depExec.id;
               const agent = agents[depAgent];
               const depOutput = await agent.execute(depInput);
               await db.updateAgentExecution(depExec.id, {
@@ -1029,13 +1048,15 @@ export const appRouter = router({
         try {
           // Construir input com respostas do usuário
           const agentInput = await buildAgentInput(
-            input.agentType as AgentType, 
-            project, 
-            executions, 
+            input.agentType as AgentType,
+            project,
+            executions,
             ctx.user.id,
             mergedResponses // Passar respostas do usuário
           );
-          
+          (agentInput as any)._projectId = input.projectId;
+          (agentInput as any)._agentExecutionId = execution.id;
+
           // Executar agente
           const agent = agents[input.agentType as AgentType];
           const output = await agent.execute(agentInput);
@@ -1657,9 +1678,11 @@ async function executeRemainingAgents(
     
     try {
       const agentInput = await buildAgentInput(agentType, project, executions, userId);
+      (agentInput as any)._projectId = projectId;
+      (agentInput as any)._agentExecutionId = execution.id;
       const agent = agents[agentType];
       let output = await agent.execute(agentInput);
-      
+
       // Persistir dados derivados (uses shared service)
       output = await persistAgentOutput(agentType, projectId, output, {
         bdiPercent: pipelineBdiValue,

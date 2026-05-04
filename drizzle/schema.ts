@@ -97,6 +97,47 @@ export const agentExecutions = mysqlTable("agent_executions", {
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
 
+// ==================== AGENT LLM CALLS (telemetria de tokens/custo) ====================
+// Uma linha por chamada a invokeLLM. Múltiplas linhas por agentExecution
+// (chunking, retries). FK opcional para agentExecutionId — abre espaço
+// para chamadas LLM fora do pipeline de agentes.
+export const agentLlmCalls = mysqlTable("agent_llm_calls", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  agentExecutionId: int("agentExecutionId").references(() => agentExecutions.id),
+  agentType: mysqlEnum("agentType", [
+    "engenheiro_tecnico",
+    "logistica",
+    "orcamentista",
+    "tributario",
+    "comercial",
+    "gestao_projetos",
+    "financeiro",
+    "juridico",
+    "board",
+    "auditor"
+  ]).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  promptTokens: int("promptTokens").notNull().default(0),
+  completionTokens: int("completionTokens").notNull().default(0),
+  totalTokens: int("totalTokens").notNull().default(0),
+  costUsd: decimal("costUsd", { precision: 10, scale: 6 }).notNull().default("0"),
+  costBrl: decimal("costBrl", { precision: 10, scale: 4 }).notNull().default("0"),
+  latencyMs: int("latencyMs").notNull().default(0),
+  finishReason: varchar("finishReason", { length: 30 }),
+  attemptNumber: int("attemptNumber").notNull().default(1),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("agent_llm_calls_projectId_idx").on(table.projectId),
+  index("agent_llm_calls_agentType_idx").on(table.agentType),
+  index("agent_llm_calls_agentExecutionId_idx").on(table.agentExecutionId),
+  index("agent_llm_calls_createdAt_idx").on(table.createdAt),
+]);
+
+export type AgentLlmCall = typeof agentLlmCalls.$inferSelect;
+export type InsertAgentLlmCall = typeof agentLlmCalls.$inferInsert;
+
 // ==================== BUDGET ITEMS ====================
 export const budgetItems = mysqlTable("budget_items", {
   id: int("id").autoincrement().primaryKey(),

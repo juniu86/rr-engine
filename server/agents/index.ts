@@ -1,4 +1,5 @@
 import { invokeLLM } from "../_core/llm";
+import { recordLlmCall } from "../services/llmTelemetry";
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -160,11 +161,22 @@ abstract class BaseAgent<TInput, TOutput> {
    */
   private async _execute(input: TInput): Promise<TOutput> {
     console.log(`[Agent ${this.name}] Starting execution...`);
-    
+
+    // Telemetria (P0.3): _projectId e _agentExecutionId são propagados via
+    // input pelos call sites em routers.ts; chunking helpers preservam.
+    const meta = input as unknown as {
+      _projectId?: number;
+      _agentExecutionId?: number;
+    };
+    const projectId = meta._projectId;
+    const agentExecutionId = meta._agentExecutionId;
+
+    const preferredModel = this.getPreferredModel();
+    const t0 = Date.now();
+
     // Etapa 1: Chamar a LLM com modelo específico do agente
     let response;
     try {
-      const preferredModel = this.getPreferredModel();
       console.log(`[Agent ${this.name}] Using model: ${preferredModel}`);
 
       // strict: true é exclusivo do OpenAI; Gemini/Claude não suportam
@@ -189,8 +201,42 @@ abstract class BaseAgent<TInput, TOutput> {
         },
       });
     } catch (llmError) {
+      const latencyMs = Date.now() - t0;
       console.error(`[Agent ${this.name}] LLM call failed:`, llmError);
+      if (projectId !== undefined) {
+        // Telemetria de falha — recordLlmCall nunca lança
+        await recordLlmCall({
+          projectId,
+          agentExecutionId: agentExecutionId ?? null,
+          agentType: this.type,
+          model: preferredModel,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          latencyMs,
+          finishReason: "error",
+          errorMessage: llmError instanceof Error ? llmError.message : String(llmError),
+        });
+      }
       throw llmError;
+    }
+
+    // Telemetria de sucesso — registra antes de qualquer parse para nunca
+    // perder a métrica por causa de falha downstream.
+    if (projectId !== undefined) {
+      const latencyMs = Date.now() - t0;
+      const usage = response.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      await recordLlmCall({
+        projectId,
+        agentExecutionId: agentExecutionId ?? null,
+        agentType: this.type,
+        model: response.model || preferredModel,
+        promptTokens: usage.prompt_tokens ?? 0,
+        completionTokens: usage.completion_tokens ?? 0,
+        totalTokens: usage.total_tokens ?? 0,
+        latencyMs,
+        finishReason: response.choices?.[0]?.finish_reason ?? null,
+      });
     }
     
     // Etapa 2: Detectar truncamento via finish_reason
