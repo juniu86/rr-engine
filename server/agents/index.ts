@@ -1361,130 +1361,42 @@ Para cada item, defina:
   }
 }
 
-// Agent 5: Comercial
+// Agent 5: Comercial — DETERMINÍSTICO (P1.2)
+//
+// Antes era LLM (Gemini Flash) com prompt detalhando a fórmula precoFinal =
+// custoBase × (1 + bdiAjustado). Migrado para função TypeScript pura
+// (server/services/comercialCalculator.ts) — não chama invokeLLM, custo
+// zero de tokens (verificável em P0.3 / agent_llm_calls).
+//
+// A classe é mantida para preservar AGENT_ORDER e a UI de progresso. O
+// override de execute() chama a função pura diretamente.
 export class ComercialAgent extends BaseAgent<ComercialInput, ComercialOutput> {
   name = AGENT_NAMES.comercial;
   type: AgentType = "comercial";
-  getTemperature() { return 0.0; }
 
+  /** P1.2: marker de identificação para a UI mostrar badge "determinístico". */
+  readonly isDeterministic = true;
 
-  getSystemPrompt(): string {
-    return `Você é o Agente Comercial da RR Engenharia.
-
-MISSÃO: Definir o Preço de Venda estratégico aplicando BDI PERSONALIZADO sobre o CUSTO BASE.
-
-⚠️ ATENÇÃO CRÍTICA: EVITAR BITRIBUTAÇÃO!
-O BDI JÁ INCLUI os tributos na sua composição. Portanto:
-- NÃO some os impostos calculados pelo Tributário ao custo base antes de aplicar BDI
-- O Tributário apenas CLASSIFICA os itens para fins de compliance
-- O BDI é aplicado sobre: Custos Diretos + Custos Indiretos (logística)
-
-⚠️ IMPORTANTE: O BDI E LUCRO SERÃO FORNECIDOS NO INPUT COMO "companyBdiSettings".
-Você DEVE usar esses valores em vez de valores padrão.
-
-AJUSTES DE BDI (sobre o BDI configurado):
-- Risco fiscal alto: +5%
-- Complexidade logística alta: +5%
-- Cliente recorrente: -5%
-- Prazo apertado: +10%
-
-FÓRMULA CORRETA:
-Preço de Venda = (Custos Diretos + Custos Indiretos) × (1 + BDI)
-
-EXEMPLO:
-- Custos Diretos: R$ 100.000
-- Custos Indiretos: R$ 10.000
-- Custo Base: R$ 110.000
-- BDI: 25% (0.25) - configurado pela empresa
-- Preço de Venda: R$ 110.000 × 1.25 = R$ 137.500`;
-  }
-  
-  getUserPrompt(input: ComercialInput): string {
-    // IMPORTANTE: NÃO incluir totalTaxes no custo base - BDI já inclui tributos
-    const custoBase = input.totalDirectCost + input.totalIndirectCost;
-    
-    // BDI do projeto tem prioridade sobre o da empresa
-    const projectBdi = (input as any).projectBdi;
-    const bdiPreset = (input as any).bdiPreset || "padrao";
-    
-    // Obter configurações de BDI da empresa (para referência)
-    const bdiSettings = (input as any).companyBdiSettings || {
-      bdiPercentual: 25.0,
-      lucroPercentual: 8.0,
-      adminCentralPercentual: 4.0,
-      despesasFinanceirasPercentual: 1.0,
-      riscosPercentual: 1.0,
+  async execute(input: ComercialInput): Promise<ComercialOutput> {
+    const { computeComercial } = await import("../services/comercialCalculator");
+    const ctx = input as unknown as {
+      projectBdi?: number;
+      bdiPreset?: string;
+      companyBdiSettings?: import("../services/comercialCalculator").CompanyBdiSettings;
     };
-    
-    // BDI efetivo: projeto > empresa
-    const effectiveBdi = projectBdi ?? bdiSettings.bdiPercentual;
-    const bdiDecimal = effectiveBdi / 100;
-    const precoExemplo = custoBase * (1 + bdiDecimal);
-    
-    // Mapear preset para nome legível
-    const presetNames: Record<string, string> = {
-      "reduzido": "Reduzido (15%)",
-      "padrao": "Padrão (25%)",
-      "majorado": "Majorado (35%)",
-      "personalizado": `Personalizado (${effectiveBdi}%)`
-    };
-    const presetLabel = presetNames[bdiPreset] || "Padrão (25%)";
-    
-    return `Defina o preço de venda para o projeto:
-
-⚠️ ATENÇÃO: O BDI JÁ INCLUI TRIBUTOS - NÃO SOME IMPOSTOS AO CUSTO BASE!
-
-CUSTOS:
-- Diretos (materiais + mão de obra): R$ ${input.totalDirectCost.toFixed(2)}
-- Indiretos (logística/mobilização): R$ ${input.totalIndirectCost.toFixed(2)}
-- CUSTO BASE PARA BDI: R$ ${custoBase.toFixed(2)}
-
-(Nota: O Tributário calculou R$ ${input.totalTaxes.toFixed(2)} em impostos para fins de classificação fiscal,
-mas estes JÁ ESTÃO EMBUTIDOS no BDI e NÃO devem ser somados ao custo base.)
-
-=== BDI DO PROJETO ===
-🎯 BDI DEFINIDO PARA ESTE PROJETO: ${effectiveBdi}% (${presetLabel})
-
-Este BDI foi configurado especificamente para este projeto e DEVE ser usado como base.
-NÃO use valores padrão - use EXATAMENTE ${effectiveBdi}% como BDI base.
-
-COMPLEXIDADE LOGÍSTICA: ${input.logisticsComplexity}
-RISCO FISCAL: ${input.fiscalRisk}
-
-AJUSTES PERMITIDOS (sobre o BDI do projeto):
-- Risco fiscal alto: +5%
-- Complexidade logística alta: +5%
-- Prazo apertado: +10%
-
-FÓRMULA OBRIGATÓRIA:
-- BDI BASE: ${effectiveBdi}% (definido para este projeto)
-- Preço Final = Custo Base × (1 + BDI)
-- Exemplo: Preço Final = ${custoBase.toFixed(2)} × ${(1 + bdiDecimal).toFixed(2)} = ${precoExemplo.toFixed(2)}
-
-IMPORTANTE:
-- baseBdi: DEVE ser ${bdiDecimal.toFixed(2)} (${effectiveBdi}% definido para o projeto)
-- adjustedBdi: BDI base + ajustes por risco/complexidade
-- totalBdiAmount: valor monetário do BDI = Custo Base × adjustedBdi
-- finalPrice: Preço Final = Custo Base × (1 + adjustedBdi)
-
-Calcule o BDI adequado (partindo de ${effectiveBdi}%) e o preço final de venda.`;
+    return computeComercial(input, {
+      projectBdi: ctx.projectBdi,
+      bdiPreset: ctx.bdiPreset,
+      companyBdiSettings: ctx.companyBdiSettings,
+    });
   }
-  
-  getOutputSchema(): object {
-    return {
-      type: "object",
-      properties: {
-        baseBdi: { type: "number" },
-        adjustedBdi: { type: "number" },
-        bdiJustification: { type: "string" },
-        totalBdiAmount: { type: "number" },
-        finalPrice: { type: "number" },
-        pricePerUnit: { type: "object", additionalProperties: { type: "number" } },
-      },
-      required: ["baseBdi", "adjustedBdi", "bdiJustification", "totalBdiAmount", "finalPrice", "pricePerUnit"],
-      additionalProperties: false,
-    };
-  }
+
+  // Os métodos abaixo nunca são chamados (execute() acima short-circuita
+  // antes do BaseAgent._execute). Mantidos como NO-OP para satisfazer o
+  // contrato abstrato de BaseAgent.
+  getSystemPrompt(): string { return ""; }
+  getUserPrompt(): string { return ""; }
+  getOutputSchema(): object { return {}; }
 }
 
 // Agent 6: Gestão de Projetos
@@ -1718,99 +1630,27 @@ Dia 2: Demolição
   }
 }
 
-// Agent 7: Financeiro
+// Agent 7: Financeiro — DETERMINÍSTICO (P1.2)
+//
+// Antes era LLM (Gemini Flash) cuja única função era replicar o cashFlow
+// recebido e gerar `alerts` em texto. Migrado para função TypeScript pura
+// (server/services/financeiroAnalyzer.ts) — não chama invokeLLM, custo
+// zero de tokens.
 export class FinanceiroAgent extends BaseAgent<FinanceiroInput, FinanceiroOutput> {
   name = AGENT_NAMES.financeiro;
   type: AgentType = "financeiro";
-  getTemperature() { return 0.0; }
 
+  /** P1.2: marker de identificação para a UI mostrar badge "determinístico". */
+  readonly isDeterministic = true;
 
-  getSystemPrompt(): string {
-    return `Você é o Agente Financeiro da RR Engenharia.
-
-MISSÃO: Análise Qualitativa de Viabilidade Financeira.
-
-IMPORTANTE: O fluxo de caixa numérico (cashFlow) já foi calculado deterministicamente pelo backend.
-Você NÃO precisa recalcular valores. Seu papel é QUALITATIVO:
-
-1. VALIDAR o fluxo de caixa pré-calculado fornecido
-2. IDENTIFICAR riscos financeiros (exposição de caixa, sazonalidade, dependências)
-3. GERAR alertas úteis sobre capital de giro, prazos críticos, e necessidade de reserva
-4. SUGERIR mitigações para semanas com saldo negativo
-
-REGRA DE FATURAMENTO PADRÃO RR ENGENHARIA:
-- ENTRADA: 40% do valor total na assinatura do contrato
-- SALDO FINAL: 60% do valor total ao término da obra
-
-SUA RESPOSTA DEVE:
-- Retornar o MESMO cashFlow que foi fornecido no input (não altere os números)
-- Preencher maxExposure com o maior saldo negativo encontrado (ou 0 se não houver)
-- needsAdvance = true (sempre, modelo 40/60)
-- suggestedAdvance = 40% do preço de venda
-- alerts: lista de alertas qualitativos relevantes
-
-NÃO invente números. Use EXATAMENTE os valores do cashFlow fornecido.`;
+  async execute(input: FinanceiroInput): Promise<FinanceiroOutput> {
+    const { analyzeFinanceiro } = await import("../services/financeiroAnalyzer");
+    return analyzeFinanceiro(input);
   }
-  
-  getUserPrompt(input: FinanceiroInput): string {
-    const adiantamento = input.totalPrice * 0.40;
-    const marginBruta = input.totalPrice - input.totalCost;
-    const marginPercent = input.totalPrice > 0 ? (marginBruta / input.totalPrice * 100).toFixed(1) : '0';
-    
-    // Se o cashFlow já foi pré-calculado, enviar para validação
-    const cashFlowInfo = input.cashFlow 
-      ? `\n\nFLUXO DE CAIXA PRÉ-CALCULADO (use EXATAMENTE estes valores):\n${JSON.stringify(input.cashFlow, null, 2)}`
-      : '';
-    
-    return `Analise a viabilidade financeira do projeto:
 
-RESUMO FINANCEIRO:
-- Preço de Venda: R$ ${input.totalPrice.toFixed(2)}
-- Custo Total (direto + logística): R$ ${input.totalCost.toFixed(2)}
-- Margem Bruta: R$ ${marginBruta.toFixed(2)} (${marginPercent}%)
-- Adiantamento (40%): R$ ${adiantamento.toFixed(2)}
-- Condições de Pagamento: ${input.paymentTerms}
-
-CRONOGRAMA:
-${JSON.stringify(input.scheduleItems.slice(0, 10), null, 2)}
-${input.scheduleItems.length > 10 ? `... e mais ${input.scheduleItems.length - 10} itens` : ''}
-
-ITENS DO ORÇAMENTO: ${input.budgetItems.length} itens${cashFlowInfo}
-
-INSTRUÇÕES:
-1. Retorne o cashFlow EXATAMENTE como fornecido acima (não altere valores)
-2. needsAdvance = true
-3. suggestedAdvance = ${adiantamento.toFixed(2)}
-4. Gere alertas qualitativos sobre riscos, capital de giro e recomendações`;
-  }
-  
-  getOutputSchema(): object {
-    return {
-      type: "object",
-      properties: {
-        cashFlow: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              week: { type: "number" },
-              expense: { type: "number" },
-              income: { type: "number" },
-              balance: { type: "number" },
-            },
-            required: ["week", "expense", "income", "balance"],
-            additionalProperties: false,
-          },
-        },
-        maxExposure: { type: "number" },
-        needsAdvance: { type: "boolean" },
-        suggestedAdvance: { type: "number" },
-        alerts: { type: "array", items: { type: "string" } },
-      },
-      required: ["cashFlow", "maxExposure", "needsAdvance", "suggestedAdvance", "alerts"],
-      additionalProperties: false,
-    };
-  }
+  getSystemPrompt(): string { return ""; }
+  getUserPrompt(): string { return ""; }
+  getOutputSchema(): object { return {}; }
 }
 
 // Agent 8: Jurídico
