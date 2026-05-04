@@ -331,11 +331,19 @@ export const appRouter = router({
         const companyBdiValue = parseFloat(companySettings.bdiPercentual as string) / 100 || 0.25;
         const effectiveBdiPercent = projectBdiValue ?? companyBdiValue;
 
-        // P0.1: dispara o engine determinístico em paralelo. NUNCA lança;
-        // resolve com null se feature flag desativada ou se o engine falhou.
+        // P0.1: dispara o engine determinístico em paralelo. A função já é
+        // internamente non-throwing (try/catch em cada caminho), mas o `.catch`
+        // aqui é cinto-e-suspensório: garante que mudanças futuras na função
+        // não derrubem o pipeline mesmo que ela passe a lançar.
         // O resultado é aguardado só ao montar o input do Auditor (último agente).
         const deterministicPromise: Promise<DeterministicResult | null> =
-          runDeterministicValidator(input.projectId, project.memorialDescritivo || "");
+          runDeterministicValidator(
+            input.projectId,
+            project.memorialDescritivo || ""
+          ).catch(err => {
+            console.warn("[DeterministicValidator] unexpected throw, skipping:", err);
+            return null;
+          });
 
         for (const agentType of agentTypes) {
           const executions = await db.getAgentExecutionsByProjectId(input.projectId);
