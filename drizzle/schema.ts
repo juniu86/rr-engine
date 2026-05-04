@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean, index, uniqueIndex, date } from "drizzle-orm/mysql-core";
 
 // ==================== USERS ====================
 export const users = mysqlTable("users", {
@@ -275,6 +275,38 @@ export const generatedDocuments = mysqlTable("generated_documents", {
 
 export type GeneratedDocument = typeof generatedDocuments.$inferSelect;
 export type InsertGeneratedDocument = typeof generatedDocuments.$inferInsert;
+
+// ==================== PRICE DATABASE ENTRIES (P1.4) ====================
+// Tabela versionada de preços SINAPI/PINI. Substitui as constantes
+// SINAPI_DB e PINI_DATABASE como fonte de verdade. Permite múltiplas
+// referenceDate por código — apenas a mais recente fica isActive=true.
+export const priceDatabaseEntries = mysqlTable("price_database_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  source: varchar("source", { length: 20 }).notNull(), // 'sinapi' | 'pini'
+  code: varchar("code", { length: 50 }).notNull(),
+  description: text("description").notNull(),
+  unit: varchar("unit", { length: 20 }).notNull(),
+  price: decimal("price", { precision: 12, scale: 4 }).notNull(),
+  state: varchar("state", { length: 5 }), // SP, RJ, etc. NULL = sem regionalização
+  category: varchar("category", { length: 100 }),
+  referenceDate: date("referenceDate").notNull(),
+  componentsJson: json("componentsJson"), // decomposição mão de obra/material/equipamento
+  /** Origem da última atualização (orcamentor.com, tcpoweb.com.br, manual_seed). */
+  dataSource: varchar("dataSource", { length: 50 }),
+  scrapedAt: timestamp("scrapedAt").defaultNow().notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+}, (table) => [
+  // uniqueIndex permite múltiplas versões da mesma composição em datas diferentes.
+  uniqueIndex("price_db_uq_source_code_state_date").on(
+    table.source, table.code, table.state, table.referenceDate
+  ),
+  index("price_db_search_idx").on(table.source, table.state, table.isActive),
+  index("price_db_description_idx").on(table.description),
+  index("price_db_active_source_idx").on(table.isActive, table.source),
+]);
+
+export type PriceDatabaseEntry = typeof priceDatabaseEntries.$inferSelect;
+export type InsertPriceDatabaseEntry = typeof priceDatabaseEntries.$inferInsert;
 
 // ==================== PRICE CACHE ====================
 export const priceCache = mysqlTable("price_cache", {

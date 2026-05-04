@@ -1057,8 +1057,26 @@ REFERÊNCIAS DE PREÇO (usar como base quando não houver SINAPI/PINI):
    */
   private buildPriceAnchors(items: any[]): string {
     try {
-      const { SINAPI_DB } = require("../services/sinapi") as { SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }> };
-      const { PINI_DATABASE } = require("../services/pini") as { PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }> };
+      // P1.4: leitura s\u00edncrona do cache em mem\u00f3ria (populado por getSinapiData/getPiniData
+      // ou inicializado vazio para usar a constante embutida como fallback).
+      // O hot path getUserPrompt \u00e9 s\u00edncrono, ent\u00e3o n\u00e3o d\u00e1 para await aqui \u2014 em
+      // troca disparamos um warm-up ass\u00edncrono que popula o cache para a pr\u00f3xima
+      // execu\u00e7\u00e3o. Em ambientes sem banco (CI, dev), nunca sai da constante.
+      const sinapiMod = require("../services/sinapi") as {
+        SINAPI_DB: Array<{ code: string; description: string; unit: string; price: number; category: string }>;
+        getSinapiDataSync: (state?: string) => Array<{ code: string; description: string; unit: string; price: number; category: string }>;
+        getSinapiData: (state?: string) => Promise<unknown>;
+      };
+      const piniMod = require("../services/pini") as {
+        PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }>;
+        getPiniDataSync: (region?: string) => Array<{ code: string; description: string; unit: string; price: number }>;
+        getPiniData: (region?: string) => Promise<unknown>;
+      };
+      const SINAPI_DB = sinapiMod.getSinapiDataSync("SP");
+      const PINI_DATABASE = piniMod.getPiniDataSync("S\u00e3o Paulo");
+      // Warm-up async para popular o cache na pr\u00f3xima chamada (fire-and-forget).
+      void sinapiMod.getSinapiData("SP");
+      void piniMod.getPiniData("S\u00e3o Paulo");
 
       const normalizeText = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').trim();
 

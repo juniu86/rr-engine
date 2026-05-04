@@ -444,7 +444,7 @@ export default function Settings() {
               <CardHeader>
                 <CardTitle>Onde sua empresa atua?</CardTitle>
                 <CardDescription>
-                  Os precos SINAPI variam por estado. Tambem podemos identificar sua empresa nos documentos.
+                  Os precos da base de referencia variam por estado. Tambem podemos identificar sua empresa nos documentos.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1009,7 +1009,7 @@ export default function Settings() {
               <CardHeader>
                 <CardTitle>Referencia de Precos</CardTitle>
                 <CardDescription>
-                  Configure a regiao e data de referencia para consultas SINAPI/PINI
+                  Configure a regiao e data de referencia para a base de precos atualizada
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1032,7 +1032,7 @@ export default function Settings() {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Os precos SINAPI variam por estado
+                      Os precos da base de referencia variam por estado
                     </p>
                   </div>
 

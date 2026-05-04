@@ -2,6 +2,85 @@ import { setCachedPrice, getCachedPrice } from "../db";
 import { searchSinapiOnline } from "./sinapiScraper";
 import { logger, incrementStat } from "../utils/logger";
 import { adjustPriceForRegion } from "../../shared/regionFactors";
+import { getActivePriceEntries } from "./priceDatabaseRepo";
+
+// ==================== P1.4: cache em memória do repo ====================
+//
+// Antes: SINAPI_DB (constante) era a única fonte de verdade — qualquer
+// atualização exigia redeploy. Agora a fonte oficial é a tabela
+// price_database_entries; este módulo mantém um cache em memória por
+// estado, populado lazy na primeira leitura.
+//
+// Fallback: se o repo retornar 0 entradas (banco indisponível em CI/dev),
+// usa SINAPI_DB diretamente. Mantém compatibilidade durante a transição.
+const sinapiCacheByState = new Map<string, SinapiComposition[]>();
+
+async function loadSinapiFromRepo(state: string): Promise<SinapiComposition[]> {
+  const entries = await getActivePriceEntries("sinapi", state);
+  return entries.map(e => ({
+    code: e.code,
+    description: e.description,
+    unit: e.unit,
+    price: parseFloat(e.price as unknown as string),
+    referenceDate: formatRefDate(e.referenceDate),
+    state: e.state ?? state,
+    category: e.category ?? "",
+    components: (e.componentsJson as SinapiComposition["components"]) ?? undefined,
+  }));
+}
+
+function formatRefDate(d: Date | string | null): string {
+  if (!d) return "";
+  // O driver retorna Date para colunas date(); fallback para string.
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return String(d);
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${mm}/${date.getUTCFullYear()}`;
+}
+
+/**
+ * Retorna a lista de composições SINAPI para um estado.
+ * Estratégia: cache em memória → repo → fallback constante.
+ * O fallback garante que CI e ambientes sem banco continuem funcionando.
+ */
+export async function getSinapiData(state: string = "SP"): Promise<SinapiComposition[]> {
+  const cached = sinapiCacheByState.get(state);
+  if (cached) return cached;
+
+  try {
+    const fromRepo = await loadSinapiFromRepo(state);
+    if (fromRepo.length > 0) {
+      sinapiCacheByState.set(state, fromRepo);
+      return fromRepo;
+    }
+  } catch (err) {
+    logger.warn("[SINAPI] repo indisponível, usando constante embutida", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  // Fallback: usa a constante. Não popula cache — próxima chamada tenta
+  // o repo de novo (banco pode voltar).
+  return SINAPI_DB;
+}
+
+/**
+ * Limpa o cache em memória. Usado pelo refresh job após upserts e por
+ * testes que precisam forçar releitura.
+ */
+export function clearSinapiCache(): void {
+  sinapiCacheByState.clear();
+}
+
+/**
+ * Leitura síncrona do cache em memória. Retorna a constante SINAPI_DB
+ * embutida quando o cache do estado pedido ainda não foi populado —
+ * caso típico de hot path como `OrcamentistaAgent.buildPriceAnchors`
+ * que roda dentro de `getUserPrompt` síncrono. Para garantir dados do
+ * repo, chame `getSinapiData(state)` (async) antes em algum boot path.
+ */
+export function getSinapiDataSync(state: string = "SP"): SinapiComposition[] {
+  return sinapiCacheByState.get(state) ?? SINAPI_DB;
+}
 
 export interface SinapiComposition {
   code: string;
@@ -331,7 +410,9 @@ export async function searchSinapi(query: string, limit: number = 10, state: str
       if (Array.isArray(results)) return results.slice(0, limit);
     }
 
-    const scored = SINAPI_DB
+    // P1.4: lê do repo (com fallback para SINAPI_DB embutida).
+    const dataset = await getSinapiData(state);
+    const scored = dataset
       .map(item => ({ item, score: scoreMatch(query, item.description, item.code) }))
       .filter(s => s.score > 20)
       .sort((a, b) => b.score - a.score)
@@ -432,8 +513,9 @@ export async function getSinapiComposition(code: string, state: string = "SP"): 
       incrementStat('sinapiFallback');
     }
 
-    // Fallback: banco fixo
-    const composition = SINAPI_DB.find(item => item.code === code);
+    // P1.4: lê do repo (com fallback para SINAPI_DB)
+    const dataset = await getSinapiData(state);
+    const composition = dataset.find(item => item.code === code);
     if (!composition) return null;
 
     const adjusted = {
@@ -480,15 +562,17 @@ export async function bulkSearchSinapi(queries: string[], state: string = "SP"):
   return results;
 }
 
-// Get all categories available
+// Get all categories available — síncrono, lê da constante (estrutura
+// estável; categorias não mudam por estado).
 export function getSinapiCategories(): string[] {
   const categories = new Set(SINAPI_DB.map(item => item.category));
   return Array.from(categories).sort();
 }
 
-// Get compositions by category
+// Get compositions by category — P1.4: lê do repo
 export async function getSinapiByCategory(category: string, state: string = "SP"): Promise<SinapiSearchResult[]> {
-  return SINAPI_DB
+  const dataset = await getSinapiData(state);
+  return dataset
     .filter(item => item.category.toLowerCase() === category.toLowerCase())
     .map(item => ({
       code: item.code,
@@ -500,7 +584,8 @@ export async function getSinapiByCategory(category: string, state: string = "SP"
     }));
 }
 
-// Total compositions available
+// Total compositions disponíveis na constante (uso administrativo).
+// Para contagem do repo, use getActivePriceEntries('sinapi').length.
 export function getSinapiCount(): number {
   return SINAPI_DB.length;
 }

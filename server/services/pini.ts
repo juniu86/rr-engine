@@ -2,6 +2,107 @@ import { setCachedPrice, getCachedPrice } from "../db";
 import { searchPiniOnline } from "./piniScraper";
 import { logger, incrementStat } from "../utils/logger";
 import { adjustPriceForRegion, getRegionFactor } from "../../shared/regionFactors";
+import { getActivePriceEntries } from "./priceDatabaseRepo";
+
+// ==================== P1.4: cache em memória do repo ====================
+// PINI_DATABASE original usa "São Paulo" como region; o repo armazena
+// como state="SP". Este mapping converte. Cache lazy populado no primeiro
+// uso, com fallback para a constante quando o banco está indisponível.
+const STATE_TO_REGION: Record<string, string> = {
+  SP: "São Paulo",
+  RJ: "Rio de Janeiro",
+};
+const piniCacheByRegion = new Map<string, PiniComposition[]>();
+
+async function loadPiniFromRepo(region: string): Promise<PiniComposition[]> {
+  const state = Object.entries(STATE_TO_REGION).find(([_, r]) => r === region)?.[0] ?? "SP";
+  const entries = await getActivePriceEntries("pini", state);
+  return entries.map(e => {
+    const components = (e.componentsJson as Array<{
+      type?: "labor" | "material" | "equipment";
+      code?: string;
+      description: string;
+      unit: string;
+      coefficient: number;
+      unitCost: number;
+    }> | null) ?? null;
+
+    let laborCost = 0;
+    let materialCost = 0;
+    let equipmentCost = 0;
+    if (components) {
+      for (const c of components) {
+        const total = c.coefficient * c.unitCost;
+        if (c.type === "labor") laborCost += total;
+        else if (c.type === "material") materialCost += total;
+        else if (c.type === "equipment") equipmentCost += total;
+      }
+    }
+
+    return {
+      code: e.code,
+      description: e.description,
+      unit: e.unit,
+      price: parseFloat(e.price as unknown as string),
+      region: STATE_TO_REGION[e.state ?? "SP"] ?? region,
+      referenceDate: formatPiniRefDate(e.referenceDate),
+      laborCost,
+      materialCost,
+      equipmentCost,
+      components: components?.map(c => ({
+        type: (c.type ?? "material") as "labor" | "material" | "equipment",
+        code: c.code ?? "",
+        description: c.description,
+        unit: c.unit,
+        coefficient: c.coefficient,
+        unitPrice: c.unitCost,
+        totalPrice: c.coefficient * c.unitCost,
+      })),
+    };
+  });
+}
+
+function formatPiniRefDate(d: Date | string | null): string {
+  if (!d) return "";
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return String(d);
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${mm}/${date.getUTCFullYear()}`;
+}
+
+/**
+ * Retorna composições PINI para uma região. Estratégia: cache → repo →
+ * fallback constante (mesma do SINAPI).
+ */
+export async function getPiniData(region: string = "São Paulo"): Promise<PiniComposition[]> {
+  const cached = piniCacheByRegion.get(region);
+  if (cached) return cached;
+
+  try {
+    const fromRepo = await loadPiniFromRepo(region);
+    if (fromRepo.length > 0) {
+      piniCacheByRegion.set(region, fromRepo);
+      return fromRepo;
+    }
+  } catch (err) {
+    logger.warn("[PINI] repo indisponível, usando constante embutida", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return PINI_DATABASE;
+}
+
+export function clearPiniCache(): void {
+  piniCacheByRegion.clear();
+}
+
+/**
+ * Leitura síncrona do cache em memória. Retorna a constante PINI_DATABASE
+ * embutida quando o cache da região pedida ainda não foi populado.
+ */
+export function getPiniDataSync(region: string = "São Paulo"): PiniComposition[] {
+  return piniCacheByRegion.get(region) ?? PINI_DATABASE;
+}
 
 export interface PiniComposition {
   code: string;
@@ -206,7 +307,9 @@ export async function searchPini(query: string, region: string = "São Paulo", l
       if (Array.isArray(results)) return results.slice(0, limit);
     }
 
-    const scored = PINI_DATABASE
+    // P1.4: lê do repo (com fallback para PINI_DATABASE embutida).
+    const dataset = await getPiniData(region);
+    const scored = dataset
       .map(item => ({ item, score: scoreMatch(query, item.description, item.code) }))
       .filter(s => s.score > 20)
       .sort((a, b) => b.score - a.score)
@@ -295,8 +398,9 @@ export async function getPiniComposition(code: string, region: string = "São Pa
       incrementStat('piniFallback');
     }
 
-    // Fallback: banco fixo
-    const composition = PINI_DATABASE.find(item => item.code === code);
+    // P1.4: lê do repo (com fallback para PINI_DATABASE embutida)
+    const dataset = await getPiniData(region);
+    const composition = dataset.find(item => item.code === code);
     if (!composition) return null;
 
     const factor = getRegionFactor(region);

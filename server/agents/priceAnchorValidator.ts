@@ -32,8 +32,21 @@ export function validatePricesAgainstAnchors(
   let PINI_DATABASE: Array<{ code: string; description: string; unit: string; price: number }>;
 
   try {
-    ({ SINAPI_DB } = require("../services/sinapi"));
-    ({ PINI_DATABASE } = require("../services/pini"));
+    // P1.4: leitura síncrona do cache em memória (com fallback para a
+    // constante embutida quando o cache ainda não foi populado).
+    const sinapiMod = require("../services/sinapi") as {
+      getSinapiDataSync: (state?: string) => Array<{ code: string; description: string; unit: string; price: number }>;
+      getSinapiData: (state?: string) => Promise<unknown>;
+    };
+    const piniMod = require("../services/pini") as {
+      getPiniDataSync: (region?: string) => Array<{ code: string; description: string; unit: string; price: number }>;
+      getPiniData: (region?: string) => Promise<unknown>;
+    };
+    SINAPI_DB = sinapiMod.getSinapiDataSync("SP");
+    PINI_DATABASE = piniMod.getPiniDataSync("São Paulo");
+    // Warm-up para próxima execução
+    void sinapiMod.getSinapiData("SP");
+    void piniMod.getPiniData("São Paulo");
   } catch {
     return warnings; // Databases not available
   }

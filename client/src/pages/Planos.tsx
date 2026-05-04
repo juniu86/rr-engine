@@ -351,8 +351,8 @@ export default function Planos() {
                       {[
                         { feature: "Orcamentos por mes", pro: "Ate 10", avulso: "1 por compra" },
                         { feature: "Agentes de IA", pro: "10 especializados", avulso: "10 especializados" },
-                        { feature: "SINAPI em tempo real", pro: "Sim", avulso: "Sim" },
-                        { feature: "PINI TCPO", pro: "Sim", avulso: "Sim" },
+                        { feature: "Base de referencia atualizada", pro: "Sim", avulso: "Sim" },
+                        { feature: "Composicoes de servico (mao de obra + material)", pro: "Sim", avulso: "Sim" },
                         { feature: "Exportacao XLSX/PDF", pro: "Sim", avulso: "Sim" },
                         { feature: "Historico de interacoes", pro: "Completo", avulso: "Completo" },
                         { feature: "Suporte prioritario", pro: "Sim", avulso: "Nao" },
