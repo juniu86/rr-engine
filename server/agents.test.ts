@@ -6,11 +6,18 @@ import {
   createAuditorChunkedInputs,
   needsAuditorChunking,
 } from "./agents/auditorChunking";
+import { mergeEngenheiroOutputs } from "./agents/chunking";
+import { mergeOrcamentistaOutputs } from "./agents/budgetChunking";
 import {
   generateMockBudgetItems,
   generateMockBudgetItemsWithPlantedDuplicate,
 } from "./test-helpers";
-import type { AuditorInput, GestaoProjInput } from "../shared/agents";
+import type {
+  AuditorInput,
+  EngenheiroTecnicoOutput,
+  GestaoProjInput,
+  OrcamentistaOutput,
+} from "../shared/agents";
 
 // Testes de validação da lógica dos agentes (sem executar LLM)
 
@@ -476,5 +483,155 @@ describe("Tributario rejeita config incompleta (P1.5)", () => {
     await expect(agents.tributario.execute(input)).rejects.toThrow(
       /companyTaxSettings/
     );
+  });
+});
+
+describe("Dedup pós-merge entre chunks (P1.3)", () => {
+  describe("mergeEngenheiroOutputs", () => {
+    it("remove item duplicado plantado entre 2 chunks", () => {
+      const chunk1: EngenheiroTecnicoOutput = {
+        items: [
+          {
+            description: "Pintura acrílica branca interna fosca 2 demãos",
+            quantity: 50,
+            unit: "m²",
+            isPendingVistoria: false,
+          },
+        ],
+        pendingItems: [],
+        nbrReferences: [],
+        criticalNotes: [],
+        missingInfoRequests: [],
+        analysisStatus: "completed",
+        groupsProcessed: ["1. Acabamento"],
+        totalItemsExtracted: 1,
+      };
+      // chunk2 tem o mesmo item — antes do P1.3 ia dobrado para o
+      // Orçamentista. Agora o merge dedupa (sim ≥ 0.85).
+      const chunk2: EngenheiroTecnicoOutput = {
+        items: [
+          {
+            description: "Pintura acrilica branca interna fosca 3 demaos",
+            quantity: 50,
+            unit: "m²",
+            isPendingVistoria: false,
+          },
+          {
+            description: "Piso porcelanato 60x60",
+            quantity: 30,
+            unit: "m²",
+            isPendingVistoria: false,
+          },
+        ],
+        pendingItems: [],
+        nbrReferences: [],
+        criticalNotes: [],
+        missingInfoRequests: [],
+        analysisStatus: "completed",
+        groupsProcessed: ["2. Piso"],
+        totalItemsExtracted: 2,
+      };
+
+      const merged = mergeEngenheiroOutputs([chunk1, chunk2]);
+      // Antes do P1.3: 3 itens (pintura dobrada). Agora: 2.
+      expect(merged.items).toHaveLength(2);
+      expect(merged.items.find(i => i.description.includes("Piso"))).toBeDefined();
+    });
+
+    it("preserva itens hierárquicos em chunks distintos", () => {
+      const chunk1: EngenheiroTecnicoOutput = {
+        items: [
+          {
+            description: "Sistema VRF de climatização",
+            quantity: 1,
+            unit: "vb",
+            isPendingVistoria: false,
+            // @ts-expect-error MemorialItem não tipa isSummaryItem mas runtime carrega
+            isSummaryItem: true,
+          },
+        ],
+        pendingItems: [],
+        nbrReferences: [],
+        criticalNotes: [],
+        missingInfoRequests: [],
+        analysisStatus: "completed",
+        groupsProcessed: [],
+        totalItemsExtracted: 1,
+      };
+      const chunk2: EngenheiroTecnicoOutput = {
+        items: [
+          {
+            description: "Condensadora VRF 10TR",
+            quantity: 2,
+            unit: "un",
+            isPendingVistoria: false,
+          },
+          {
+            description: "Fan coils VRF",
+            quantity: 8,
+            unit: "un",
+            isPendingVistoria: false,
+          },
+        ],
+        pendingItems: [],
+        nbrReferences: [],
+        criticalNotes: [],
+        missingInfoRequests: [],
+        analysisStatus: "completed",
+        groupsProcessed: [],
+        totalItemsExtracted: 2,
+      };
+
+      const merged = mergeEngenheiroOutputs([chunk1, chunk2]);
+      // O sistema PAI fica + condensadora + fan coils = 3 itens
+      expect(merged.items).toHaveLength(3);
+    });
+  });
+
+  describe("mergeOrcamentistaOutputs", () => {
+    it("dedupa e recalcula totalDirectCost ignorando isSummaryItem", () => {
+      const baseItems = generateMockBudgetItemsWithPlantedDuplicate(20, 10);
+      // Marca o primeiro item como SUMMARY (pai)
+      (baseItems[0] as any).isSummaryItem = true;
+
+      // Divide em 2 chunks com a duplicata indo nos dois
+      const chunk1Items = baseItems.slice(0, 11); // inclui o duplicado em índice 10
+      const chunk2Items = [
+        baseItems[0], // re-inclui o item 0 — é a "duplicata" textual do plantado
+        ...baseItems.slice(11),
+      ];
+
+      const sum = (items: typeof baseItems) =>
+        items.filter(i => !(i as any).isSummaryItem).reduce((s, i) => s + i.totalCost, 0);
+
+      const chunk1Total = sum(chunk1Items);
+      const chunk2Total = sum(chunk2Items);
+
+      const chunk1: OrcamentistaOutput = {
+        budgetItems: chunk1Items,
+        totalDirectCost: chunk1Total,
+        totalIndirectCost: 0,
+        curvaAItems: [],
+        curvaCItems: [],
+      };
+      const chunk2: OrcamentistaOutput = {
+        budgetItems: chunk2Items,
+        totalDirectCost: chunk2Total,
+        totalIndirectCost: 0,
+        curvaAItems: [],
+        curvaCItems: [],
+      };
+
+      const merged = mergeOrcamentistaOutputs([chunk1, chunk2]);
+
+      // O total recalculado deve EXCLUIR o item summary E excluir a duplicata
+      const expectedItems = merged.budgetItems.filter(
+        i => !(i as any).isSummaryItem
+      );
+      const expectedTotal = expectedItems.reduce((s, i) => s + i.totalCost, 0);
+      expect(merged.totalDirectCost).toBe(expectedTotal);
+      // Não confia no total que veio dos chunks — recalcula
+      expect(merged.totalDirectCost).not.toBe(chunk1Total + chunk2Total);
+    });
   });
 });

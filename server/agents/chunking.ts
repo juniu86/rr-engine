@@ -7,7 +7,9 @@
  * Usado principalmente pelo EngenheiroTecnicoAgent.
  */
 
-import type { EngenheiroTecnicoInput, EngenheiroTecnicoOutput, MemorialItem, MissingInfoRequest } from "../../shared/agents";
+import type { EngenheiroTecnicoInput, EngenheiroTecnicoOutput, MissingInfoRequest } from "../../shared/agents";
+import { dedupItems, countActualRemovals, countSuspects } from "./dedupUtils";
+import { logger, incrementStat } from "../utils/logger";
 
 export interface ChunkConfig {
   /** Máximo de linhas por chunk (default: 20) */
@@ -97,6 +99,31 @@ export function mergeEngenheiroOutputs(outputs: EngenheiroTecnicoOutput[]): Enge
     return outputs[0];
   }
 
+  // P1.3: dedup pós-merge entre chunks. Antes era só normalização de
+  // description (case-insensitive); agora roda Jaccard com pré-filtro
+  // por unidade/categoria + preserva itens summary intactos.
+  const concatenated = outputs.flatMap(o => o.items ?? []);
+  const dedup = dedupItems(concatenated);
+  const removedCount = countActualRemovals(dedup.duplicatesRemoved);
+  const suspectCount = countSuspects(dedup.duplicatesRemoved);
+
+  if (concatenated.length > 0) {
+    incrementStat("chunkMergesDeduped");
+  }
+  if (removedCount > 0) {
+    logger.warn(
+      `[ChunkMerge] Engenheiro: ${removedCount} duplicatas removidas`,
+      { details: dedup.duplicatesRemoved.filter(d => d.reason !== "suspect_only_logged") }
+    );
+    incrementStat("duplicatesRemoved", removedCount);
+  }
+  if (suspectCount > 0) {
+    logger.info(
+      `[ChunkMerge] Engenheiro: ${suspectCount} suspeitas (não removidas)`,
+      { details: dedup.duplicatesRemoved.filter(d => d.reason === "suspect_only_logged") }
+    );
+  }
+
   return {
     analysisStatus: outputs.every(o => o.analysisStatus === "completed")
       ? "completed"
@@ -104,29 +131,13 @@ export function mergeEngenheiroOutputs(outputs: EngenheiroTecnicoOutput[]): Enge
     missingInfoRequests: deduplicateMissingInfo(
       outputs.flatMap(o => o.missingInfoRequests ?? [])
     ),
-    items: deduplicateItems(outputs.flatMap(o => o.items ?? [])),
+    items: dedup.items,
     pendingItems: Array.from(new Set(outputs.flatMap(o => o.pendingItems ?? []))),
     nbrReferences: Array.from(new Set(outputs.flatMap(o => o.nbrReferences ?? []))),
     criticalNotes: Array.from(new Set(outputs.flatMap(o => o.criticalNotes ?? []))),
     groupsProcessed: Array.from(new Set(outputs.flatMap(o => o.groupsProcessed ?? []))),
     totalItemsExtracted: outputs.reduce((sum, o) => sum + (o.totalItemsExtracted ?? 0), 0),
   };
-}
-
-/**
- * Deduplica itens pelo par (group + itemNumber).
- * Em caso de duplicata, mantém o primeiro encontrado.
- */
-function deduplicateItems(items: MemorialItem[]): MemorialItem[] {
-  const seen = new Map<string, MemorialItem>();
-  for (const item of items) {
-    // Usa description como chave se não houver itemNumber
-    const key = item.description.toLowerCase().trim();
-    if (!seen.has(key)) {
-      seen.set(key, item);
-    }
-  }
-  return Array.from(seen.values());
 }
 
 /**
