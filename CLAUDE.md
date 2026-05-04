@@ -106,12 +106,12 @@ Temperatura definida em `getTemperature()` de cada agente (ver `server/agents/in
 | Engenheiro Técnico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.3 |
 | Logística | Gemini 2.5 Flash | `LLM_MODEL` (default) | 0.2 |
 | Orçamentista | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.1 |
-| Tributário | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` (será migrado em P1.1) | 0.0 |
+| Tributário | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus) | 0.0 |
 | Comercial | Gemini 2.5 Flash | `LLM_MODEL` (será determinístico em P1.2) | 0.0 |
 | Gestão de Projetos | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.3 |
 | Financeiro | Gemini 2.5 Flash | `LLM_MODEL` (será determinístico em P1.2) | 0.0 |
-| Jurídico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` (será migrado em P1.1) | 0.4 |
-| Board | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.2 |
+| Jurídico | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus, P1.6 vai templificar) | 0.4 |
+| Board | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` (P1.1: migrado de Opus) | 0.2 |
 | Auditor | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.0 |
 
 ### Roteamento de provider
