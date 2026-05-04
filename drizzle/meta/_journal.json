@@ -127,6 +127,13 @@
       "when": 1777913165206,
       "tag": "0017_cultured_terror",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1777914129745,
+      "tag": "0018_lucky_fixer",
+      "breakpoints": true
     }
   ]
 }

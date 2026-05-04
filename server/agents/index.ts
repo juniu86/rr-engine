@@ -2303,6 +2303,29 @@ MISSÃO: Executar auditoria final de consistência antes da emissão da proposta
    - Verificar se hasCustomSettings = true
    - Se false: WARNING com mensagem "Atenção: Este orçamento foi gerado com impostos e BDI padrão. Personalize suas configurações em 'Configurações da Empresa' para maior precisão."
 
+8. VALIDAÇÃO CRUZADA COM ENGINE DETERMINÍSTICO (SOFT ALERT — P0.1)
+   Você recebe deterministicTotal: total (custoDireto + logística, pré-BDI)
+   calculado por engine determinístico INDEPENDENTE da cadeia de agentes LLM.
+   É uma "segunda opinião" para detectar alucinação na precificação.
+
+   Compare deterministicTotal com (Custo Direto + Logística) dos agentes:
+   - |Δ| < 5%  → severity: info     (sistemas concordam, validação passa)
+   - 5% ≤ |Δ| < 15% → severity: warning  (revisão recomendada)
+   - |Δ| ≥ 15% → severity: critical (inspeção obrigatória)
+
+   IMPORTANTE — POLÍTICA DE SOFT ALERT (v1):
+   Esta validação NÃO bloqueia a proposta no momento. Mesmo com severity
+   "critical", o auditSeal continua sendo determinado pelas validações
+   1-7 acima. Apenas registra a discrepância como visível ao usuário.
+   Reavaliar política após 30 dias de calibração com dados reais.
+
+   Se deterministicTotal for null/undefined: registre validação INFO com
+   rule="deterministic_cross_check" e description="Engine determinístico
+   indisponível para este projeto" — prossiga com auditoria normal.
+
+   Sempre preencha o campo de saída 'deterministicValidation' com os números
+   se deterministicTotal foi recebido. Se não, deixe undefined.
+
 === CRITÉRIOS DE SELO DE AUDITORIA ===
 
 - "approved": 0 erros críticos, 0 warnings
@@ -2380,6 +2403,25 @@ Se NÃO houver correções necessárias, retorne corrections com arrays vazios e
     const netMargin = actualPrice - baseCost - totalTaxes;
     const netMarginPercent = actualPrice > 0 ? (netMargin / actualPrice) * 100 : 0;
 
+    // P0.1: cross-check com engine determinístico
+    const deterministicTotal = (input as AuditorInput).deterministicTotal;
+    let deterministicSection: string;
+    if (typeof deterministicTotal === "number" && deterministicTotal > 0) {
+      const diff = Math.abs(baseCost - deterministicTotal);
+      const diffPct = baseCost > 0 ? (diff / baseCost) * 100 : 0;
+      deterministicSection = `\n=== ENGINE DETERMINÍSTICO (CROSS-CHECK) ===
+Total calculado independentemente (custoDireto + logística, pré-BDI): R$ ${deterministicTotal.toFixed(2)}
+Total dos agentes LLM (Custo Base): R$ ${baseCost.toFixed(2)}
+Diferença absoluta: R$ ${diff.toFixed(2)} (${diffPct.toFixed(2)}%)
+Aplique a regra de classificação por divergência (info/warning/critical) e
+preencha deterministicValidation. SOFT ALERT: NÃO altere auditSeal por
+causa desta validação isoladamente.\n`;
+    } else {
+      deterministicSection = `\n=== ENGINE DETERMINÍSTICO (CROSS-CHECK) ===
+Indisponível para este projeto (feature flag desativada ou engine falhou).
+Registre validação INFO "engine determinístico indisponível" e prossiga.\n`;
+    }
+
     // Extrair budgetItems para validação de duplicatas e consistência
     const budgetItems = allAgentOutputs.orcamentista?.budgetItems || [];
     const budgetItemsSummary = budgetItems.slice(0, 80).map((item: any, i: number) => {
@@ -2440,7 +2482,7 @@ CONSISTÊNCIA ENTRE DOCUMENTOS:
 
 CONFIGURAÇÕES DA EMPRESA:
 - Configurações Personalizadas: ${hasCustomSettings ? 'Sim (usuário salvou configurações)' : 'NÃO (usando valores padrão - EMITIR WARNING)'}
-
+${deterministicSection}
 === ITENS DO ORÇAMENTO (${budgetItemsCount} itens) ===
 Soma calculada dos itens (excluindo PAI): R$ ${budgetSumCalculated.toFixed(2)}
 Custo Direto declarado pelo Orçamentista: R$ ${directCost.toFixed(2)}
@@ -2520,6 +2562,19 @@ Retorne o JSON com o resultado completo da auditoria.`;
         auditSeal: { type: "string", enum: ["approved", "approved_with_warnings", "rejected"] },
         auditTimestamp: { type: "string" },
         auditNotes: { type: "string" },
+        deterministicValidation: {
+          type: "object",
+          description: "P0.1: cross-check com engine determinístico. Soft alert v1.",
+          properties: {
+            deterministicTotal: { type: "number", description: "Total custoDireto+logística do engine determinístico" },
+            llmTotal: { type: "number", description: "Total custoDireto+logística dos agentes LLM" },
+            divergencePercent: { type: "number", description: "|Δ| em pontos percentuais" },
+            severity: { type: "string", enum: ["info", "warning", "critical"] },
+            notes: { type: "string", description: "Resumo da comparação" },
+          },
+          required: ["deterministicTotal", "llmTotal", "divergencePercent", "severity", "notes"],
+          additionalProperties: false,
+        },
         corrections: {
           type: "object",
           description: "Correções sugeridas pelo Auditor para aprovação do usuário",

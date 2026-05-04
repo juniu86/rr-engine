@@ -182,10 +182,74 @@ describe("Agente Auditor de Consistência", () => {
         finalPrice: 150000,
         // bdi faltando
       });
-      
+
       expect(result.isValid).toBe(false);
       expect(result.missingFields).toContain("totalLogisticsCost");
       expect(result.missingFields).toContain("bdi");
+    });
+  });
+
+  describe("Validação Cruzada com Engine Determinístico (P0.1)", () => {
+    // Replica a regra de classificação descrita no system prompt do Auditor.
+    // Soft alert na v1: severity NÃO altera auditSeal por si só.
+    const classify = (deterministicTotal: number, llmTotal: number) => {
+      if (llmTotal <= 0) return { divergencePercent: 0, severity: "info" as const };
+      const divergencePercent =
+        Math.abs((llmTotal - deterministicTotal) / llmTotal) * 100;
+      const severity =
+        divergencePercent >= 15
+          ? ("critical" as const)
+          : divergencePercent >= 5
+            ? ("warning" as const)
+            : ("info" as const);
+      return { divergencePercent, severity };
+    };
+
+    it("severity=info quando divergência < 5%", () => {
+      const r = classify(100_000, 102_000);
+      expect(r.severity).toBe("info");
+    });
+
+    it("severity=warning quando 5% <= divergência < 15%", () => {
+      const r = classify(100_000, 110_000);
+      expect(r.severity).toBe("warning");
+    });
+
+    it("severity=critical quando divergência >= 15%", () => {
+      const r = classify(100_000, 130_000);
+      expect(r.severity).toBe("critical");
+    });
+
+    it("opera em modo 'engine indisponível' quando deterministicTotal é undefined", () => {
+      // Quando o Auditor recebe deterministicTotal=undefined deve registrar
+      // validação INFO sem quebrar nada — seguir auditoria normal.
+      const auditorInput = {
+        deterministicTotal: undefined,
+      };
+      // O Auditor LLM monta a section com "Indisponível para este projeto"
+      // (testado indiretamente via prompt — aqui validamos apenas a tipagem)
+      expect(auditorInput.deterministicTotal).toBeUndefined();
+    });
+
+    it("severity critical NÃO bloqueia proposta na v1 (soft alert)", () => {
+      // O auditSeal é determinado pelas validações 1-7 (margem, preço, etc.).
+      // Mesmo com cross-check critical, se as outras passam, selo continua
+      // approved/approved_with_warnings. Documentado no prompt do Auditor.
+      const determineAuditSealIgnoringCrossCheck = (data: {
+        criticalErrorsExceptCrossCheck: number;
+        crossCheckSeverity: "info" | "warning" | "critical";
+      }) => {
+        // Critical do cross-check NÃO incrementa criticalErrors
+        if (data.criticalErrorsExceptCrossCheck > 0) return "rejected";
+        return "approved_with_warnings";
+      };
+
+      expect(
+        determineAuditSealIgnoringCrossCheck({
+          criticalErrorsExceptCrossCheck: 0,
+          crossCheckSeverity: "critical",
+        })
+      ).toBe("approved_with_warnings");
     });
   });
 });

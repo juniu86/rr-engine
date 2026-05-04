@@ -15,6 +15,7 @@ import { stripeRouter } from "./routers/stripe";
 import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
 import { persistAgentOutput, persistBudgetItems, persistLogisticsCosts, persistScheduleItems, persistCashFlowItems, normalizeForDedup } from "./services/agentPersistence";
 import { filterItemsForPricing } from "./utils/hierarchy";
+import { runDeterministicValidator, recordDivergence, type DeterministicResult } from "./services/deterministicValidator";
 
 export const appRouter = router({
   system: systemRouter,
@@ -323,13 +324,19 @@ export const appRouter = router({
         ];
         
         const results: Record<string, any> = {};
-        
+
         // P0-2 FIX: Buscar BDI dinâmico do projeto/empresa (em vez de hardcoded 55%)
         const companySettings = await db.getCompanySettingsOrDefault(ctx.user.id);
         const projectBdiValue = project.bdiPercentual ? parseFloat(project.bdiPercentual as string) / 100 : null;
         const companyBdiValue = parseFloat(companySettings.bdiPercentual as string) / 100 || 0.25;
         const effectiveBdiPercent = projectBdiValue ?? companyBdiValue;
-        
+
+        // P0.1: dispara o engine determinístico em paralelo. NUNCA lança;
+        // resolve com null se feature flag desativada ou se o engine falhou.
+        // O resultado é aguardado só ao montar o input do Auditor (último agente).
+        const deterministicPromise: Promise<DeterministicResult | null> =
+          runDeterministicValidator(input.projectId, project.memorialDescritivo || "");
+
         for (const agentType of agentTypes) {
           const executions = await db.getAgentExecutionsByProjectId(input.projectId);
           const execution = executions.find(e => e.agentType === agentType);
@@ -338,11 +345,46 @@ export const appRouter = router({
           await db.updateAgentExecution(execution.id, { status: "running", startedAt: new Date() });
           
           try {
-            const agentInput = await buildAgentInput(agentType, project, executions, ctx.user.id);
+            // P0.1: Auditor recebe deterministicTotal se o engine determinístico
+            // tiver concluído com sucesso. Caso contrário, undefined → modo
+            // "engine indisponível" sem alarme.
+            let deterministicResult: DeterministicResult | null = null;
+            let deterministicTotal: number | undefined;
+            if (agentType === "auditor") {
+              deterministicResult = await deterministicPromise;
+              deterministicTotal = deterministicResult?.totalBaseCost;
+            }
+
+            const agentInput = await buildAgentInput(
+              agentType,
+              project,
+              executions,
+              ctx.user.id,
+              undefined,
+              deterministicTotal
+            );
             (agentInput as any)._projectId = input.projectId;
             (agentInput as any)._agentExecutionId = execution.id;
             const agent = agents[agentType];
             let output = await agent.execute(agentInput);
+
+            // P0.1: registra a divergência calculada (info/warning/critical)
+            // na linha do deterministic_engine_runs deste projeto.
+            if (agentType === "auditor" && deterministicResult) {
+              const orcOutput = results["orcamentista"];
+              const logOutput = results["logistica"];
+              const llmTotal =
+                (Number(orcOutput?.totalDirectCost) || 0) +
+                (Number(logOutput?.totalLogisticsCost) || 0);
+              if (llmTotal > 0) {
+                await recordDivergence(
+                  input.projectId,
+                  deterministicResult.totalBaseCost,
+                  llmTotal,
+                  deterministicResult.runId
+                );
+              }
+            }
 
             results[agentType] = output;
 
@@ -1730,11 +1772,13 @@ async function executeRemainingAgents(
 // Helper function to build agent input based on previous outputs
 // userResponses: Respostas do usuário para interatividade (v2.1)
 async function buildAgentInput(
-  agentType: AgentType, 
-  project: any, 
-  executions: any[], 
+  agentType: AgentType,
+  project: any,
+  executions: any[],
   userId: number,
-  userResponses?: Record<string, string | number>
+  userResponses?: Record<string, string | number>,
+  /** P0.1: total do engine determinístico para cross-check no Auditor. */
+  deterministicTotal?: number
 ): Promise<any> {
   const getOutput = (type: AgentType) => {
     const exec = executions.find(e => e.agentType === type);
@@ -1989,8 +2033,9 @@ async function buildAgentInput(
           contractType: project.contractType,
         },
         hasCustomSettings,
+        deterministicTotal,
       };
-      
+
     default:
       return {};
   }

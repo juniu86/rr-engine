@@ -138,6 +138,34 @@ export const agentLlmCalls = mysqlTable("agent_llm_calls", {
 export type AgentLlmCall = typeof agentLlmCalls.$inferSelect;
 export type InsertAgentLlmCall = typeof agentLlmCalls.$inferInsert;
 
+// ==================== DETERMINISTIC ENGINE RUNS (validação cruzada P0.1) ====================
+// Uma linha por execução do engine determinístico. Compara o total LLM com
+// o total calculado de forma independente para detectar alucinação.
+// llmTotal/divergencePercent/divergenceClass são preenchidos APÓS o Auditor
+// rodar (recordDivergence).
+export const deterministicEngineRuns = mysqlTable("deterministic_engine_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  totalDirectCost: decimal("totalDirectCost", { precision: 12, scale: 2 }).notNull(),
+  totalLogisticsCost: decimal("totalLogisticsCost", { precision: 12, scale: 2 }).notNull(),
+  totalBaseCost: decimal("totalBaseCost", { precision: 12, scale: 2 }).notNull(),
+  totalItemsParsed: int("totalItemsParsed").notNull(),
+  warningsJson: json("warningsJson"),
+  rawOutputJson: json("rawOutputJson"),
+  llmTotal: decimal("llmTotal", { precision: 12, scale: 2 }),
+  divergencePercent: decimal("divergencePercent", { precision: 6, scale: 2 }),
+  // 'info' | 'warning' | 'critical' | null
+  divergenceClass: varchar("divergenceClass", { length: 20 }),
+  latencyMs: int("latencyMs").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("deterministic_engine_runs_projectId_idx").on(table.projectId),
+  index("deterministic_engine_runs_createdAt_idx").on(table.createdAt),
+]);
+
+export type DeterministicEngineRun = typeof deterministicEngineRuns.$inferSelect;
+export type InsertDeterministicEngineRun = typeof deterministicEngineRuns.$inferInsert;
+
 // ==================== BUDGET ITEMS ====================
 export const budgetItems = mysqlTable("budget_items", {
   id: int("id").autoincrement().primaryKey(),
