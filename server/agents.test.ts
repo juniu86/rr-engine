@@ -1,7 +1,113 @@
 import { describe, expect, it } from "vitest";
 import { agents } from "./agents";
+import { summarizeByCategory } from "./agents/gestaoSummarizer";
+import {
+  createAuditorChunkedInputs,
+  needsAuditorChunking,
+} from "./agents/auditorChunking";
+import {
+  generateMockBudgetItems,
+  generateMockBudgetItemsWithPlantedDuplicate,
+} from "./test-helpers";
+import type { AuditorInput, GestaoProjInput } from "../shared/agents";
 
 // Testes de validação da lógica dos agentes (sem executar LLM)
+
+describe("Hard limits removidos (P0.4)", () => {
+  describe("Gestão de Projetos — substituição do slice(0, 30) por sumário", () => {
+    it("não trunca: prompt cita TOTAL_DE_ITENS exato e cobre todas as categorias", () => {
+      const items = generateMockBudgetItems(120);
+      const input: GestaoProjInput = {
+        budgetItems: items,
+        logisticsCosts: { costs: [], totalLogisticsCost: 0, restrictions: [] } as unknown as GestaoProjInput["logisticsCosts"],
+        restrictions: "",
+      };
+
+      const prompt = agents.gestao_projetos.getUserPrompt(input);
+
+      // Cita o total real
+      expect(prompt).toContain("TOTAL_DE_ITENS: 120");
+      // Não cita "...e mais N itens" (sinal de truncamento)
+      expect(prompt).not.toMatch(/\.\.\.\s*e mais \d+ itens/);
+      // Tem 4 categorias agregadas (Estrutura, Instalações, Acabamento, Logística)
+      expect(prompt).toContain("Estrutura");
+      expect(prompt).toContain("Instalações");
+      expect(prompt).toContain("Acabamento");
+    });
+
+    it("summarizeByCategory agrega quantidades por unidade corretamente", () => {
+      const items = generateMockBudgetItems(40);
+      const summary = summarizeByCategory(items, 3);
+      // 4 categorias mock cycling
+      expect(summary.length).toBe(4);
+      // Cada summary tem itemCount + totalCost + topItems até N
+      for (const s of summary) {
+        expect(s.itemCount).toBeGreaterThan(0);
+        expect(s.totalCost).toBeGreaterThan(0);
+        expect(s.topItems.length).toBeLessThanOrEqual(3);
+        expect(Object.keys(s.totalQuantityByUnit).length).toBeGreaterThan(0);
+      }
+    });
+
+    it("ignora isSummaryItem=true (itens pais hierárquicos)", () => {
+      const items = generateMockBudgetItems(10);
+      // Marca o primeiro como pai
+      (items[0] as unknown as Record<string, unknown>).isSummaryItem = true;
+      const summary = summarizeByCategory(items);
+      const total = summary.reduce((s, c) => s + c.itemCount, 0);
+      expect(total).toBe(9);
+    });
+  });
+
+  describe("Auditor — chunking quando há > 60 itens", () => {
+    const buildAuditorInput = (items: ReturnType<typeof generateMockBudgetItems>): AuditorInput =>
+      ({
+        allAgentOutputs: {
+          orcamentista: { budgetItems: items },
+        },
+        projectConfig: { name: "p", bdiPercentual: 25 },
+        hasCustomSettings: false,
+      }) as unknown as AuditorInput;
+
+    it("audita 100% dos itens em obras de 200+ itens (chunking ativo)", () => {
+      const items = generateMockBudgetItems(200);
+      const input = buildAuditorInput(items);
+      expect(needsAuditorChunking(input)).toBe(true);
+
+      const chunks = createAuditorChunkedInputs(input);
+      const acrossChunks = chunks
+        .flatMap(c => c.allAgentOutputs.orcamentista?.budgetItems ?? [])
+        .map(i => i.id);
+
+      // Cobertura completa: ids 1..200 todos presentes
+      expect(acrossChunks.length).toBe(200);
+      expect(new Set(acrossChunks).size).toBe(200);
+    });
+
+    it("duplicata plantada no item 150 sobrevive ao particionamento", () => {
+      const items = generateMockBudgetItemsWithPlantedDuplicate(200, 150);
+      const input = buildAuditorInput(items);
+      const chunks = createAuditorChunkedInputs(input);
+
+      // O item 150 (índice 150 → id 151) deve estar em algum chunk
+      const allItems = chunks.flatMap(
+        c => c.allAgentOutputs.orcamentista?.budgetItems ?? []
+      );
+      const planted = allItems.find(i => i.id === 151);
+      expect(planted).toBeDefined();
+      expect(planted!.description).toBe(items[0].description);
+
+      // E os ids 1 e 151 devem ter mesma description (= duplicata visível)
+      const original = allItems.find(i => i.id === 1);
+      expect(original?.description).toBe(planted?.description);
+    });
+
+    it("não usa chunking para obras pequenas (<= 60 itens)", () => {
+      const input = buildAuditorInput(generateMockBudgetItems(50));
+      expect(needsAuditorChunking(input)).toBe(false);
+    });
+  });
+});
 
 describe("Agent temperature configuration (P0.2)", () => {
   it.each<[keyof typeof agents, number]>([
