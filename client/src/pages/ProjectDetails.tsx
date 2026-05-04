@@ -141,6 +141,11 @@ export default function ProjectDetails() {
     },
   });
   
+  // P1.5: gate de configuração tributária — bloqueia executeAll na UI antes
+  // do usuário sofrer erro PRECONDITION_FAILED do backend.
+  const { data: taxStatus } = trpc.settings.isTaxSettingsComplete.useQuery();
+  const taxIncomplete = taxStatus !== undefined && !taxStatus.isComplete;
+
   const executeAll = trpc.agent.executeAll.useMutation({
     onSuccess: () => {
       toast.success("Processamento concluído!");
@@ -796,9 +801,18 @@ export default function ProjectDetails() {
             
             {/* Action buttons */}
             <div className="flex gap-2 pt-4">
-              <Button 
+              <Button
                 onClick={() => executeAll.mutate({ projectId })}
-                disabled={executeAll.isPending || project?.status === "approved"}
+                disabled={
+                  executeAll.isPending ||
+                  project?.status === "approved" ||
+                  taxIncomplete
+                }
+                title={
+                  taxIncomplete
+                    ? "Configure os impostos da sua empresa em Configurações antes de gerar o orçamento."
+                    : undefined
+                }
                 className="bg-primary hover:bg-primary/90"
               >
                 {executeAll.isPending ? (

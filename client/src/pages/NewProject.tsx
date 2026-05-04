@@ -255,6 +255,11 @@ export default function NewProject() {
   });
 
   const { data: budgetCheck, isLoading: budgetCheckLoading } = trpc.stripe.canCreateBudget.useQuery();
+  // P1.5: bloqueia criação de projeto se config tributária estiver incompleta.
+  // Bloquear na origem é melhor UX que deixar o usuário escrever o memorial
+  // e tomar erro na hora de gerar.
+  const { data: taxStatus } = trpc.settings.isTaxSettingsComplete.useQuery();
+  const taxIncomplete = taxStatus !== undefined && !taxStatus.isComplete;
 
   const createProject = trpc.project.create.useMutation({
     onSuccess: (data) => {
@@ -299,6 +304,29 @@ export default function NewProject() {
           { label: "Dashboard", href: "/dashboard" },
           { label: "Novo Orcamento" },
         ]} />
+
+        {/* P1.5: bloqueio quando config tributária está incompleta */}
+        {taxIncomplete && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900" role="alert">
+            <div className="flex items-start gap-3">
+              <span className="text-xl" aria-hidden>⚠️</span>
+              <div className="flex-1">
+                <p className="font-semibold">Configuração tributária incompleta</p>
+                <p className="text-sm mt-1">
+                  Configure os impostos da sua empresa em{" "}
+                  <button
+                    type="button"
+                    className="underline font-medium"
+                    onClick={() => navigate("/settings")}
+                  >
+                    Configurações → Empresa
+                  </button>{" "}
+                  antes de criar um novo orçamento.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div>
@@ -629,7 +657,17 @@ export default function NewProject() {
                 <Button
                   type="submit"
                   className="bg-primary hover:bg-primary/90"
-                  disabled={createProject.isPending || !!noBudget || !formData.name.trim()}
+                  disabled={
+                    createProject.isPending ||
+                    !!noBudget ||
+                    !formData.name.trim() ||
+                    taxIncomplete
+                  }
+                  title={
+                    taxIncomplete
+                      ? "Configure os impostos da sua empresa em Configurações antes de criar projetos."
+                      : undefined
+                  }
                 >
                   {createProject.isPending ? (
                     <>

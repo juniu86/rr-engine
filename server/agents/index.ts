@@ -1,6 +1,7 @@
 import { invokeLLM } from "../_core/llm";
 import { recordLlmCall } from "../services/llmTelemetry";
 import { summarizeByCategory } from "./gestaoSummarizer";
+import { isCompleteTaxSettings } from "../../shared/types";
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -1281,17 +1282,18 @@ Lucro Real:
       return sum + (qty * unitCost);
     }, 0);
     
-    // Obter configurações de impostos da empresa
-    const taxSettings = (input as any).companyTaxSettings || {
-      regimeTributario: 'lucro_presumido',
-      issPercentual: 5.0,
-      pisPercentual: 0.65,
-      cofinsPercentual: 3.0,
-      irpjPercentual: 1.2,
-      csllPercentual: 1.08,
-      taxaLeisSociais: 128.23,
-    };
-    
+    // P1.5: removido fallback silencioso. O Tributário NÃO assume mais
+    // 'lucro_presumido + ISS 5%' quando companyTaxSettings está ausente —
+    // a orquestração (routers.ts) já bloqueia o pipeline com
+    // PRECONDITION_FAILED antes de chegar aqui. Esta validação é defesa
+    // em profundidade — se chegar aqui incompleta, é bug de orquestração.
+    const taxSettings = (input as TributarioInput).companyTaxSettings;
+    if (!isCompleteTaxSettings(taxSettings)) {
+      throw new Error(
+        "Tributario: companyTaxSettings ausente ou incompleto. A orquestração deveria ter bloqueado antes (P1.5)."
+      );
+    }
+
     const pisCofins = taxSettings.pisPercentual + taxSettings.cofinsPercentual;
     
     return `Classifique tributariamente os seguintes itens:

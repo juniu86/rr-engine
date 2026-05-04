@@ -16,6 +16,7 @@ import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
 import { persistAgentOutput, persistBudgetItems, persistLogisticsCosts, persistScheduleItems, persistCashFlowItems, normalizeForDedup } from "./services/agentPersistence";
 import { filterItemsForPricing } from "./utils/hierarchy";
 import { runDeterministicValidator, recordDivergence, type DeterministicResult } from "./services/deterministicValidator";
+import { isCompleteTaxSettings } from "../shared/types";
 
 export const appRouter = router({
   system: systemRouter,
@@ -264,7 +265,20 @@ export const appRouter = router({
         const project = await db.getProjectById(input.projectId);
         if (!project) throw new TRPCError({ code: "NOT_FOUND" });
         if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        
+
+        // P1.5: gate de configuração tributária aplica a qualquer agente
+        // que dependa dela direta ou indiretamente. Aplicamos o check aqui
+        // para uniformidade — não há agente que possa rodar sozinho sem
+        // conhecer o regime tributário do projeto na composição final.
+        const taxSettings = await db.getCompanyTaxSettings(ctx.user.id);
+        if (!isCompleteTaxSettings(taxSettings)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Configuração tributária da empresa não está completa. Acesse Configurações → Empresa antes de gerar orçamento.",
+          });
+        }
+
         const executions = await db.getAgentExecutionsByProjectId(input.projectId);
         const execution = executions.find(e => e.agentType === input.agentType);
         if (!execution) throw new TRPCError({ code: "NOT_FOUND", message: "Execução do agente não encontrada" });
@@ -315,7 +329,19 @@ export const appRouter = router({
         const project = await db.getProjectById(input.projectId);
         if (!project) throw new TRPCError({ code: "NOT_FOUND" });
         if (project.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        
+
+        // P1.5: bloqueia o pipeline se a config tributária do usuário
+        // estiver incompleta. Antes era assumido fallback silencioso de
+        // 'lucro_presumido + ISS 5%' — hoje exigimos configuração explícita.
+        const taxSettings = await db.getCompanyTaxSettings(ctx.user.id);
+        if (!isCompleteTaxSettings(taxSettings)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Configuração tributária da empresa não está completa. Acesse Configurações → Empresa antes de gerar orçamento.",
+          });
+        }
+
         await db.updateProject(input.projectId, { status: "processing" });
         
         const agentTypes: AgentType[] = [
@@ -1393,6 +1419,20 @@ export const appRouter = router({
       .query(async ({ ctx }) => {
         return db.hasCustomCompanySettings(ctx.user.id);
       }),
+
+    /**
+     * P1.5: query usado pelo frontend (Settings banner + NewProject button)
+     * para decidir se a UI deve bloquear a geração de orçamento.
+     * Source of truth: mesma função `isCompleteTaxSettings` que o backend
+     * usa em executeAll/execute.
+     */
+    isTaxSettingsComplete: protectedProcedure.query(async ({ ctx }) => {
+      const taxSettings = await db.getCompanyTaxSettings(ctx.user.id);
+      return {
+        isComplete: isCompleteTaxSettings(taxSettings),
+        regime: taxSettings?.regimeTributario ?? null,
+      };
+    }),
 
     update: protectedProcedure
       .input(z.object({

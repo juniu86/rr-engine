@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agents } from "./agents";
 import { summarizeByCategory } from "./agents/gestaoSummarizer";
+import type { TributarioInput } from "../shared/agents";
 import {
   createAuditorChunkedInputs,
   needsAuditorChunking,
@@ -422,5 +423,58 @@ describe("Processamento Completo de Memorial", () => {
     // Validação: número de itens deve ser igual
     expect(outputItems.length).toBe(inputItems.length);
     expect(outputItems.length).toBe(36);
+  });
+});
+
+describe("Tributario rejeita config incompleta (P1.5)", () => {
+  it("lança erro quando companyTaxSettings ausente (defesa em profundidade)", async () => {
+    const input = {
+      budgetItems: [
+        {
+          id: 1,
+          category: "Estrutura",
+          code: "x",
+          description: "Item",
+          unit: "m²",
+          quantity: 10,
+          unitCostMaterial: 0,
+          unitCostLabor: 0,
+          unitCostLogistics: 0,
+          unitCostTotal: 100,
+          totalCost: 1000,
+          taxType: "iss" as const,
+          taxAmount: 0,
+          bdiAmount: 0,
+          finalPrice: 0,
+          source: "sinapi" as const,
+          sourceCode: "x",
+          sourceDate: "2025-01-01",
+        },
+      ],
+      // companyTaxSettings ausente — antes do P1.5 cairia no fallback silencioso
+    } as TributarioInput;
+
+    await expect(agents.tributario.execute(input)).rejects.toThrow(
+      /companyTaxSettings/
+    );
+  });
+
+  it("lança erro quando regimeTributario faltando", async () => {
+    const input = {
+      budgetItems: [],
+      companyTaxSettings: {
+        // regimeTributario ausente
+        issPercentual: 5,
+        pisPercentual: 0.65,
+        cofinsPercentual: 3,
+        irpjPercentual: 1.2,
+        csllPercentual: 1.08,
+        taxaLeisSociais: 128,
+      },
+    } as unknown as TributarioInput;
+
+    await expect(agents.tributario.execute(input)).rejects.toThrow(
+      /companyTaxSettings/
+    );
   });
 });
