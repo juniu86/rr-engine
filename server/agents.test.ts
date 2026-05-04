@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { agents } from "./agents";
 
 // Testes de validação da lógica dos agentes (sem executar LLM)
+
+describe("Agent temperature configuration (P0.2)", () => {
+  it.each<[keyof typeof agents, number]>([
+    ["engenheiro_tecnico", 0.3],
+    ["logistica", 0.2],
+    ["orcamentista", 0.1],
+    ["tributario", 0.0],
+    ["comercial", 0.0],
+    ["gestao_projetos", 0.3],
+    ["financeiro", 0.0],
+    ["juridico", 0.4],
+    ["board", 0.2],
+    ["auditor", 0.0],
+  ])("agent %s reports temperature %s", (type, expected) => {
+    expect(agents[type].getTemperature()).toBe(expected);
+  });
+});
 
 describe("Agent Logic Validation", () => {
   describe("Logística Agent - Custos Indiretos", () => {

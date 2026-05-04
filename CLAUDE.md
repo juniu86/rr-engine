@@ -99,18 +99,20 @@ Cada agente é uma classe que herda de `BaseAgent<TInput, TOutput>` em `server/a
 
 ### Distribuição de modelos (estado atual)
 
-| Agente | Modelo | Override |
-|---|---|---|
-| Engenheiro Técnico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` |
-| Logística | Gemini 2.5 Flash | `LLM_MODEL` (default) |
-| Orçamentista | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` |
-| Tributário | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` (será migrado em P1.1) |
-| Comercial | Gemini 2.5 Flash | `LLM_MODEL` (será determinístico em P1.2) |
-| Gestão de Projetos | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` |
-| Financeiro | Gemini 2.5 Flash | `LLM_MODEL` (será determinístico em P1.2) |
-| Jurídico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` (será migrado em P1.1) |
-| Board | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` |
-| Auditor | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` |
+Temperatura definida em `getTemperature()` de cada agente (ver `server/agents/index.ts`). Default do `BaseAgent` é 0.2; `invokeLLM` aplica 0.2 quando o caller omite (sobrescreve o default ~1.0 do provider para favorecer reprodutibilidade).
+
+| Agente | Modelo | Override | Temperatura |
+|---|---|---|---|
+| Engenheiro Técnico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.3 |
+| Logística | Gemini 2.5 Flash | `LLM_MODEL` (default) | 0.2 |
+| Orçamentista | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.1 |
+| Tributário | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` (será migrado em P1.1) | 0.0 |
+| Comercial | Gemini 2.5 Flash | `LLM_MODEL` (será determinístico em P1.2) | 0.0 |
+| Gestão de Projetos | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.3 |
+| Financeiro | Gemini 2.5 Flash | `LLM_MODEL` (será determinístico em P1.2) | 0.0 |
+| Jurídico | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` (será migrado em P1.1) | 0.4 |
+| Board | Claude Opus 4.6 | `LLM_MODEL_CRITICAL` | 0.2 |
+| Auditor | Claude Sonnet 4.6 | `LLM_MODEL_INTERMEDIATE` | 0.0 |
 
 ### Roteamento de provider
 
