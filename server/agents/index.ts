@@ -55,6 +55,21 @@ function stripCodeFences(text: string): string {
   return trimmed;
 }
 
+/**
+ * Converte JS literals inválidos em JSON (undefined, NaN, Infinity) pra null.
+ * Claude às vezes vaza esses tokens mesmo quando o prompt pede JSON estrito.
+ *
+ * Cuidado: aplica APENAS quando aparecem como valor (após ':' ou ',' ou '['),
+ * pra não quebrar string literals que contenham a palavra "undefined".
+ */
+function sanitizeJsLiteralsForJson(text: string): string {
+  return text
+    .replace(/(:|\[|,)\s*undefined\b/g, "$1 null")
+    .replace(/(:|\[|,)\s*NaN\b/g, "$1 null")
+    .replace(/(:|\[|,)\s*Infinity\b/g, "$1 null")
+    .replace(/(:|\[|,)\s*-Infinity\b/g, "$1 null");
+}
+
 // Base agent class
 abstract class BaseAgent<TInput, TOutput> {
   abstract name: string;
@@ -323,9 +338,10 @@ abstract class BaseAgent<TInput, TOutput> {
 
     // Etapa 3: Processar resposta (lógica extraída para método privado)
     const rawContent = this._processLLMResponse(response);
-    // Strippar markdown code fences que o Claude às vezes adiciona mesmo
-    // com response_format: json_schema. Aceita ```json...``` ou ```...```.
-    const content = stripCodeFences(rawContent);
+    // Sanitização do output do Claude antes do JSON.parse:
+    //  1. Strippar markdown code fences (```json...```)
+    //  2. Substituir literais inválidos (undefined, NaN, Infinity) por null
+    const content = sanitizeJsLiteralsForJson(stripCodeFences(rawContent));
     console.log(
       `[Agent ${this.name}] Content preview:`,
       content.substring(0, 200)
