@@ -1048,17 +1048,24 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
       );
       const chunkedInputs = createChunkedInputs(input);
       console.log(
-        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks`
+        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks (paralelos)`
       );
 
-      const outputs: EngenheiroTecnicoOutput[] = [];
-      for (let i = 0; i < chunkedInputs.length; i++) {
-        console.log(
-          `[EngenheiroTecnico] Processando chunk ${i + 1}/${chunkedInputs.length}...`
-        );
-        const chunkOutput = await super.execute(chunkedInputs[i]);
-        outputs.push(chunkOutput);
-      }
+      // P0.4 P2.X: chunks rodam em paralelo (Promise.all). Cada chunk é uma
+      // chamada Anthropic independente, sem dependência entre si — Anthropic
+      // permite múltiplas requisições concorrentes (ratelimit por minuto, não
+      // por concorrência). Reduz tempo total de N×T pra ~T (gargalo: chunk mais
+      // lento). Pra memoriais de 7 chunks × 2 min cada, vai de 14 min pra 2.
+      const t0 = Date.now();
+      const outputs = await Promise.all(
+        chunkedInputs.map((chunkInput, i) => {
+          console.log(`[EngenheiroTecnico] Disparando chunk ${i + 1}/${chunkedInputs.length}...`);
+          return super.execute(chunkInput);
+        })
+      );
+      console.log(
+        `[EngenheiroTecnico] Todos os ${chunkedInputs.length} chunks completos em ${((Date.now() - t0) / 1000).toFixed(1)}s`
+      );
 
       const merged = mergeEngenheiroOutputs(outputs);
       console.log(
@@ -1334,16 +1341,23 @@ export class OrcamentistaAgent extends BaseAgent<
         `[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`
       );
       const chunkedInputs = createOrcamentistaChunkedInputs(input);
-      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas`);
+      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas (paralelas)`);
 
-      const outputs: OrcamentistaOutput[] = [];
-      for (let i = 0; i < chunkedInputs.length; i++) {
-        console.log(
-          `[Orcamentista] Frente ${i + 1}/${chunkedInputs.length} (${chunkedInputs[i].items.length} itens)...`
-        );
-        const out = await super.execute(chunkedInputs[i]);
-        outputs.push(out);
-      }
+      // Frentes rodam em paralelo (Promise.all). Mesma justificativa do
+      // Engenheiro Tecnico: chamadas Anthropic independentes, sem dependencia
+      // entre frentes. Reduz tempo total de N×T para ~T.
+      const t0 = Date.now();
+      const outputs = await Promise.all(
+        chunkedInputs.map((chunkInput, i) => {
+          console.log(
+            `[Orcamentista] Disparando frente ${i + 1}/${chunkedInputs.length} (${chunkInput.items.length} itens)...`
+          );
+          return super.execute(chunkInput);
+        })
+      );
+      console.log(
+        `[Orcamentista] Todas as ${chunkedInputs.length} frentes completas em ${((Date.now() - t0) / 1000).toFixed(1)}s`
+      );
 
       const merged = mergeOrcamentistaOutputs(outputs);
       console.log(
