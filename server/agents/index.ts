@@ -70,6 +70,52 @@ function sanitizeJsLiteralsForJson(text: string): string {
     .replace(/(:|\[|,)\s*-Infinity\b/g, "$1 null");
 }
 
+/**
+ * Remove trailing commas antes de } ou ] — JSON estrito não aceita.
+ * Claude às vezes adiciona, especialmente em arrays multi-linha.
+ *
+ * Regex usa lookahead pra preservar conteúdo de strings (uma string com
+ * "}" interno é raro o suficiente pra ignorar — se virar problema, troca
+ * por parser stateful).
+ */
+function removeTrailingCommas(text: string): string {
+  return text.replace(/,(\s*[}\]])/g, "$1");
+}
+
+/**
+ * Tenta JSON.parse com saneamento progressivo. Em ordem:
+ *  1. parse direto
+ *  2. parse após sanitizar literals JS (undefined, NaN, Infinity → null)
+ *  3. parse após remover trailing commas
+ *  4. parse com tudo combinado
+ *
+ * Se nada funcionar, lança o erro ORIGINAL com snippet do conteúdo
+ * pra debug.
+ */
+function tolerantJsonParse<T>(text: string): T {
+  // Tentativa 1: parse direto.
+  try {
+    return JSON.parse(text) as T;
+  } catch (err1) {
+    // Tentativa 2: literals JS inválidos.
+    try {
+      return JSON.parse(sanitizeJsLiteralsForJson(text)) as T;
+    } catch {}
+    // Tentativa 3: trailing commas.
+    try {
+      return JSON.parse(removeTrailingCommas(text)) as T;
+    } catch {}
+    // Tentativa 4: tudo junto.
+    try {
+      return JSON.parse(
+        removeTrailingCommas(sanitizeJsLiteralsForJson(text))
+      ) as T;
+    } catch {}
+    // Re-lança o erro original com snippet pra debug.
+    throw err1;
+  }
+}
+
 // Base agent class
 abstract class BaseAgent<TInput, TOutput> {
   abstract name: string;
@@ -338,18 +384,17 @@ abstract class BaseAgent<TInput, TOutput> {
 
     // Etapa 3: Processar resposta (lógica extraída para método privado)
     const rawContent = this._processLLMResponse(response);
-    // Sanitização do output do Claude antes do JSON.parse:
-    //  1. Strippar markdown code fences (```json...```)
-    //  2. Substituir literais inválidos (undefined, NaN, Infinity) por null
-    const content = sanitizeJsLiteralsForJson(stripCodeFences(rawContent));
+    // Strippar markdown code fences que o Claude às vezes adiciona.
+    const content = stripCodeFences(rawContent);
     console.log(
       `[Agent ${this.name}] Content preview:`,
       content.substring(0, 200)
     );
 
-    // Etapa 4: Parse do JSON
+    // Etapa 4: Parse do JSON com tolerância progressiva (literals JS,
+    // trailing commas). Se nenhuma tentativa funcionar, cai no catch.
     try {
-      const parsed = JSON.parse(content) as TOutput;
+      const parsed = tolerantJsonParse<TOutput>(content);
       console.log(`[Agent ${this.name}] Successfully parsed output`);
       return parsed;
     } catch (parseError) {
