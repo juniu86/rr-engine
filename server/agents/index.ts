@@ -38,6 +38,23 @@ import type {
 } from "../../shared/agents";
 import { AGENT_NAMES } from "../../shared/agents";
 
+/**
+ * Remove markdown code fences que o Claude às vezes envolve a saída JSON
+ * mesmo quando o prompt pede texto puro (e mesmo com response_format).
+ * Suporta:
+ *   ```json\n{...}\n```
+ *   ```\n{...}\n```
+ *   ` ```json{...}``` `
+ *   {...}                 (sem fences — passa intacto)
+ */
+function stripCodeFences(text: string): string {
+  const trimmed = text.trim();
+  // Match opening fence (```json ou apenas ```), conteúdo, fence final.
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  return trimmed;
+}
+
 // Base agent class
 abstract class BaseAgent<TInput, TOutput> {
   abstract name: string;
@@ -305,7 +322,10 @@ abstract class BaseAgent<TInput, TOutput> {
     }
 
     // Etapa 3: Processar resposta (lógica extraída para método privado)
-    const content = this._processLLMResponse(response);
+    const rawContent = this._processLLMResponse(response);
+    // Strippar markdown code fences que o Claude às vezes adiciona mesmo
+    // com response_format: json_schema. Aceita ```json...``` ou ```...```.
+    const content = stripCodeFences(rawContent);
     console.log(
       `[Agent ${this.name}] Content preview:`,
       content.substring(0, 200)
