@@ -197,28 +197,85 @@ export async function persistAgentOutput(
     }
   }
 
-  if (agentType === 'logistica' && output?.costs) {
-    try {
-      // Correção 5: Cross-check logística vs budgetItems antes de salvar
-      const budgetItems = await db.getBudgetItemsByProjectId(projectId);
-      const filteredCosts = crossCheckLogisticsVsBudget(output.costs, budgetItems);
-      await persistLogisticsCosts(projectId, filteredCosts);
+  if (agentType === 'logistica') {
+    // O output da Logística pode vir em formatos diferentes dependendo da
+    // versão do prompt: `costs` (formato antigo) ou `items` (atual). Em
+    // ambos os casos garantimos que `totalLogisticsCost` esteja no nível
+    // top — isso é exigido pela validação no buildAgentInput do Comercial.
+    const itemsList = output?.items || output?.costs || [];
 
-      // Atualizar output com custos filtrados
-      if (filteredCosts.length < output.costs.length) {
-        const removedCount = output.costs.length - filteredCosts.length;
-        const newTotal = filteredCosts.reduce((sum: number, c: any) => sum + Number(c.totalCost || 0), 0);
-        finalOutput = {
-          ...output,
-          costs: filteredCosts,
-          totalLogisticsCost: Math.round(newTotal * 100) / 100,
-          _originalLogisticsCost: output.totalLogisticsCost,
-          _logisticsItemsRemoved: removedCount,
-        };
-        console.log(`[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${output.totalLogisticsCost?.toFixed(2)} → R$${newTotal.toFixed(2)}`);
+    if (output?.costs) {
+      // Caminho legado: cross-check vs orçamento.
+      try {
+        const budgetItems = await db.getBudgetItemsByProjectId(projectId);
+        const filteredCosts = crossCheckLogisticsVsBudget(output.costs, budgetItems);
+        await persistLogisticsCosts(projectId, filteredCosts);
+
+        if (filteredCosts.length < output.costs.length) {
+          const removedCount = output.costs.length - filteredCosts.length;
+          const newTotal = filteredCosts.reduce((sum: number, c: any) => sum + Number(c.totalCost || 0), 0);
+          finalOutput = {
+            ...output,
+            costs: filteredCosts,
+            totalLogisticsCost: Math.round(newTotal * 100) / 100,
+            _originalLogisticsCost: output.totalLogisticsCost,
+            _logisticsItemsRemoved: removedCount,
+          };
+          console.log(`[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${output.totalLogisticsCost?.toFixed(2)} → R$${newTotal.toFixed(2)}`);
+        }
+      } catch (err) {
+        console.error('[Logistica] Error saving costs:', err);
       }
-    } catch (err) {
-      console.error('[Logistica] Error saving costs:', err);
+    }
+
+    // Garante totalLogisticsCost no top-level. Ordem de preferência:
+    //  1. output.totalLogisticsCost se já existe
+    //  2. summary.mandatoryTotal (formato atual)
+    //  3. summary.grandTotal
+    //  4. soma dos itens
+    if (typeof finalOutput?.totalLogisticsCost !== 'number') {
+      const summary = output?.summary || {};
+      let derivedTotal: number;
+      if (typeof summary.mandatoryTotal === 'number') {
+        derivedTotal = summary.mandatoryTotal;
+      } else if (typeof summary.grandTotal === 'number') {
+        derivedTotal = summary.grandTotal;
+      } else {
+        derivedTotal = itemsList.reduce(
+          (sum: number, c: any) => sum + Number(c.totalCost || 0), 0
+        );
+      }
+      finalOutput = {
+        ...finalOutput,
+        totalLogisticsCost: Math.round(derivedTotal * 100) / 100,
+      };
+      console.log(`[Logistica] Derived totalLogisticsCost: R$${derivedTotal.toFixed(2)}`);
+    }
+  }
+
+  if (agentType === 'tributario') {
+    // Mesma normalização: garantir totalTaxes no top-level.
+    // Output do Tributário vem como { taxClassification: { items, summary, ... } }.
+    if (typeof finalOutput?.totalTaxes !== 'number') {
+      const tax = output?.taxClassification || {};
+      const summary = tax.summary || {};
+      let derivedTaxes: number;
+      if (typeof summary.totalTaxes === 'number') {
+        derivedTaxes = summary.totalTaxes;
+      } else if (typeof summary.grandTotal === 'number') {
+        derivedTaxes = summary.grandTotal;
+      } else if (Array.isArray(tax.items)) {
+        derivedTaxes = tax.items.reduce(
+          (sum: number, i: any) => sum + Number(i.taxAmount || 0), 0
+        );
+      } else {
+        derivedTaxes = 0;
+      }
+      finalOutput = {
+        ...finalOutput,
+        totalTaxes: Math.round(derivedTaxes * 100) / 100,
+      };
+      console.log(`[Tributario] Derived totalTaxes: R$${derivedTaxes.toFixed(2)}`);
     }
   }
 
