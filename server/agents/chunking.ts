@@ -58,6 +58,12 @@ export function splitMemorialIntoChunks(
 
 /**
  * Cria inputs individuais para cada chunk, preservando location e restrictions.
+ *
+ * O preâmbulo de instruções internas é crítico: sem ele, o LLM interpreta o
+ * marcador "[PARTE 6 de 7]" como se fosse um humano pedindo as outras
+ * partes — e responde com "por favor envie a parte 7 também". A instrução
+ * deixa claro que cada chunk é processado independentemente e os outputs
+ * são consolidados pelo backend.
  */
 export function createChunkedInputs(
   input: EngenheiroTecnicoInput,
@@ -65,16 +71,36 @@ export function createChunkedInputs(
 ): EngenheiroTecnicoInput[] {
   const chunks = splitMemorialIntoChunks(input.memorialDescritivo, config);
 
-  return chunks.map((chunk, index) => ({
-    // Spread preserva campos meta (_projectId, _agentExecutionId) usados
-    // pela telemetria do BaseAgent — campos com prefixo `_` não são
-    // visíveis via tipos mas trafegam em runtime.
-    ...input,
-    memorialDescritivo: `[PARTE ${index + 1} de ${chunks.length}]\n\n${chunk}`,
-    location: input.location,
-    restrictions: input.restrictions,
-    userResponses: input.userResponses,
-  }));
+  return chunks.map((chunk, index) => {
+    const partNum = index + 1;
+    const totalParts = chunks.length;
+    const wrappedMemorial = `[CHUNK ${partNum}/${totalParts} — INSTRUÇÕES INTERNAS DO PIPELINE]
+
+Este memorial foi dividido em ${totalParts} chunks para evitar truncamento por limite de tokens.
+Você está processando o CHUNK ${partNum} de ${totalParts}. As outras partes JÁ ESTÃO sendo processadas separadamente em chamadas paralelas — o backend vai consolidar todos os outputs ao final.
+
+REGRAS OBRIGATÓRIAS:
+1. Processe APENAS os itens deste chunk como se fosse um memorial completo isolado.
+2. NÃO peça as outras partes — elas estão sendo processadas em outros chunks por instâncias paralelas do mesmo agente.
+3. NÃO mencione "parte X de Y" ou "trecho" no seu output. Campos como projectSummary.description, criticalNotes, observações etc DEVEM ignorar a divisão e descrever só o conteúdo presente neste chunk.
+4. NÃO retorne analysisStatus="waiting_for_user_input" alegando que o memorial está incompleto por causa do chunking. Só use esse status se faltar informação técnica REAL (tipo de telha, dimensão, espec ausente etc).
+5. Use itemNumber sequencial dentro do chunk (ex: 1.1, 1.2 ... 7.3). O merge final preserva os números relativos por chunk.
+
+[FIM DAS INSTRUÇÕES INTERNAS — A SEGUIR O CONTEÚDO DO CHUNK]
+
+${chunk}`;
+
+    return {
+      // Spread preserva campos meta (_projectId, _agentExecutionId) usados
+      // pela telemetria do BaseAgent — campos com prefixo `_` não são
+      // visíveis via tipos mas trafegam em runtime.
+      ...input,
+      memorialDescritivo: wrappedMemorial,
+      location: input.location,
+      restrictions: input.restrictions,
+      userResponses: input.userResponses,
+    };
+  });
 }
 
 /**
