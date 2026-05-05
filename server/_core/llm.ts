@@ -297,7 +297,8 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  // assertApiKey() agora é chamado DENTRO do bloco que vai usar Forge —
+  // quando o roteamento decide ir direto na Anthropic, Forge nem é tocado.
 
   const {
     messages,
@@ -397,6 +398,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     }
 
     // ─── Fallback: Forge proxy (Gemini, GPT, or Claude without direct key) ────────
+    // Aqui sim exigimos a key do Forge — quando vai ser usado.
+    assertApiKey();
+
     const response = await fetch(resolveApiUrl(), {
       method: "POST",
       headers: {
