@@ -460,6 +460,51 @@ export const appRouter = router({
           "auditor",
         ];
 
+        // Invalidação cascata: encontra o primeiro agente NÃO-completed (em
+        // ordem de AGENT_ORDER) e reseta TODOS os subsequentes pra pending.
+        // Sem isso, agentes posteriores ficariam com output stale baseado em
+        // estado antigo do agente que falhou — gerando inconsistência.
+        {
+          const initialExecutions = await db.getAgentExecutionsByProjectId(
+            input.projectId
+          );
+          const initByType = new Map<string, any>();
+          for (const e of initialExecutions) initByType.set(e.agentType, e);
+
+          let firstNonCompletedIdx = -1;
+          for (let i = 0; i < agentTypes.length; i++) {
+            const ex = initByType.get(agentTypes[i]);
+            const isCompleted =
+              ex?.status === "completed" &&
+              ex?.output &&
+              typeof ex.output === "object";
+            if (!isCompleted) {
+              firstNonCompletedIdx = i;
+              break;
+            }
+          }
+
+          if (firstNonCompletedIdx >= 0) {
+            for (let i = firstNonCompletedIdx; i < agentTypes.length; i++) {
+              const ex = initByType.get(agentTypes[i]);
+              if (!ex) continue;
+              // Invalidar: limpa output, errors, completedAt, volta pra pending.
+              await db.updateAgentExecution(ex.id, {
+                status: "pending",
+                output: null,
+                errors: null,
+                completedAt: null,
+                startedAt: null,
+              });
+            }
+            console.log(
+              `[Pipeline] Invalidação cascata: agentes ${agentTypes
+                .slice(firstNonCompletedIdx)
+                .join(", ")} resetados pra pending.`
+            );
+          }
+        }
+
         const results: Record<string, any> = {};
 
         // P2.2: trace pai do pipeline. null quando Langfuse desativado;
@@ -518,6 +563,22 @@ export const appRouter = router({
           );
           const execution = executions.find(e => e.agentType === agentType);
           if (!execution) continue;
+
+          // Reuso de execução já completa: economiza tokens em retentativas.
+          // Quando o user clica "Continuar pipeline" depois de uma falha
+          // intermediária, agentes que já completaram com output válido são
+          // mantidos — só o que falhou (ou ainda não rodou) é reexecutado.
+          if (
+            execution.status === "completed" &&
+            execution.output &&
+            typeof execution.output === "object"
+          ) {
+            console.log(
+              `[Pipeline] Reaproveitando ${agentType} (já completed). Skip de LLM.`
+            );
+            results[agentType] = execution.output as any;
+            continue;
+          }
 
           await db.updateAgentExecution(execution.id, {
             status: "running",
