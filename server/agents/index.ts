@@ -1351,7 +1351,9 @@ export class OrcamentistaAgent extends BaseAgent<
         `[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`
       );
       const chunkedInputs = createOrcamentistaChunkedInputs(input);
-      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas (concorrência limitada)`);
+      console.log(
+        `[Orcamentista] ${chunkedInputs.length} frentes criadas (concorrência limitada)`
+      );
 
       // Concorrência limitada via p-limit. Mesma justificativa do Engenheiro:
       // 7+ frentes em paralelo estouram rate limit do Anthropic. Concorrência

@@ -10,17 +10,32 @@ import type { AgentType } from "../../shared/agents";
 
 // ==================== LOGISTICS CATEGORY MAPPING ====================
 
-type LogisticsCategory = 'frete' | 'bota_fora' | 'deslocamento' | 'hospedagem' | 'alimentacao' | 'equipamentos' | 'outros';
+type LogisticsCategory =
+  | "frete"
+  | "bota_fora"
+  | "deslocamento"
+  | "hospedagem"
+  | "alimentacao"
+  | "equipamentos"
+  | "outros";
 
 export function mapLogisticsCategory(rawCategory: string): LogisticsCategory {
-  const lower = (rawCategory || '').toLowerCase();
-  if (lower.includes('frete') || lower.includes('transporte')) return 'frete';
-  if (lower.includes('bota') || lower.includes('resíduo') || lower.includes('entulho')) return 'bota_fora';
-  if (lower.includes('desloc') || lower.includes('viagem')) return 'deslocamento';
-  if (lower.includes('hosped') || lower.includes('hotel')) return 'hospedagem';
-  if (lower.includes('aliment') || lower.includes('refeiç')) return 'alimentacao';
-  if (lower.includes('equip') || lower.includes('ferramenta')) return 'equipamentos';
-  return 'outros';
+  const lower = (rawCategory || "").toLowerCase();
+  if (lower.includes("frete") || lower.includes("transporte")) return "frete";
+  if (
+    lower.includes("bota") ||
+    lower.includes("resíduo") ||
+    lower.includes("entulho")
+  )
+    return "bota_fora";
+  if (lower.includes("desloc") || lower.includes("viagem"))
+    return "deslocamento";
+  if (lower.includes("hosped") || lower.includes("hotel")) return "hospedagem";
+  if (lower.includes("aliment") || lower.includes("refeiç"))
+    return "alimentacao";
+  if (lower.includes("equip") || lower.includes("ferramenta"))
+    return "equipamentos";
+  return "outros";
 }
 
 // ==================== BUDGET ITEMS ====================
@@ -28,7 +43,7 @@ export function mapLogisticsCategory(rawCategory: string): LogisticsCategory {
 export async function persistBudgetItems(
   projectId: number,
   rawItems: any[],
-  bdiPercent: number,
+  bdiPercent: number
 ): Promise<void> {
   await db.deleteBudgetItemsByProjectId(projectId);
 
@@ -52,10 +67,10 @@ export async function persistBudgetItems(
     const finalPrice = totalCost + bdiAmount;
     return {
       projectId,
-      category: item.category || 'Geral',
-      code: item.code || '',
+      category: item.category || "Geral",
+      code: item.code || "",
       description: item.description,
-      unit: (item.unit || '').substring(0, 20),
+      unit: (item.unit || "").substring(0, 20),
       quantity: String(quantity),
       unitCostMaterial: String(item.unitCostMaterial || 0),
       unitCostLabor: String(item.unitCostLabor || 0),
@@ -65,9 +80,9 @@ export async function persistBudgetItems(
       bdiAmount: String(bdiAmount),
       finalPrice: String(finalPrice),
       taxAmount: String(item.taxAmount || 0),
-      source: item.source || 'Estimativa',
+      source: item.source || "Estimativa",
       sourceCode: item.sourceCode || null,
-      sourceDate: (item.sourceDate || '').substring(0, 20) || null,
+      sourceDate: (item.sourceDate || "").substring(0, 20) || null,
     };
   });
   await db.createBudgetItems(items);
@@ -77,15 +92,18 @@ export async function persistBudgetItems(
 
 export async function persistLogisticsCosts(
   projectId: number,
-  rawCosts: any[],
+  rawCosts: any[]
 ): Promise<void> {
   await db.deleteLogisticsCostsByProjectId(projectId);
   const costs = rawCosts.map((cost: any) => ({
     projectId,
     category: mapLogisticsCategory(cost.category),
-    description: String(cost.description || 'Custo logístico').substring(0, 1000),
+    description: String(cost.description || "Custo logístico").substring(
+      0,
+      1000
+    ),
     quantity: String(Number(cost.quantity) || 1),
-    unit: String(cost.unit || 'un').substring(0, 20),
+    unit: String(cost.unit || "un").substring(0, 20),
     unitCost: String(Number(cost.unitCost) || 0),
     totalCost: String(Number(cost.totalCost) || 0),
   }));
@@ -96,7 +114,7 @@ export async function persistLogisticsCosts(
 
 export async function persistScheduleItems(
   projectId: number,
-  rawSchedule: any[],
+  rawSchedule: any[]
 ): Promise<void> {
   await db.deleteScheduleItemsByProjectId(projectId);
   const items = rawSchedule.map((item: any) => {
@@ -106,10 +124,13 @@ export async function persistScheduleItems(
     const endWeek = Math.ceil(endDay / 7) || startWeek;
     return {
       projectId,
-      description: item.activity || item.description || item.phase || 'Atividade',
+      description:
+        item.activity || item.description || item.phase || "Atividade",
       startWeek,
       duration: endWeek - startWeek + 1,
-      dependencies: item.dependencies ? JSON.stringify(item.dependencies) : null,
+      dependencies: item.dependencies
+        ? JSON.stringify(item.dependencies)
+        : null,
     };
   });
   await db.createScheduleItems(items);
@@ -119,10 +140,15 @@ export async function persistScheduleItems(
 
 export async function persistCashFlowItems(
   projectId: number,
-  cashFlowItems: Array<{ week: number; expense: number; income: number; balance: number }>,
+  cashFlowItems: Array<{
+    week: number;
+    expense: number;
+    income: number;
+    balance: number;
+  }>
 ): Promise<void> {
   await db.deleteCashFlowItemsByProjectId(projectId);
-  const items = cashFlowItems.map((item) => ({
+  const items = cashFlowItems.map(item => ({
     projectId,
     weekNumber: item.week,
     plannedExpense: String(item.expense),
@@ -149,11 +175,11 @@ export async function persistAgentOutput(
     bdiPercent: number;
     executions?: any[];
     agentInput?: any;
-  },
+  }
 ): Promise<any> {
   let finalOutput = output;
 
-  if (agentType === 'orcamentista' && output?.budgetItems) {
+  if (agentType === "orcamentista" && output?.budgetItems) {
     await persistBudgetItems(projectId, output.budgetItems, opts.bdiPercent);
 
     // Correção 1: Recalcular totalDirectCost dos itens efetivamente persistidos
@@ -161,9 +187,11 @@ export async function persistAgentOutput(
     try {
       const savedItems = await db.getBudgetItemsByProjectId(projectId);
       const recalculatedDirectCost = savedItems.reduce(
-        (sum: number, item: any) => sum + Number(item.totalCost || 0), 0
+        (sum: number, item: any) => sum + Number(item.totalCost || 0),
+        0
       );
-      const itemsRemoved = (output.budgetItems?.length || 0) - savedItems.length;
+      const itemsRemoved =
+        (output.budgetItems?.length || 0) - savedItems.length;
 
       // Atualizar o output com o valor correto (pós-deduplicação)
       finalOutput = {
@@ -190,14 +218,16 @@ export async function persistAgentOutput(
       };
 
       if (itemsRemoved > 0) {
-        console.log(`[Orcamentista] Deduplication: ${itemsRemoved} items removed. Cost: R$${output.totalDirectCost?.toFixed(2)} → R$${recalculatedDirectCost.toFixed(2)}`);
+        console.log(
+          `[Orcamentista] Deduplication: ${itemsRemoved} items removed. Cost: R$${output.totalDirectCost?.toFixed(2)} → R$${recalculatedDirectCost.toFixed(2)}`
+        );
       }
     } catch (err) {
-      console.error('[Orcamentista] Error recalculating after dedup:', err);
+      console.error("[Orcamentista] Error recalculating after dedup:", err);
     }
   }
 
-  if (agentType === 'logistica') {
+  if (agentType === "logistica") {
     // O output da Logística pode vir em formatos diferentes dependendo da
     // versão do prompt: `costs` (formato antigo) ou `items` (atual). Em
     // ambos os casos garantimos que `totalLogisticsCost` esteja no nível
@@ -208,12 +238,18 @@ export async function persistAgentOutput(
       // Caminho legado: cross-check vs orçamento.
       try {
         const budgetItems = await db.getBudgetItemsByProjectId(projectId);
-        const filteredCosts = crossCheckLogisticsVsBudget(output.costs, budgetItems);
+        const filteredCosts = crossCheckLogisticsVsBudget(
+          output.costs,
+          budgetItems
+        );
         await persistLogisticsCosts(projectId, filteredCosts);
 
         if (filteredCosts.length < output.costs.length) {
           const removedCount = output.costs.length - filteredCosts.length;
-          const newTotal = filteredCosts.reduce((sum: number, c: any) => sum + Number(c.totalCost || 0), 0);
+          const newTotal = filteredCosts.reduce(
+            (sum: number, c: any) => sum + Number(c.totalCost || 0),
+            0
+          );
           finalOutput = {
             ...output,
             costs: filteredCosts,
@@ -221,10 +257,12 @@ export async function persistAgentOutput(
             _originalLogisticsCost: output.totalLogisticsCost,
             _logisticsItemsRemoved: removedCount,
           };
-          console.log(`[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${output.totalLogisticsCost?.toFixed(2)} → R$${newTotal.toFixed(2)}`);
+          console.log(
+            `[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${output.totalLogisticsCost?.toFixed(2)} → R$${newTotal.toFixed(2)}`
+          );
         }
       } catch (err) {
-        console.error('[Logistica] Error saving costs:', err);
+        console.error("[Logistica] Error saving costs:", err);
       }
     }
 
@@ -233,27 +271,30 @@ export async function persistAgentOutput(
     //  2. summary.mandatoryTotal (formato atual)
     //  3. summary.grandTotal
     //  4. soma dos itens
-    if (typeof finalOutput?.totalLogisticsCost !== 'number') {
+    if (typeof finalOutput?.totalLogisticsCost !== "number") {
       const summary = output?.summary || {};
       let derivedTotal: number;
-      if (typeof summary.mandatoryTotal === 'number') {
+      if (typeof summary.mandatoryTotal === "number") {
         derivedTotal = summary.mandatoryTotal;
-      } else if (typeof summary.grandTotal === 'number') {
+      } else if (typeof summary.grandTotal === "number") {
         derivedTotal = summary.grandTotal;
       } else {
         derivedTotal = itemsList.reduce(
-          (sum: number, c: any) => sum + Number(c.totalCost || 0), 0
+          (sum: number, c: any) => sum + Number(c.totalCost || 0),
+          0
         );
       }
       finalOutput = {
         ...finalOutput,
         totalLogisticsCost: Math.round(derivedTotal * 100) / 100,
       };
-      console.log(`[Logistica] Derived totalLogisticsCost: R$${derivedTotal.toFixed(2)}`);
+      console.log(
+        `[Logistica] Derived totalLogisticsCost: R$${derivedTotal.toFixed(2)}`
+      );
     }
   }
 
-  if (agentType === 'tributario') {
+  if (agentType === "tributario") {
     // Tributário tem 3 formatos observados (Claude varia entre runs):
     //   F1 (declarado): { classifiedItems[], totalTaxes, alerts }
     //   F2: { taxClassification: { items[], summary{ totalTaxes }, ... } }
@@ -265,7 +306,7 @@ export async function persistAgentOutput(
     // no formato declarado (F1). Permite medir taxa de drift em produção
     // após o few-shot reforçado no prompt.
     const isDeclaredFormat =
-      typeof output?.totalTaxes === 'number' &&
+      typeof output?.totalTaxes === "number" &&
       Array.isArray(output?.classifiedItems);
     if (isDeclaredFormat) {
       console.log(
@@ -273,7 +314,7 @@ export async function persistAgentOutput(
       );
     }
 
-    if (typeof finalOutput?.totalTaxes !== 'number') {
+    if (typeof finalOutput?.totalTaxes !== "number") {
       let derivedTaxes = 0;
 
       const sumByField = (arr: any[], ...fields: string[]) =>
@@ -287,18 +328,18 @@ export async function persistAgentOutput(
 
       // F1: classifiedItems no top-level (schema oficial)
       if (Array.isArray(output?.classifiedItems)) {
-        derivedTaxes = sumByField(output.classifiedItems, 'taxAmount');
+        derivedTaxes = sumByField(output.classifiedItems, "taxAmount");
       }
       // F2: taxClassification aninhado
       else if (output?.taxClassification) {
         const tax = output.taxClassification;
         const summary = tax.summary || {};
-        if (typeof summary.totalTaxes === 'number') {
+        if (typeof summary.totalTaxes === "number") {
           derivedTaxes = summary.totalTaxes;
-        } else if (typeof summary.grandTotal === 'number') {
+        } else if (typeof summary.grandTotal === "number") {
           derivedTaxes = summary.grandTotal;
         } else if (Array.isArray(tax.items)) {
-          derivedTaxes = sumByField(tax.items, 'taxAmount', 'totalTax');
+          derivedTaxes = sumByField(tax.items, "taxAmount", "totalTax");
         }
       }
       // F3: classification array no top-level
@@ -327,18 +368,18 @@ export async function persistAgentOutput(
         `[Tributario] Derived totalTaxes: R$${derivedTaxes.toFixed(2)} ` +
           `(format: ${
             Array.isArray(output?.classifiedItems)
-              ? 'F1-classifiedItems'
+              ? "F1-classifiedItems"
               : output?.taxClassification
-                ? 'F2-taxClassification'
+                ? "F2-taxClassification"
                 : Array.isArray(output?.classification)
-                  ? 'F3-classification'
-                  : 'unknown'
+                  ? "F3-classification"
+                  : "unknown"
           })`
       );
     }
   }
 
-  if (agentType === 'auditor' && finalOutput?.validations) {
+  if (agentType === "auditor" && finalOutput?.validations) {
     // Auditor está marcando falsos positivos (passed=false em validações cuja
     // matemática bate). Recalculamos as 3 mais comuns server-side e sobrescrevemos
     // `passed` quando valores batem dentro de tolerância de 1%.
@@ -347,11 +388,21 @@ export async function persistAgentOutput(
     // validações precisaram de override server-side. Few-shot no prompt
     // deve reduzir esse número ao longo do tempo.
     try {
-      const orcExec = opts.executions?.find((e: any) => e.agentType === 'orcamentista');
-      const logExec = opts.executions?.find((e: any) => e.agentType === 'logistica');
-      const tribExec = opts.executions?.find((e: any) => e.agentType === 'tributario');
-      const comExec = opts.executions?.find((e: any) => e.agentType === 'comercial');
-      const finExec = opts.executions?.find((e: any) => e.agentType === 'financeiro');
+      const orcExec = opts.executions?.find(
+        (e: any) => e.agentType === "orcamentista"
+      );
+      const logExec = opts.executions?.find(
+        (e: any) => e.agentType === "logistica"
+      );
+      const tribExec = opts.executions?.find(
+        (e: any) => e.agentType === "tributario"
+      );
+      const comExec = opts.executions?.find(
+        (e: any) => e.agentType === "comercial"
+      );
+      const finExec = opts.executions?.find(
+        (e: any) => e.agentType === "financeiro"
+      );
 
       const directCost = Number((orcExec?.output as any)?.totalDirectCost) || 0;
       const logCost = Number((logExec?.output as any)?.totalLogisticsCost) || 0;
@@ -366,12 +417,12 @@ export async function persistAgentOutput(
         Math.abs(a - b) <= Math.abs(b) * tol + 1; // 1% + 1 real de tolerância
 
       let overrides = 0;
-      const validations = (finalOutput.validations as any[]).map((v) => {
+      const validations = (finalOutput.validations as any[]).map(v => {
         if (v.passed) return v;
 
         // Recalcula price_consistency: preço esperado deve ser o que o Comercial
         // computou. Se valores batem, marca passed=true.
-        if (v.rule === 'price_consistency') {
+        if (v.rule === "price_consistency") {
           const expected = Number(v.expected) || finalPrice;
           const actual = Number(v.actual) || finalPrice;
           if (within(expected, actual)) {
@@ -379,12 +430,13 @@ export async function persistAgentOutput(
             return {
               ...v,
               passed: true,
-              recommendation: 'Override server-side: valores batem dentro de 1%',
+              recommendation:
+                "Override server-side: valores batem dentro de 1%",
             };
           }
         }
 
-        if (v.rule === 'gross_margin') {
+        if (v.rule === "gross_margin") {
           const expectedMargin = finalPrice - (directCost + logCost);
           const actual = Number(v.actual);
           if (!Number.isNaN(actual) && within(actual, expectedMargin)) {
@@ -398,7 +450,7 @@ export async function persistAgentOutput(
           }
         }
 
-        if (v.rule === 'cash_flow' && finalBalance !== null) {
+        if (v.rule === "cash_flow" && finalBalance !== null) {
           if (finalBalance >= 0) {
             overrides++;
             return { ...v, passed: true };
@@ -412,16 +464,20 @@ export async function persistAgentOutput(
       if (overrides > 0) {
         const passed = validations.filter((v: any) => v.passed).length;
         const failed = validations.filter((v: any) => !v.passed);
-        const criticalErrors = failed.filter((v: any) => v.severity === 'critical').length;
-        const warnings = failed.filter((v: any) => v.severity === 'warning').length;
+        const criticalErrors = failed.filter(
+          (v: any) => v.severity === "critical"
+        ).length;
+        const warnings = failed.filter(
+          (v: any) => v.severity === "warning"
+        ).length;
         const total = validations.length;
         const newScore = total > 0 ? Math.round((passed / total) * 100) : 0;
 
         // Regrade do auditSeal
-        let newSeal: 'approved' | 'approved_with_warnings' | 'rejected';
-        if (criticalErrors > 0) newSeal = 'rejected';
-        else if (warnings > 0) newSeal = 'approved_with_warnings';
-        else newSeal = 'approved';
+        let newSeal: "approved" | "approved_with_warnings" | "rejected";
+        if (criticalErrors > 0) newSeal = "rejected";
+        else if (warnings > 0) newSeal = "approved_with_warnings";
+        else newSeal = "approved";
 
         finalOutput = {
           ...finalOutput,
@@ -444,30 +500,37 @@ export async function persistAgentOutput(
         const total = (finalOutput.validations as any[]).length;
         const allHaveValues = (finalOutput.validations as any[]).every(
           (v: any) =>
-            typeof v.expected === 'string' &&
+            typeof v.expected === "string" &&
             v.expected.length > 0 &&
-            typeof v.actual === 'string' &&
+            typeof v.actual === "string" &&
             v.actual.length > 0
         );
         console.log(
           `[Auditor] Schema OK (0 overrides, ${total} validações, ` +
-            `expected/actual preenchidos: ${allHaveValues ? 'sim' : 'parcial'})`
+            `expected/actual preenchidos: ${allHaveValues ? "sim" : "parcial"})`
         );
       }
     } catch (err) {
-      console.warn('[Auditor] Falha ao validar matemática server-side:', err);
+      console.warn("[Auditor] Falha ao validar matemática server-side:", err);
     }
   }
 
-  if (agentType === 'gestao_projetos' && output?.schedule) {
+  if (agentType === "gestao_projetos" && output?.schedule) {
     await persistScheduleItems(projectId, output.schedule);
   }
 
-  if (agentType === 'financeiro') {
-    const { calculateDeterministicCashFlow, buildDeterministicFinanceiroOutput } = await import('./deterministicCashFlow');
+  if (agentType === "financeiro") {
+    const {
+      calculateDeterministicCashFlow,
+      buildDeterministicFinanceiroOutput,
+    } = await import("./deterministicCashFlow");
     const finInput = opts.agentInput || {};
-    const tributarioExec = opts.executions?.find((e: any) => e.agentType === 'tributario');
-    const totalTaxes = tributarioExec?.output ? Number((tributarioExec.output as any).totalTaxes) || 0 : 0;
+    const tributarioExec = opts.executions?.find(
+      (e: any) => e.agentType === "tributario"
+    );
+    const totalTaxes = tributarioExec?.output
+      ? Number((tributarioExec.output as any).totalTaxes) || 0
+      : 0;
 
     const deterministicResult = calculateDeterministicCashFlow({
       totalCost: finInput.totalCost || 0,
@@ -476,10 +539,15 @@ export async function persistAgentOutput(
       totalTaxes,
     });
 
-    finalOutput = buildDeterministicFinanceiroOutput(deterministicResult, output);
+    finalOutput = buildDeterministicFinanceiroOutput(
+      deterministicResult,
+      output
+    );
     await persistCashFlowItems(projectId, deterministicResult.cashFlow);
 
-    console.log(`[Financeiro] Determinístico: Saldo final R$ ${deterministicResult.cashFlow[deterministicResult.cashFlow.length - 1]?.balance.toFixed(2)}`);
+    console.log(
+      `[Financeiro] Determinístico: Saldo final R$ ${deterministicResult.cashFlow[deterministicResult.cashFlow.length - 1]?.balance.toFixed(2)}`
+    );
   }
 
   return finalOutput;
@@ -496,13 +564,18 @@ function deduplicateBudgetItems(items: any[]): any[] {
   const result: any[] = [];
 
   for (const item of items) {
-    const key = `${normalizeForDedup(item.description || '')}|${(item.unit || '').toLowerCase()}|${(item.category || '').toLowerCase()}`;
+    const key = `${normalizeForDedup(item.description || "")}|${(item.unit || "").toLowerCase()}|${(item.category || "").toLowerCase()}`;
 
     const existing = seen.get(key);
     if (existing) {
       // Keep the item with higher total cost (more detailed pricing)
-      const existingCost = Number(existing.item.totalCost) || Number(existing.item.quantity || 0) * Number(existing.item.unitCostTotal || 0);
-      const newCost = Number(item.totalCost) || Number(item.quantity || 0) * Number(item.unitCostTotal || 0);
+      const existingCost =
+        Number(existing.item.totalCost) ||
+        Number(existing.item.quantity || 0) *
+          Number(existing.item.unitCostTotal || 0);
+      const newCost =
+        Number(item.totalCost) ||
+        Number(item.quantity || 0) * Number(item.unitCostTotal || 0);
 
       if (newCost > existingCost) {
         result[existing.index] = item;
@@ -525,11 +598,14 @@ function deduplicateBudgetItems(items: any[]): any[] {
 export function normalizeForDedup(text: string): string {
   return text
     .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, '')
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
     .trim()
-    .replace(/\b(fornecimento|instalacao|execucao|servico|pacote)\s*(de|e|do|da|dos|das)?\s*/g, '');
+    .replace(
+      /\b(fornecimento|instalacao|execucao|servico|pacote)\s*(de|e|do|da|dos|das)?\s*/g,
+      ""
+    );
 }
 
 /**
@@ -540,7 +616,7 @@ export function normalizeForDedup(text: string): string {
 function deduplicateItemNumbers(items: any[]): any[] {
   const seen = new Map<string, number>();
   return items.map(item => {
-    const code = item.code || '';
+    const code = item.code || "";
     if (!code) return item;
     const count = seen.get(code) || 0;
     seen.set(code, count + 1);
@@ -568,39 +644,51 @@ function detectContainmentDuplicates(items: any[]): any[] {
   for (let i = 0; i < result.length; i++) {
     if (toRemove.has(i)) continue;
     const itemA = result[i];
-    const catA = (itemA.category || '').toLowerCase();
-    const descA = normalizeForDedup(itemA.description || '');
+    const catA = (itemA.category || "").toLowerCase();
+    const descA = normalizeForDedup(itemA.description || "");
     const keywordsA = descA.split(/\s+/).filter((k: string) => k.length > 3);
     if (keywordsA.length === 0) continue;
 
     for (let j = i + 1; j < result.length; j++) {
       if (toRemove.has(j)) continue;
       const itemB = result[j];
-      const catB = (itemB.category || '').toLowerCase();
+      const catB = (itemB.category || "").toLowerCase();
 
       // Only check within same category
       if (catA !== catB) continue;
 
-      const descB = normalizeForDedup(itemB.description || '');
+      const descB = normalizeForDedup(itemB.description || "");
       const keywordsB = descB.split(/\s+/).filter((k: string) => k.length > 3);
       if (keywordsB.length === 0) continue;
 
       // Check containment: what fraction of B's keywords appear in A's description?
-      const bInA = keywordsB.filter((kw: string) => descA.includes(kw)).length / keywordsB.length;
-      const aInB = keywordsA.filter((kw: string) => descB.includes(kw)).length / keywordsA.length;
+      const bInA =
+        keywordsB.filter((kw: string) => descA.includes(kw)).length /
+        keywordsB.length;
+      const aInB =
+        keywordsA.filter((kw: string) => descB.includes(kw)).length /
+        keywordsA.length;
 
-      const costA = Number(itemA.totalCost) || Number(itemA.quantity || 0) * Number(itemA.unitCostTotal || 0);
-      const costB = Number(itemB.totalCost) || Number(itemB.quantity || 0) * Number(itemB.unitCostTotal || 0);
+      const costA =
+        Number(itemA.totalCost) ||
+        Number(itemA.quantity || 0) * Number(itemA.unitCostTotal || 0);
+      const costB =
+        Number(itemB.totalCost) ||
+        Number(itemB.quantity || 0) * Number(itemB.unitCostTotal || 0);
 
       // If B is semantically contained in A (>70% keywords overlap) and A costs more → remove B
       if (bInA >= 0.7 && costA >= costB) {
         toRemove.add(j);
-        console.log(`[Dedup:containment] Removed "${itemB.description}" (contained in "${itemA.description}")`);
+        console.log(
+          `[Dedup:containment] Removed "${itemB.description}" (contained in "${itemA.description}")`
+        );
       }
       // If A is semantically contained in B (>70%) and B costs more → remove A
       else if (aInB >= 0.7 && costB >= costA) {
         toRemove.add(i);
-        console.log(`[Dedup:containment] Removed "${itemA.description}" (contained in "${itemB.description}")`);
+        console.log(
+          `[Dedup:containment] Removed "${itemA.description}" (contained in "${itemB.description}")`
+        );
         break; // A is removed, move to next i
       }
     }
@@ -617,11 +705,11 @@ function detectContainmentDuplicates(items: any[]): any[] {
  * the logistics item is likely already covered by the SINAPI composition.
  */
 const LOGISTICS_OVERLAP_KEYWORDS = [
-  ['frete', 'transporte', 'material'],
-  ['cacamba', 'entulho', 'bota-fora', 'residuo', 'demolicao'],
-  ['betoneira', 'locacao'],
-  ['limpeza', 'final'],
-  ['munck', 'icamento', 'guindaste'],
+  ["frete", "transporte", "material"],
+  ["cacamba", "entulho", "bota-fora", "residuo", "demolicao"],
+  ["betoneira", "locacao"],
+  ["limpeza", "final"],
+  ["munck", "icamento", "guindaste"],
 ];
 
 /**
@@ -629,13 +717,16 @@ const LOGISTICS_OVERLAP_KEYWORDS = [
  * Uses keyword matching to detect when a logistics cost is already covered by
  * a SINAPI/PINI composition in the budget.
  */
-function crossCheckLogisticsVsBudget(logisticsCosts: any[], budgetItems: any[]): any[] {
+function crossCheckLogisticsVsBudget(
+  logisticsCosts: any[],
+  budgetItems: any[]
+): any[] {
   const budgetDescriptions = budgetItems.map((item: any) =>
-    normalizeForDedup(item.description || '')
+    normalizeForDedup(item.description || "")
   );
 
   return logisticsCosts.filter((cost: any) => {
-    const costDesc = normalizeForDedup(cost.description || '');
+    const costDesc = normalizeForDedup(cost.description || "");
 
     for (const keywordGroup of LOGISTICS_OVERLAP_KEYWORDS) {
       const costMatchesGroup = keywordGroup.some(kw => costDesc.includes(kw));
@@ -647,7 +738,9 @@ function crossCheckLogisticsVsBudget(logisticsCosts: any[], budgetItems: any[]):
       );
 
       if (budgetHasOverlap) {
-        console.log(`[Logistica] Cross-check removed: "${cost.description}" (overlaps with budget item)`);
+        console.log(
+          `[Logistica] Cross-check removed: "${cost.description}" (overlaps with budget item)`
+        );
         return false; // Remove this logistics item
       }
     }
