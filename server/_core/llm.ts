@@ -515,14 +515,25 @@ function endLangfuseGenerationError(
 // ─── Direct Anthropic API Integration ─────────────────────────────────────────
 
 /**
- * Call the Anthropic Messages API directly (api.anthropic.com/v1/messages).
- * Converts OpenAI-compatible payload → Anthropic format → back to InvokeResult.
+ * Call the Anthropic Messages API directly via streaming (SSE).
+ *
+ * Por que streaming:
+ *  - Headers chegam imediato → elimina headers timeout do undici em outputs
+ *    longos (30k+ tokens demoram 2-5min sem stream).
+ *  - Body timeout some também — bytes chegam continuamente conforme o LLM
+ *    gera, mantendo a conexão "viva".
+ *
+ * Por que prompt caching:
+ *  - System prompts dos agentes são longos (1-3k tokens) e idênticos entre
+ *    chamadas paralelas (chunks). Marcamos com `cache_control: ephemeral`
+ *    pra Anthropic deduplicar e cobrar 10% nos cache hits. Cache TTL de 5
+ *    min cobre toda a janela de execução de um pipeline.
  */
 async function invokeAnthropicDirect(
   payload: Record<string, unknown>,
   modelName: string
 ): Promise<InvokeResult> {
-  console.log(`[LLM] Using Anthropic direct API for model: ${modelName}`);
+  console.log(`[LLM] Using Anthropic direct API (streaming) for model: ${modelName}`);
 
   // 1. Extract system message from messages array (Anthropic uses separate "system" field)
   const messages = payload.messages as Array<{
@@ -532,19 +543,19 @@ async function invokeAnthropicDirect(
   const systemMsg = messages.find(m => m.role === "system");
   const nonSystemMessages = messages.filter(m => m.role !== "system");
 
-  // 2. Build Anthropic-format payload (ONLY supported fields — no response_format, no thinking)
+  // 2. Build Anthropic-format payload + enable streaming.
   const anthropicPayload: Record<string, unknown> = {
     model: modelName,
     max_tokens: (payload.max_tokens as number) ?? 32768,
     messages: nonSystemMessages,
+    stream: true,
   };
 
   if (typeof payload.temperature === "number") {
     anthropicPayload.temperature = payload.temperature;
   }
 
-  // Extract system message content + inject JSON instruction
-  // (Anthropic doesn't support response_format, so we tell the LLM to output JSON in the system prompt)
+  // 3. Build system prompt + injetar instrução de JSON quando response_format vier.
   let systemContent = "";
   if (systemMsg) {
     systemContent =
@@ -556,11 +567,29 @@ async function invokeAnthropicDirect(
     systemContent +=
       "\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code blocks, no explanatory text — ONLY the raw JSON object.";
   }
+
+  // 4. Prompt caching: só vale a pena cachear blocos >= 1024 tokens
+  //    (~4000 chars). Pra blocos menores Anthropic ignora silenciosamente,
+  //    então mandamos sempre — não tem downside.
   if (systemContent) {
-    anthropicPayload.system = systemContent;
+    anthropicPayload.system = [
+      {
+        type: "text",
+        text: systemContent,
+        cache_control: { type: "ephemeral" },
+      },
+    ];
   }
 
-  // 3. Call Anthropic API
+  // 5. Call Anthropic API. Mesmo com streaming mantemos timeouts altos
+  //    como rede de segurança caso a Anthropic trave entre eventos.
+  const { Agent } = await import("undici");
+  const dispatcher = new Agent({
+    headersTimeout: 5 * 60 * 1000, // 5 min — com stream raramente atinge
+    bodyTimeout: 10 * 60 * 1000, // 10 min — body é o stream inteiro
+    connectTimeout: 30 * 1000,
+  });
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -569,6 +598,8 @@ async function invokeAnthropicDirect(
       "content-type": "application/json",
     },
     body: JSON.stringify(anthropicPayload),
+    // @ts-expect-error dispatcher do undici não está no tipo nativo
+    dispatcher,
   });
 
   if (!response.ok) {
@@ -577,13 +608,133 @@ async function invokeAnthropicDirect(
     throw new Error(`Anthropic API failed: ${response.status} – ${errorText}`);
   }
 
-  // 4. Convert Anthropic response → InvokeResult (OpenAI-compatible format)
-  const anthropicResult = (await response.json()) as Record<string, unknown>;
-  const result = convertAnthropicToInvokeResult(anthropicResult);
+  if (!response.body) {
+    throw new Error("Anthropic API: response body vazia (esperado stream)");
+  }
+
+  // 6. Parse SSE — Anthropic streaming format:
+  //    https://docs.anthropic.com/en/api/messages-streaming
+  //
+  // Eventos relevantes:
+  //   message_start         → { message: { id, model, usage: { input_tokens, ... } } }
+  //   content_block_delta   → { delta: { type: "text_delta", text: "..." } }  ← acumula
+  //   message_delta         → { delta: { stop_reason }, usage: { output_tokens } }
+  //   message_stop          → fim
+  //   ping                  → keepalive (ignorar)
+  //   error                 → { error: { type, message } }
+  let textOutput = "";
+  let stopReason: string | undefined;
+  let id = "";
+  let model = modelName;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE: eventos separados por linha em branco. Cada evento tem linhas
+    // tipo "event: <name>\ndata: <json>\n\n".
+    let separatorIdx;
+    while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, separatorIdx);
+      buffer = buffer.slice(separatorIdx + 2);
+
+      // Extrair o data do evento (ignoramos a linha event: porque o
+      // próprio JSON inclui o "type").
+      const dataLine = rawEvent
+        .split("\n")
+        .find(l => l.startsWith("data: "));
+      if (!dataLine) continue;
+      const dataStr = dataLine.slice(6).trim();
+      if (!dataStr || dataStr === "[DONE]") continue;
+
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(dataStr);
+      } catch {
+        // Ignorar eventos malformados — Anthropic às vezes manda ping/keepalive.
+        continue;
+      }
+
+      const type = event.type as string;
+
+      if (type === "message_start") {
+        const msg = event.message as Record<string, unknown> | undefined;
+        if (msg) {
+          id = (msg.id as string) ?? "";
+          model = (msg.model as string) ?? modelName;
+          const usage = msg.usage as Record<string, number> | undefined;
+          if (usage) {
+            inputTokens = usage.input_tokens ?? 0;
+            cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
+            cacheReadTokens = usage.cache_read_input_tokens ?? 0;
+          }
+        }
+      } else if (type === "content_block_delta") {
+        const delta = event.delta as Record<string, unknown> | undefined;
+        if (delta?.type === "text_delta" && typeof delta.text === "string") {
+          textOutput += delta.text;
+        }
+      } else if (type === "message_delta") {
+        const delta = event.delta as Record<string, unknown> | undefined;
+        if (delta?.stop_reason) {
+          stopReason = delta.stop_reason as string;
+        }
+        const usage = event.usage as Record<string, number> | undefined;
+        if (usage?.output_tokens) {
+          outputTokens = usage.output_tokens;
+        }
+      } else if (type === "error") {
+        const err = event.error as Record<string, unknown> | undefined;
+        const errMsg =
+          (err?.message as string) ?? "Unknown Anthropic stream error";
+        throw new Error(`Anthropic stream error: ${errMsg}`);
+      }
+      // message_stop, ping, content_block_start, content_block_stop: nada a fazer.
+    }
+  }
+
+  const finishReason =
+    stopReason === "end_turn"
+      ? "stop"
+      : stopReason === "max_tokens"
+        ? "length"
+        : (stopReason ?? "stop");
+
   console.log(
-    `[LLM] Anthropic response: model=${result.model}, finish_reason=${result.choices?.[0]?.finish_reason}, usage=${JSON.stringify(result.usage || {})}`
+    `[LLM] Anthropic stream ok: model=${model}, finish=${finishReason}, ` +
+      `usage={prompt:${inputTokens}, completion:${outputTokens}, ` +
+      `cache_create:${cacheCreationTokens}, cache_read:${cacheReadTokens}}`
   );
-  return result;
+
+  return {
+    id,
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: textOutput },
+        finish_reason: finishReason,
+      },
+    ],
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+      // Tokens de caching (não no tipo InvokeResult, mas Langfuse pode logar)
+      cache_creation_input_tokens: cacheCreationTokens,
+      cache_read_input_tokens: cacheReadTokens,
+    } as InvokeResult["usage"],
+  };
 }
 
 /**
