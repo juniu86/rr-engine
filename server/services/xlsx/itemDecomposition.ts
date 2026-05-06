@@ -73,7 +73,10 @@ export function decomposeUnitCosts(item: RawItem): DecomposedItem {
   const sumComponents = matRaw + moRaw + logRaw;
 
   // Caso A: agente decompôs e a conta bate (dentro de R$ 0,02).
-  if (sumComponents > 0 && Math.abs(sumComponents - totalRaw) <= RECONCILIATION_TOLERANCE) {
+  if (
+    sumComponents > 0 &&
+    Math.abs(sumComponents - totalRaw) <= RECONCILIATION_TOLERANCE
+  ) {
     return {
       matUnit: round2(matRaw),
       moUnit: round2(moRaw),

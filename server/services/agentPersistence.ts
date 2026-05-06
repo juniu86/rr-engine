@@ -570,9 +570,7 @@ export async function persistAgentOutput(
     const weeksFromGestao =
       totalDays > 0 ? Math.max(1, Math.ceil(totalDays / 7)) : 0;
     const totalDuration =
-      weeksFromGestao > 0
-        ? weeksFromGestao
-        : finInput.cashFlow?.length || 4;
+      weeksFromGestao > 0 ? weeksFromGestao : finInput.cashFlow?.length || 4;
     if (weeksFromGestao > 0) {
       console.log(
         `[Financeiro] Cash flow expandido para ${weeksFromGestao} semanas (gestao.totalDuration=${totalDays} dias)`

@@ -17,10 +17,7 @@
  *     não capturou tudo.
  */
 
-import {
-  normalizeDescription,
-  tokenSimilarity,
-} from "../../agents/dedupUtils";
+import { normalizeDescription, tokenSimilarity } from "../../agents/dedupUtils";
 
 interface BudgetItemMin {
   description: string;
@@ -40,8 +37,15 @@ interface LogisticsCostMin {
   totalCost?: number | string | null;
 }
 
-/** Limiar mínimo de similaridade para considerar overlap entre as duas listas. */
-const OVERLAP_THRESHOLD = 0.7;
+/**
+ * Limiar mínimo de similaridade para considerar overlap entre as duas
+ * listas. Mais agressivo (0.6) que o threshold default do dedupItems
+ * (0.85): aqui o impacto de um falso positivo é só "item moveu de
+ * aba", não "item perdido". Pegamos casos como "Caçambas DE entulho"
+ * vs "Caçambas PARA entulho" — Jaccard ~0.67 (filtro >2 chars descarta
+ * "de", mantém "para"), abaixo do default mas ainda mesmo serviço.
+ */
+const OVERLAP_THRESHOLD = 0.6;
 
 /**
  * Palavras-chave (já normalizadas, sem acento) que sinalizam que um item
