@@ -513,6 +513,28 @@ export async function persistAgentOutput(
     } catch (err) {
       console.warn("[Auditor] Falha ao validar matemática server-side:", err);
     }
+
+    // P2 ADENDO (dedup semântica): se auditNotes menciona sobreposição
+    // mas budgetItemsToRemove vier vazio, o Auditor detectou o problema
+    // mas não tomou decisão acionável. Loga warning para visibilidade —
+    // few-shot no prompt deve eliminar isso ao longo do tempo.
+    try {
+      const notes = String(
+        (finalOutput as any)?.auditNotes ?? ""
+      ).toLowerCase();
+      const itemsToRemove =
+        (finalOutput as any)?.corrections?.budgetItemsToRemove ?? [];
+      const mentionsOverlap =
+        /sobrepos|escopo sobreposto|dupla cobran|dupla contagem/.test(notes);
+      if (mentionsOverlap && itemsToRemove.length === 0) {
+        console.warn(
+          `[Auditor] Inconsistência: auditNotes menciona sobreposição mas corrections.budgetItemsToRemove está vazio — ` +
+            `frontend não vai disparar AuditCorrectionsModal. Notes: "${String((finalOutput as any).auditNotes).slice(0, 200)}..."`
+        );
+      }
+    } catch {
+      /* noop — diagnóstico não pode quebrar persistência */
+    }
   }
 
   if (agentType === "gestao_projetos" && output?.schedule) {
