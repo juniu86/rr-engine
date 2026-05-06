@@ -43,10 +43,12 @@ describe("LLM Provider Capabilities", () => {
     });
 
     it("deve retornar tokens corretos para Claude variantes", () => {
-      expect(getMaxTokensForModel("claude-3-5-sonnet")).toBe(16384);
+      // Sprint-3: Sonnet subiu de 16384 → 65536 (Anthropic streaming + cronograma com 130+ itens estourava 32k).
+      // claude-3-5-sonnet bate em "claude" (não em "claude-sonnet" — não tem hífen na frente) → 65536.
+      expect(getMaxTokensForModel("claude-3-5-sonnet")).toBe(65536);
       expect(getMaxTokensForModel("claude-opus-4-20250514")).toBe(32768);
       expect(getMaxTokensForModel("claude-opus-4-6")).toBe(32768);
-      expect(getMaxTokensForModel("claude-sonnet-4-6")).toBe(16384);
+      expect(getMaxTokensForModel("claude-sonnet-4-6")).toBe(65536);
     });
 
     it("deve retornar 16384 para GPT", () => {
@@ -122,7 +124,8 @@ describe("LLM Provider Capabilities", () => {
 
     it("deve retornar capabilities completas para Claude Sonnet", () => {
       const caps = getProviderCapabilities("claude-sonnet-4-6");
-      expect(caps.maxOutputTokens).toBe(16384);
+      // Sprint-3: Sonnet subiu para 65536 (streaming + obras grandes).
+      expect(caps.maxOutputTokens).toBe(65536);
       expect(caps.supportsThinking).toBe(true);
       expect(caps.supportsStrictSchema).toBe(false);
       expect(caps.providerName).toBe("Anthropic Claude Sonnet");
