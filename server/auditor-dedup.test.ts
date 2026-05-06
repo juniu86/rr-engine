@@ -247,14 +247,21 @@ describe("AuditorAgent.execute (P2.6 — dedup determinístico)", () => {
     );
   };
 
-  it("sobrescreve corrections.budgetItemsToRemove com resultado determinístico", async () => {
-    // LLM "alucina" e devolve uma duplicata fictícia que NÃO existe.
+  it("merge LLM ∪ determinístico: ambos sobrevivem (P2 ADENDO atualiza P2.6)", async () => {
+    // P2.6 original sobrescrevia totalmente o output da LLM com o
+    // resultado determinístico — premissa: LLM podia alucinar, melhor
+    // descartar. P2 ADENDO inverteu a política para acomodar dedup
+    // SEMÂNTICA: LLM agora detecta sobreposições que Jaccard não pega
+    // (ex.: "Desativação" vs "Remoção corte içamento" — mesmo objeto,
+    // descrições lexicalmente distantes). Trade-off conhecido: itens
+    // novos da LLM podem ser falsos positivos, mas o usuário revisa
+    // via AuditCorrectionsModal antes de aplicar.
     mockForge({
       corrections: {
         budgetItemsToRemove: [
           {
-            description: "Item totalmente inventado pela LLM",
-            reason: "Alucinação",
+            description: "Item adicional detectado pela LLM",
+            reason: "Sobreposição semântica fora do alcance do Jaccard",
             estimatedImpact: 9_999,
           },
         ],
@@ -286,24 +293,19 @@ describe("AuditorAgent.execute (P2.6 — dedup determinístico)", () => {
     const auditor = new AuditorAgent();
     const out = await auditor.execute(baseAuditorInput(items, 3000, 500));
 
-    expect(out.corrections?.budgetItemsToRemove).toHaveLength(1);
-    expect(out.corrections?.budgetItemsToRemove?.[0].description).toMatch(
-      /Pintura acrílica|pintura acrilica/
-    );
-    expect(out.corrections?.budgetItemsToRemove?.[0].estimatedImpact).toBe(
-      1500
-    );
-    // Item alucinado pela LLM NÃO sobrevive
-    expect(
-      out.corrections?.budgetItemsToRemove?.some(c =>
-        c.description.includes("inventado")
-      )
-    ).toBe(false);
-    // Logística da LLM é preservada
+    // Determinístico (Pintura) + LLM (Item adicional) = 2 findings.
+    expect(out.corrections?.budgetItemsToRemove).toHaveLength(2);
+    const descs =
+      out.corrections?.budgetItemsToRemove?.map(c => c.description) ?? [];
+    expect(descs.some(d => /pintura/i.test(d))).toBe(true);
+    expect(descs.some(d => d.includes("Item adicional"))).toBe(true);
+
+    // Logística da LLM preservada
     expect(out.corrections?.logisticsToRemove).toEqual([]);
-    // Recálculos coerentes
-    expect(out.corrections?.totalImpact).toBe(1500);
-    expect(out.corrections?.correctedDirectCost).toBe(3000 - 1500);
+
+    // Total = 1500 (Pintura) + 9999 (LLM) = 11499
+    expect(out.corrections?.totalImpact).toBe(11499);
+    expect(out.corrections?.correctedDirectCost).toBe(3000 - 11499);
     expect(out.corrections?.correctedLogisticsCost).toBe(500);
   });
 

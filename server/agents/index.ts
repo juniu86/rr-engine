@@ -9,6 +9,22 @@ import {
   type DuplicateFinding,
   type AuditorBudgetItem,
 } from "./dedupUtils";
+
+/**
+ * P2 ADENDO (dedup semântica): normaliza description para deduplicar
+ * findings entre algoritmo determinístico e LLM. Lowercase + sem acentos
+ * + sem pontuação extra + collapse de espaços. Suficiente para detectar
+ * que "Item X" e "item X." referem-se ao mesmo registro.
+ */
+function normalizeForFindingDedup(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -2983,13 +2999,22 @@ export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
 
   /**
    * P0.4: chunking para auditar 100% dos itens em obras grandes.
+   *
    * P2.6: dedup determinístico (findBudgetDuplicates / findInvalidSummaryItems)
-   * roda ANTES da LLM sobre o orçamento completo, e o resultado sobrescreve
-   * `corrections.budgetItemsToRemove` no output final. A LLM mantém o papel
-   * narrativo (auditNotes, validações matemáticas, logisticsToRemove).
+   * roda ANTES da LLM sobre o orçamento completo. Pega duplicatas LEXICAIS
+   * (Jaccard ≥ 0.85) — ex.: "Pintura acrílica" / "pintura acrilica".
+   *
+   * P2 ADENDO (dedup semântica): a LLM detecta sobreposição SEMÂNTICA — itens
+   * descrevendo o mesmo objeto físico/serviço com vocabulário diferente
+   * (ex.: "Desativação completa" vs "Remoção corte içamento" — mesma obra,
+   * lexicalmente distantes). Antes a saída da LLM era totalmente descartada;
+   * agora `corrections.budgetItemsToRemove` é uma UNIÃO dos dois conjuntos
+   * (deterministico ∪ LLM, deduplicada por description normalizada). LLM
+   * mantém o papel narrativo (auditNotes, validações matemáticas,
+   * logisticsToRemove).
    *
    * Feature flag: AUDITOR_USE_LLM_DEDUP=true preserva o caminho legado
-   * (LLM detecta duplicatas) por 30 dias para comparação A/B.
+   * (LLM detecta tudo) por 30 dias para comparação A/B.
    */
   async execute(input: AuditorInput): Promise<AuditorOutput> {
     const {
@@ -3057,10 +3082,54 @@ export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
 
     if (useLlmDedup) return llmOutput;
 
-    // P2.6: sobrescreve corrections.budgetItemsToRemove com o resultado
-    // determinístico. Mantém logisticsToRemove da LLM (P2.6 não cobre
-    // logística — ainda exige inferência). Recalcula totalImpact e
-    // correctedDirectCost coerentes com a nova lista.
+    // P2 ADENDO: união determinístico ∪ LLM (semântico). Normaliza
+    // descrições para deduplicar — se o LLM sinalizou o mesmo item
+    // que o algoritmo, conta uma vez só.
+    const llmFindings = (llmOutput.corrections?.budgetItemsToRemove ??
+      []) as Array<{
+      description: string;
+      reason: string;
+      estimatedImpact: number;
+    }>;
+    const seenDescriptions = new Set<string>();
+    const mergedFindings: Array<{
+      description: string;
+      reason: string;
+      estimatedImpact: number;
+    }> = [];
+
+    for (const d of deterministicDuplicates) {
+      const key = normalizeForFindingDedup(d.description);
+      if (seenDescriptions.has(key)) continue;
+      seenDescriptions.add(key);
+      mergedFindings.push({
+        description: d.description,
+        reason: d.reason,
+        estimatedImpact: d.estimatedImpact,
+      });
+    }
+    let llmAdded = 0;
+    for (const f of llmFindings) {
+      const key = normalizeForFindingDedup(f.description);
+      if (seenDescriptions.has(key)) continue;
+      seenDescriptions.add(key);
+      mergedFindings.push({
+        description: f.description,
+        reason: f.reason || "Sobreposição semântica detectada pelo Auditor",
+        estimatedImpact: Number(f.estimatedImpact) || 0,
+      });
+      llmAdded++;
+    }
+    if (llmAdded > 0) {
+      console.log(
+        `[Auditor] Dedup semântica: ${llmAdded} item(ns) adicional(is) detectado(s) pela LLM além do algoritmo determinístico`
+      );
+    }
+
+    const totalImpact = mergedFindings.reduce(
+      (s, f) => s + f.estimatedImpact,
+      0
+    );
     const logisticsToRemove = llmOutput.corrections?.logisticsToRemove ?? [];
     const logisticsImpact = logisticsToRemove.reduce(
       (s, l) => s + l.estimatedImpact,
@@ -3073,14 +3142,10 @@ export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
     return {
       ...llmOutput,
       corrections: {
-        budgetItemsToRemove: deterministicDuplicates.map(d => ({
-          description: d.description,
-          reason: d.reason,
-          estimatedImpact: d.estimatedImpact,
-        })),
+        budgetItemsToRemove: mergedFindings,
         logisticsToRemove,
-        totalImpact: deterministicTotalImpact + logisticsImpact,
-        correctedDirectCost: directCost - deterministicTotalImpact,
+        totalImpact: totalImpact + logisticsImpact,
+        correctedDirectCost: directCost - totalImpact,
         correctedLogisticsCost: logisticsCost - logisticsImpact,
       },
     };
@@ -3227,35 +3292,100 @@ NÃO crie validações com \`expected: ""\` ou \`actual: ""\`. NÃO marque
 
 Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da proposta ser enviada ao cliente.
 
-=== DUPLICATAS NO ORÇAMENTO (P2.6 — PRÉ-COMPUTADO) ===
-A detecção de duplicatas é feita ANTES desta chamada por algoritmo
-determinístico (P1.3 + P2.6). Você recebe a lista já identificada em
-\`_preComputed.duplicates\`. NÃO tente detectar duplicatas adicionais
-no orçamento — o caller sobrescreve corrections.budgetItemsToRemove com
-o resultado do algoritmo, ignorando o que você colocar lá.
+=== DUPLICATAS NO ORÇAMENTO (P2.6 + P2 ADENDO) ===
 
-Sua tarefa relativa às duplicatas: gerar \`auditNotes\` resumindo o que
-o algoritmo encontrou (quantos itens, impacto total, padrão recorrente
-se houver) e ajustar \`auditSeal\` conforme regra abaixo.
+DOIS CAMINHOS atuam em paralelo:
+
+(A) **Determinístico** (já calculado): você recebe em \`_preComputed.duplicates\`
+a lista de duplicatas LEXICAIS encontradas por algoritmo Jaccard ≥ 0.85
+(itens com descrição idêntica/quase-idêntica, ex.: "Pintura acrílica" vs
+"pintura acrilica"). NÃO replique essa lista — o caller já vai incluí-la.
+
+(B) **Semântico (sua responsabilidade)**: itens que descrevem o MESMO
+objeto físico ou serviço com vocabulário diferente. Ex.: "Desativação"
+vs "Remoção corte içamento" — escopos sobrepostos, lexicalmente distantes,
+o algoritmo determinístico NÃO pega.
+
+REGRA CRÍTICA — DECISÃO É OBRIGATÓRIA:
+
+Ao detectar sobreposição semântica entre 2+ itens (mesmo objeto físico
+ou serviço com descrições diferentes), você DEVE:
+
+1. Escolher 1 item para manter (o mais completo/específico, ou o de
+   menor custo se equivalentes).
+2. Adicionar os outros em \`corrections.budgetItemsToRemove[]\` com a
+   description EXATA como aparece no orçamento e a reason explicando
+   a sobreposição.
+3. Calcular \`estimatedImpact\` (valor do item removido).
+4. Adicionar uma \`validation\` com \`rule: "scope_overlap_decision"\`,
+   \`severity: "critical"\`, \`passed: false\`, descrevendo o gap.
+
+NÃO mencione sobreposições APENAS em \`auditNotes\` — texto livre não
+chega ao usuário (frontend só dispara o modal de correção quando o
+array \`budgetItemsToRemove\` tem itens). O caller faz UNIÃO da lista
+determinística com a sua — sem redundância, mas sua decisão de remoção
+chega no usuário.
+
+EXEMPLO DE SOBREPOSIÇÃO SEMÂNTICA E DECISÃO:
+
+Input: 3 itens orçamentários:
+- Item 2: "Desativação completa: esgotamento, drenagem, inertização N₂, desgaseificação, limpeza interna" — R$ 38.000
+- Item 3: "Remoção dos 2 tanques: corte, içamento, transporte interno e destinação" — R$ 25.000
+- Item 30: "Remoção de 2 tanques: acessórios, bases, fixações, desgaseificação e preparação" — R$ 24.000
+
+Decisão correta:
+- MANTER item 2 (escopo mais completo — engloba desativação física).
+- REMOVER itens 3 e 30 (subconjuntos do item 2).
+- Output esperado:
+\`\`\`json
+{
+  "corrections": {
+    "budgetItemsToRemove": [
+      {
+        "description": "Remoção dos 2 tanques: corte, içamento, transporte interno e destinação",
+        "reason": "Sobreposição semântica com Item 2 (desativação completa) — corte e içamento estão dentro do escopo de desativação",
+        "estimatedImpact": 25000
+      },
+      {
+        "description": "Remoção de 2 tanques: acessórios, bases, fixações, desgaseificação e preparação",
+        "reason": "Sobreposição semântica com Item 2 — desgaseificação e preparação já estão no item 2",
+        "estimatedImpact": 24000
+      }
+    ],
+    "logisticsToRemove": []
+  },
+  "validations": [
+    {
+      "rule": "scope_overlap_decision",
+      "description": "Sobreposição de escopo: remoção de tanques",
+      "expected": "1 item descritivo único",
+      "actual": "3 itens com escopo sobreposto (R$ 87.000 total, R$ 38.000 efetivo)",
+      "passed": false,
+      "severity": "critical",
+      "recommendation": "Aprovar remoção via AuditCorrectionsModal"
+    }
+  ]
+}
+\`\`\`
 
 === MODO EDITOR-CHEFE — LOGÍSTICA (v3.2) ===
-PREENCHA corrections.logisticsToRemove com custos logísticos sobrepostos
-(esta detecção CONTINUA via LLM — exige inferência sobre composições):
+PREENCHA corrections.logisticsToRemove com custos logísticos sobrepostos:
 - Frete já embutido em composições SINAPI (até 30km)
 - Equipamentos já inclusos nas composições (betoneira, serra)
 - Limpeza que já aparece como item orçamentário
 - Para cada: description, reason, estimatedImpact
 
-NÃO PREENCHA corrections.budgetItemsToRemove — será sobrescrito pelo
-caller com o resultado determinístico. Pode retornar array vazio.
-NÃO PREENCHA corrections.totalImpact / correctedDirectCost /
-correctedLogisticsCost — também recalculados pelo caller.
+NÃO PREENCHA \`corrections.totalImpact\` / \`correctedDirectCost\` /
+\`correctedLogisticsCost\` — recalculados pelo caller após união
+determinístico ∪ semântico.
 
 REGRA DE SELO:
-- Se _preComputed.duplicates não estiver vazio MAS sem erros não-corrigíveis
-  → auditSeal = "approved_with_warnings"
-- Se _preComputed.duplicates estiver vazio E tudo consistente → auditSeal = "approved"
-- SOMENTE use auditSeal = "rejected" para erros NÃO-CORRIGÍVEIS (margem negativa, dados faltantes).`;
+- Se há itens em \`_preComputed.duplicates\` OU se você populou
+  \`budgetItemsToRemove\` com sobreposição semântica MAS sem erros
+  não-corrigíveis → \`auditSeal: "approved_with_warnings"\`.
+- Se nenhum dos dois e tudo consistente → \`auditSeal: "approved"\`.
+- SOMENTE use \`"rejected"\` para erros NÃO-CORRIGÍVEIS (margem
+  negativa, dados faltantes).`;
   }
 
   getUserPrompt(input: AuditorInput): string {
