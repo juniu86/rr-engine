@@ -760,7 +760,13 @@ function generateMemoriaXLSX(
   XLSX.utils.book_append_sheet(wb, wsLogistica, "Custos Logísticos");
   
   // === Planilha 3: Fluxo de Caixa ===
-  const fluxoData = [
+  // P2 XLSX refactor (P0.3 + P3.1) — N linhas (1 por semana) baseado em
+  // gestao.totalDuration (convertido pra semanas em agentPersistence).
+  // Antes: 4 pulsos gigantes. Agora: 1 linha/semana com Saldo Acumulado
+  // calculado via fórmula `=anterior + receita - despesa`. Alerta vermelho
+  // (SIM) sinaliza descoberto — capital de giro necessário.
+  const FLUXO_HEADER_ROW_INDEX = 3; // 1-based
+  const fluxoData: any[][] = [
     ["FLUXO DE CAIXA"],
     [],
     ["Semana", "Despesas", "Receitas", "Saldo Acumulado", "Alerta"],
@@ -773,8 +779,29 @@ function generateMemoriaXLSX(
     ]),
   ];
   const wsFluxo = XLSX.utils.aoa_to_sheet(fluxoData);
+
+  // P2 XLSX refactor (P1.4) — Saldo Acumulado vira fórmula:
+  // primeira linha: =C_n - B_n; demais: =D_anterior + C_n - B_n.
+  // Procurement consegue mexer numa despesa/receita e ver propagar.
+  for (let i = 0; i < cashFlowItems.length; i++) {
+    const rowNum = FLUXO_HEADER_ROW_INDEX + 1 + i;
+    const saldoAddr = XLSX.utils.encode_cell({ c: 3, r: rowNum - 1 });
+    const cell = wsFluxo[saldoAddr];
+    if (cell) {
+      cell.f =
+        i === 0
+          ? `C${rowNum}-B${rowNum}`
+          : `D${rowNum - 1}+C${rowNum}-B${rowNum}`;
+      cell.t = "n";
+    }
+  }
+
   wsFluxo["!cols"] = [
-    { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 8 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 10 },
   ];
   XLSX.utils.book_append_sheet(wb, wsFluxo, "Fluxo de Caixa");
   
