@@ -2,6 +2,10 @@ import { storagePut } from "../storage";
 import { createGeneratedDocument } from "../db";
 import type { Project, BudgetItem } from "../../drizzle/schema";
 import * as XLSX from "xlsx";
+import {
+  decomposeUnitCosts,
+  type DecomposedItem,
+} from "./xlsx/itemDecomposition";
 
 /** Escape HTML special characters to prevent XSS in generated documents */
 function escapeHtml(str: string | null | undefined): string {
@@ -468,6 +472,29 @@ function toRoman(num: number): string {
   return result;
 }
 
+/** P2 XLSX refactor — round to 2 decimals (avoid IEEE 754 noise). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * P2 XLSX refactor — anota na coluna "Premissa" como o templater
+ * decompôs Mat/MO/Log, para auditoria de procurement entender de
+ * onde vem cada valor.
+ */
+function decompositionPremise(d: DecomposedItem): string {
+  switch (d.source) {
+    case "decomposed":
+      return "";
+    case "reconciled":
+      return "Componentes reconciliados (delta absorvido em Logística)";
+    case "synthesized-mat-mo":
+      return "Componentes sintetizados (60% material / 40% M.O.)";
+    case "synthesized-mat-mo-log":
+      return "Componentes sintetizados (30% material / 30% M.O. / 40% logística)";
+  }
+}
+
 // Generate real XLSX format using SheetJS library
 function generateMemoriaXLSX(
   project: Project,
@@ -497,59 +524,166 @@ function generateMemoriaXLSX(
     totalFinal = custoBase + totalBdi;
   }
   
-  // Calcular preços proporcionais
-  const markupFactor = totalDirect > 0 ? totalFinal / totalDirect : 1;
-  const itemsWithProportionalPrices = budgetItems.map(item => {
-    const quantity = Number(item.quantity || 0);
-    const unitCost = Number(item.unitCostTotal || 0);
-    const itemTotalCost = quantity * unitCost;
-    const proportionalPrice = itemTotalCost * markupFactor;
-    const proportionalBdi = proportionalPrice - itemTotalCost;
-    return { ...item, proportionalPrice, proportionalBdi };
+  // P2 XLSX refactor — markup que dilui BDI nos preços unitários.
+  // Cada Mat/MO/Log unitário sai com BDI embutido; Custo Total da linha
+  // = Qtd × (Mat + MO + Log) com fórmula nativa Excel. Procurement
+  // consegue auditar célula a célula sem recalcular fora da planilha.
+  const baseCost = totalDirect + totalLogistics;
+  const markupFactor = baseCost > 0 ? totalFinal / baseCost : 1;
+
+  // P2 XLSX refactor — normaliza decomposição por item antes de escrever.
+  // decomposeUnitCosts garante mat+mo+log == totalUnit (caso "reconciled")
+  // ou sintetiza split quando vieram zerados (caso "synthesized-*").
+  const decomposed: Array<{
+    item: BudgetItem;
+    decomp: DecomposedItem;
+    matUnitWithBdi: number;
+    moUnitWithBdi: number;
+    logUnitWithBdi: number;
+    totalUnitWithBdi: number;
+  }> = budgetItems.map(item => {
+    const decomp = decomposeUnitCosts(item);
+    return {
+      item,
+      decomp,
+      matUnitWithBdi: round2(decomp.matUnit * markupFactor),
+      moUnitWithBdi: round2(decomp.moUnit * markupFactor),
+      logUnitWithBdi: round2(decomp.logUnit * markupFactor),
+      totalUnitWithBdi: round2(decomp.totalUnit * markupFactor),
+    };
   });
-  
-  console.log('[Memória de Cálculo] Valores calculados:');
+
+  const sourceCounts = decomposed.reduce(
+    (acc, d) => {
+      acc[d.decomp.source] = (acc[d.decomp.source] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+
+  console.log("[Memória de Cálculo] Valores calculados:");
   console.log(`  - Custo Direto: R$ ${totalDirect.toFixed(2)}`);
   console.log(`  - Custo Logística: R$ ${totalLogistics.toFixed(2)}`);
   console.log(`  - Preço Final: R$ ${totalFinal.toFixed(2)}`);
-  
+  console.log(
+    `  - Markup factor (BDI dilution): ${markupFactor.toFixed(4)} (${((markupFactor - 1) * 100).toFixed(1)}% sobre custo base)`
+  );
+  console.log(
+    `  - Decomposição: ${JSON.stringify(sourceCounts)} (${decomposed.length} itens)`
+  );
+
   // Criar workbook usando SheetJS
   const wb = XLSX.utils.book_new();
-  
+
   // === Planilha 1: Orçamento Detalhado ===
+  // Layout (BDI diluído — sem coluna BDI/Preço Final separadas, P1.3):
+  //   A: Item | B: Código | C: Descrição | D: Unid. | E: Qtd. |
+  //   F: Custo Material (unit, com BDI) | G: Custo M.O. (unit, com BDI) |
+  //   H: Custo Logística (unit, com BDI) | I: Custo Total (=E*(F+G+H)) |
+  //   J: Impostos | K: Fonte | L: Cód. Fonte | M: Premissa
+  const HEADER_ROW_INDEX = 4; // 1-based (linha 4 = "Item, Código, ...")
   const orcamentoData = [
     [`MEMÓRIA DE CÁLCULO - ${project.name}`],
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [],
-    ["Item", "Código", "Descrição", "Unid.", "Qtd.", "Custo Material", "Custo M.O.", "Custo Logística", "Custo Total", "Impostos", "BDI", "Preço Final", "Fonte", "Cód. Fonte"],
-    ...itemsWithProportionalPrices.map((item, index) => [
+    [
+      "Item",
+      "Código",
+      "Descrição",
+      "Unid.",
+      "Qtd.",
+      "Custo Material",
+      "Custo M.O.",
+      "Custo Logística",
+      "Custo Total",
+      "Impostos",
+      "Fonte",
+      "Cód. Fonte",
+      "Premissa",
+    ],
+    ...decomposed.map((d, index) => [
       index + 1,
-      item.code || "",
-      item.description,
-      item.unit || "",
-      Number(item.quantity || 0),
-      Number(item.unitCostMaterial || 0),
-      Number(item.unitCostLabor || 0),
-      Number(item.unitCostLogistics || 0),
-      Number(item.totalCost || 0),
-      Number(item.taxAmount || 0),
-      Number(item.proportionalBdi.toFixed(2)),
-      Number(item.proportionalPrice.toFixed(2)),
-      item.source || "",
-      item.sourceCode || "",
+      d.item.code || "",
+      d.item.description,
+      d.item.unit || "",
+      Number(d.item.quantity || 0),
+      d.matUnitWithBdi,
+      d.moUnitWithBdi,
+      d.logUnitWithBdi,
+      // I: total da linha — vai virar fórmula Excel após aoa_to_sheet.
+      // O número fica como fallback caso o cliente não suporte recálculo.
+      round2(Number(d.item.quantity || 0) * d.totalUnitWithBdi),
+      Number(d.item.taxAmount || 0),
+      d.item.source || "",
+      d.item.sourceCode || "",
+      decompositionPremise(d.decomp),
     ]),
     [],
-    ["TOTAL CUSTO DIRETO (Materiais + M.O.)", "", "", "", "", "", "", "", totalDirect],
-    ["TOTAL CUSTOS LOGÍSTICOS", "", "", "", "", "", "", "", totalLogistics],
-    ["CUSTO BASE (Direto + Logística)", "", "", "", "", "", "", "", custoBase],
-    ["BDI (Administração + Lucro + Tributos)", "", "", "", "", "", "", "", totalBdi],
-    ["PREÇO FINAL DE VENDA", "", "", "", "", "", "", "", totalFinal],
+    [
+      "TOTAL CUSTO DIRETO (com BDI diluído)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      totalDirect * markupFactor,
+    ],
+    [
+      "TOTAL CUSTOS LOGÍSTICOS (com BDI diluído)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      totalLogistics * markupFactor,
+    ],
+    [
+      "PREÇO FINAL DE VENDA",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      totalFinal,
+    ],
   ];
   const wsOrcamento = XLSX.utils.aoa_to_sheet(orcamentoData);
+
+  // P2 XLSX refactor (P0.1 + P1.4) — substitui valor de Custo Total por
+  // fórmula Excel nativa `=E_n * (F_n + G_n + H_n)`. Garante que mexer
+  // em quantidade ou componente propaga via planilha. Mantém o número
+  // calculado como fallback (cell.v) — clientes que não recalculam
+  // ainda enxergam o valor.
+  for (let i = 0; i < decomposed.length; i++) {
+    const rowNum = HEADER_ROW_INDEX + 1 + i; // 1-based, primeira linha de item
+    const totalCellAddr = XLSX.utils.encode_cell({ c: 8, r: rowNum - 1 }); // I
+    const totalCell = wsOrcamento[totalCellAddr];
+    if (totalCell) {
+      totalCell.f = `E${rowNum}*(F${rowNum}+G${rowNum}+H${rowNum})`;
+      totalCell.t = "n";
+    }
+  }
+
   wsOrcamento["!cols"] = [
-    { wch: 6 }, { wch: 12 }, { wch: 40 }, { wch: 8 }, { wch: 8 },
-    { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
-    { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+    { wch: 6 }, // A: Item
+    { wch: 14 }, // B: Código
+    { wch: 70 }, // C: Descrição (P2.1 — antes 216,8 pt; agora ~70 chars)
+    { wch: 8 }, // D: Unid.
+    { wch: 8 }, // E: Qtd.
+    { wch: 14 }, // F: Custo Material
+    { wch: 14 }, // G: Custo M.O.
+    { wch: 14 }, // H: Custo Logística
+    { wch: 14 }, // I: Custo Total
+    { wch: 12 }, // J: Impostos
+    { wch: 12 }, // K: Fonte
+    { wch: 14 }, // L: Cód. Fonte
+    { wch: 30 }, // M: Premissa
   ];
   XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento Detalhado");
   
