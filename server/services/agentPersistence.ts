@@ -342,6 +342,10 @@ export async function persistAgentOutput(
     // Auditor está marcando falsos positivos (passed=false em validações cuja
     // matemática bate). Recalculamos as 3 mais comuns server-side e sobrescrevemos
     // `passed` quando valores batem dentro de tolerância de 1%.
+    //
+    // P2 (estabilidade prompts): instrumenta log explícito de quantas
+    // validações precisaram de override server-side. Few-shot no prompt
+    // deve reduzir esse número ao longo do tempo.
     try {
       const orcExec = opts.executions?.find((e: any) => e.agentType === 'orcamentista');
       const logExec = opts.executions?.find((e: any) => e.agentType === 'logistica');
@@ -430,8 +434,24 @@ export async function persistAgentOutput(
           _serverOverrides: overrides,
         };
         console.log(
-          `[Auditor] Server override: ${overrides} validações reclassificadas como passed. ` +
+          `[Auditor] Override aplicado em ${overrides} validações. ` +
             `Score ajustado: ${newScore}, seal: ${newSeal}`
+        );
+      } else {
+        // P2 (estabilidade prompts): log positivo quando zero overrides.
+        // Em produção, taxa alta desse caminho indica que few-shot estabilizou
+        // o Auditor e que o normalizador server-side virou redundante.
+        const total = (finalOutput.validations as any[]).length;
+        const allHaveValues = (finalOutput.validations as any[]).every(
+          (v: any) =>
+            typeof v.expected === 'string' &&
+            v.expected.length > 0 &&
+            typeof v.actual === 'string' &&
+            v.actual.length > 0
+        );
+        console.log(
+          `[Auditor] Schema OK (0 overrides, ${total} validações, ` +
+            `expected/actual preenchidos: ${allHaveValues ? 'sim' : 'parcial'})`
         );
       }
     } catch (err) {
