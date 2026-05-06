@@ -554,10 +554,33 @@ export async function persistAgentOutput(
       ? Number((tributarioExec.output as any).totalTaxes) || 0
       : 0;
 
+    // P2 XLSX refactor (P0.3) — duração real vem do agente Gestão de
+    // Projetos (campo totalDuration em DIAS, ou totalDays). Convertemos
+    // pra semanas (ceil) para alimentar deterministicCashFlow, que então
+    // expande pra N linhas semanais. Sem isso, finInput.cashFlow?.length
+    // costuma vir 4 (LLM trunca) e o fluxo de caixa saía com 4 pulsos
+    // gigantes em vez de cronograma físico-financeiro real.
+    const gestaoExec = opts.executions?.find(
+      (e: any) => e.agentType === "gestao_projetos"
+    );
+    const gestaoOutput = (gestaoExec?.output as any) || {};
+    const totalDays = Number(
+      gestaoOutput.totalDuration ?? gestaoOutput.totalDays ?? 0
+    );
+    const weeksFromGestao =
+      totalDays > 0 ? Math.max(1, Math.ceil(totalDays / 7)) : 0;
+    const totalDuration =
+      weeksFromGestao > 0 ? weeksFromGestao : finInput.cashFlow?.length || 4;
+    if (weeksFromGestao > 0) {
+      console.log(
+        `[Financeiro] Cash flow expandido para ${weeksFromGestao} semanas (gestao.totalDuration=${totalDays} dias)`
+      );
+    }
+
     const deterministicResult = calculateDeterministicCashFlow({
       totalCost: finInput.totalCost || 0,
       totalPrice: finInput.totalPrice || 0,
-      totalDuration: finInput.cashFlow?.length || 4,
+      totalDuration,
       totalTaxes,
     });
 

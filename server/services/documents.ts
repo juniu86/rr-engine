@@ -2,16 +2,21 @@ import { storagePut } from "../storage";
 import { createGeneratedDocument } from "../db";
 import type { Project, BudgetItem } from "../../drizzle/schema";
 import * as XLSX from "xlsx";
+import {
+  decomposeUnitCosts,
+  type DecomposedItem,
+} from "./xlsx/itemDecomposition";
+import { splitBudgetAndLogistics } from "./xlsx/budgetLogisticsSplit";
 
 /** Escape HTML special characters to prevent XSS in generated documents */
 function escapeHtml(str: string | null | undefined): string {
-  if (!str) return '';
+  if (!str) return "";
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // Interface para item com preço proporcional (sem mostrar custo aberto)
@@ -27,31 +32,31 @@ interface ProportionalItem {
 // O preço de venda total é distribuído proporcionalmente entre os itens com base no custo de cada um
 // A logística é embutida proporcionalmente em cada item
 function calculateProportionalPrices(
-  budgetItems: BudgetItem[], 
+  budgetItems: BudgetItem[],
   totalSalePrice: number,
   totalBaseCost: number // Custo base total (direto + logística) - usado apenas para validação
 ): ProportionalItem[] {
   // Calcular custo direto total de todos os itens
   const totalDirectCost = budgetItems.reduce((sum, item) => {
-    return sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0));
+    return sum + Number(item.quantity || 0) * Number(item.unitCostTotal || 0);
   }, 0);
-  
+
   if (totalDirectCost === 0) return [];
-  
+
   // O markup é calculado sobre o custo DIRETO para distribuir o preço de venda total
   // Isso garante que a soma dos preços dos itens = totalSalePrice
   // A logística e BDI são embutidos proporcionalmente em cada item
   const markupFactor = totalSalePrice / totalDirectCost;
-  
+
   return budgetItems.map(item => {
     const quantity = Number(item.quantity || 0);
     const unitCost = Number(item.unitCostTotal || 0);
-    
+
     // Preço unitário de venda = custo unitário * fator de markup
     // O fator de markup já inclui logística + BDI distribuídos proporcionalmente
     const unitPrice = unitCost * markupFactor;
     const totalPrice = quantity * unitPrice;
-    
+
     return {
       description: item.description,
       unit: item.unit || "un",
@@ -84,57 +89,81 @@ export async function generateProposalPDF(
 ): Promise<{ url: string; fileKey: string }> {
   // Calcular custo direto total (materiais + mão de obra)
   const totalDirectCost = budgetItems.reduce((sum, item) => {
-    return sum + (Number(item.quantity || 0) * Number(item.unitCostTotal || 0));
+    return sum + Number(item.quantity || 0) * Number(item.unitCostTotal || 0);
   }, 0);
-  
+
   // Calcular custo logístico total
-  const totalLogisticsCost = logisticsCosts.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
-  
+  const totalLogisticsCost = logisticsCosts.reduce(
+    (sum, item) => sum + Number(item.totalCost || 0),
+    0
+  );
+
   // Custo base total (direto + logística)
   const totalBaseCost = totalDirectCost + totalLogisticsCost;
-  
+
   // Calcular preço de venda já salvo nos items (com BDI configurado)
-  const totalFromItems = budgetItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0);
-  
+  const totalFromItems = budgetItems.reduce(
+    (sum, item) => sum + Number(item.finalPrice || 0),
+    0
+  );
+
   // Preço do agente comercial
   const comercialPrice = comercialOutput?.finalPrice || 0;
-  
+
   // BDI do agente comercial (se disponível) ou BDI configurado pela empresa
-  const bdiConfigurado = companySettings?.bdiPercentual ? parseFloat(companySettings.bdiPercentual) / 100 : 0.25;
+  const bdiConfigurado = companySettings?.bdiPercentual
+    ? parseFloat(companySettings.bdiPercentual) / 100
+    : 0.25;
   const comercialBdi = comercialOutput?.adjustedBdi || bdiConfigurado;
-  
-  console.log('[Proposta] Debug de valores:');
+
+  console.log("[Proposta] Debug de valores:");
   console.log(`  - Custo base total: R$ ${totalBaseCost.toFixed(2)}`);
   console.log(`  - Preço dos items: R$ ${totalFromItems.toFixed(2)}`);
   console.log(`  - Preço do agente comercial: R$ ${comercialPrice.toFixed(2)}`);
-  console.log(`  - BDI configurado pela empresa: ${(bdiConfigurado * 100).toFixed(1)}%`);
-  console.log(`  - BDI do agente comercial: ${(comercialBdi * 100).toFixed(1)}%`);
-  console.log(`  - Empresa: ${companySettings?.companyName || 'Não configurada'}`);
-  
+  console.log(
+    `  - BDI configurado pela empresa: ${(bdiConfigurado * 100).toFixed(1)}%`
+  );
+  console.log(
+    `  - BDI do agente comercial: ${(comercialBdi * 100).toFixed(1)}%`
+  );
+  console.log(
+    `  - Empresa: ${companySettings?.companyName || "Não configurada"}`
+  );
+
   // DETERMINAR O PREÇO DE VENDA CORRETO
   // Prioridade:
   // 1. Preço do agente comercial (se válido e dentro do range esperado)
   // 2. Preço dos items salvos (já com BDI de 55%)
   // 3. Recalcular com BDI padrão de 55%
-  
+
   // P0-1 FIX: Usar BDI dinâmico (configurado pela empresa) em vez de hardcoded 30%/100%
   let totalSalePrice: number;
   const minExpectedPrice = totalBaseCost * (1 + bdiConfigurado); // BDI mínimo = BDI configurado
   const maxExpectedPrice = totalBaseCost * (1 + bdiConfigurado * 3); // Máximo = 3x o BDI configurado
-  
-  if (comercialPrice > 0 && comercialPrice >= minExpectedPrice && comercialPrice <= maxExpectedPrice) {
+
+  if (
+    comercialPrice > 0 &&
+    comercialPrice >= minExpectedPrice &&
+    comercialPrice <= maxExpectedPrice
+  ) {
     // Preço comercial está dentro do range esperado - PRIORIDADE MÁXIMA
     totalSalePrice = comercialPrice;
-    console.log(`  - Usando preço comercial (dentro do range): R$ ${totalSalePrice.toFixed(2)}`);
+    console.log(
+      `  - Usando preço comercial (dentro do range): R$ ${totalSalePrice.toFixed(2)}`
+    );
   } else if (comercialPrice > 0 && comercialPrice > maxExpectedPrice) {
     // Preço comercial muito alto (possível duplicação) - recalcular com BDI configurado
     totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
-    console.log(`  - ALERTA: Preço comercial muito alto (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI ${(bdiConfigurado * 100).toFixed(1)}%: R$ ${totalSalePrice.toFixed(2)}`);
+    console.log(
+      `  - ALERTA: Preço comercial muito alto (R$ ${comercialPrice.toFixed(2)}), recalculando com BDI ${(bdiConfigurado * 100).toFixed(1)}%: R$ ${totalSalePrice.toFixed(2)}`
+    );
   } else if (comercialPrice > 0 && comercialPrice < minExpectedPrice) {
     // Preço comercial abaixo do BDI configurado - usar o preço comercial mesmo assim
     // O agente Comercial pode ter razões válidas para precificar abaixo (competitividade)
     totalSalePrice = comercialPrice;
-    console.log(`  - AVISO: Preço comercial abaixo do BDI configurado (R$ ${comercialPrice.toFixed(2)} < R$ ${minExpectedPrice.toFixed(2)}), usando preço comercial mesmo assim`);
+    console.log(
+      `  - AVISO: Preço comercial abaixo do BDI configurado (R$ ${comercialPrice.toFixed(2)} < R$ ${minExpectedPrice.toFixed(2)}), usando preço comercial mesmo assim`
+    );
   } else if (totalFromItems > 0) {
     // Sem preço comercial válido - usar preço dos items
     totalSalePrice = totalFromItems;
@@ -142,25 +171,38 @@ export async function generateProposalPDF(
   } else {
     // Fallback: recalcular com BDI configurado
     totalSalePrice = totalBaseCost * (1 + bdiConfigurado);
-    console.log(`  - Usando fallback (BDI ${(bdiConfigurado * 100).toFixed(1)}%): R$ ${totalSalePrice.toFixed(2)}`);
+    console.log(
+      `  - Usando fallback (BDI ${(bdiConfigurado * 100).toFixed(1)}%): R$ ${totalSalePrice.toFixed(2)}`
+    );
   }
-  
+
   // Calculate proportional prices (hides cost breakdown)
   // Passa o totalBaseCost para que a distribuição proporcional inclua logística
-  const proportionalItems = calculateProportionalPrices(budgetItems, totalSalePrice, totalBaseCost);
-  
+  const proportionalItems = calculateProportionalPrices(
+    budgetItems,
+    totalSalePrice,
+    totalBaseCost
+  );
+
   // Generate HTML content for the proposal
-  const htmlContent = generateProposalHTML(project, proportionalItems, totalSalePrice, juridicaOutput, companySettings, gestaoOutput);
-  
+  const htmlContent = generateProposalHTML(
+    project,
+    proportionalItems,
+    totalSalePrice,
+    juridicaOutput,
+    companySettings,
+    gestaoOutput
+  );
+
   // Convert to PDF bytes
   const pdfBuffer = Buffer.from(htmlContent, "utf-8");
-  
+
   const timestamp = Date.now();
   const fileName = `proposta_${project.name.replace(/\s+/g, "_")}_${timestamp}.html`;
   const fileKey = `proposals/${project.id}/${fileName}`;
-  
+
   const { url } = await storagePut(fileKey, pdfBuffer, "text/html");
-  
+
   // Save document reference
   await createGeneratedDocument({
     projectId: project.id,
@@ -170,7 +212,7 @@ export async function generateProposalPDF(
     fileKey,
     version: 1,
   });
-  
+
   return { url, fileKey };
 }
 
@@ -183,14 +225,24 @@ export async function generateMemoriaCalculo(
   comercialOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
   // Generate real XLSX using SheetJS library
-  const xlsxBuffer = generateMemoriaXLSX(project, budgetItems, logisticsCosts, cashFlowItems, comercialOutput);
-  
+  const xlsxBuffer = generateMemoriaXLSX(
+    project,
+    budgetItems,
+    logisticsCosts,
+    cashFlowItems,
+    comercialOutput
+  );
+
   const timestamp = Date.now();
   const fileName = `memoria_calculo_${project.name.replace(/\s+/g, "_")}_${timestamp}.xlsx`;
   const fileKey = `memorias/${project.id}/${fileName}`;
-  
-  const { url } = await storagePut(fileKey, xlsxBuffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  
+
+  const { url } = await storagePut(
+    fileKey,
+    xlsxBuffer,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+
   // Save document reference
   await createGeneratedDocument({
     projectId: project.id,
@@ -200,26 +252,31 @@ export async function generateMemoriaCalculo(
     fileKey,
     version: 1,
   });
-  
+
   return { url, fileKey };
 }
 
 // Generate HTML content for proposal with proportional prices
 function generateProposalHTML(
-  project: Project, 
-  items: ProportionalItem[], 
+  project: Project,
+  items: ProportionalItem[],
   totalSalePrice: number,
   juridicaOutput: any,
   companySettings?: CompanySettings,
   gestaoOutput?: any
 ): string {
-  const companyName = companySettings?.companyName || 'RR Engenharia';
-  const companyCnpj = companySettings?.cnpj || '';
-  
+  const companyName = companySettings?.companyName || "RR Engenharia";
+  const companyCnpj = companySettings?.cnpj || "";
+
   // Calcular prazo correto a partir do cronograma (em dias úteis)
-  const totalDays = gestaoOutput?.totalDays || gestaoOutput?.totalDuration * 5 || 0;
+  const totalDays =
+    gestaoOutput?.totalDays || gestaoOutput?.totalDuration * 5 || 0;
   const totalWeeks = totalDays > 0 ? Math.ceil(totalDays / 5) : null;
-  const prazoExecucao = totalWeeks ? `${totalWeeks} semanas (${totalDays} dias úteis)` : (project.estimatedDuration ? `${project.estimatedDuration} semanas` : "A definir");
+  const prazoExecucao = totalWeeks
+    ? `${totalWeeks} semanas (${totalDays} dias úteis)`
+    : project.estimatedDuration
+      ? `${project.estimatedDuration} semanas`
+      : "A definir";
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -341,7 +398,7 @@ function generateProposalHTML(
     <div class="logo">${escapeHtml(companyName).toUpperCase()}</div>
     <h1>PROPOSTA COMERCIAL</h1>
     <p class="subtitle">Soluções em Construção Civil e Infraestrutura</p>
-    ${companyCnpj ? `<p class="subtitle">CNPJ: ${escapeHtml(companyCnpj)}</p>` : ''}
+    ${companyCnpj ? `<p class="subtitle">CNPJ: ${escapeHtml(companyCnpj)}</p>` : ""}
   </div>
 
   <div class="section">
@@ -385,7 +442,9 @@ function generateProposalHTML(
         </tr>
       </thead>
       <tbody>
-        ${items.map((item, index) => `
+        ${items
+          .map(
+            (item, index) => `
         <tr>
           <td>${index + 1}</td>
           <td>${escapeHtml(item.description)}</td>
@@ -394,7 +453,9 @@ function generateProposalHTML(
           <td class="price">R$ ${item.unitPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           <td class="price">R$ ${item.totalPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         </tr>
-        `).join("")}
+        `
+          )
+          .join("")}
         <tr class="total-row">
           <td colspan="5" style="text-align: right;">VALOR TOTAL DA PROPOSTA</td>
           <td class="price">R$ ${totalSalePrice.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
@@ -403,17 +464,25 @@ function generateProposalHTML(
     </table>
   </div>
 
-  ${juridicaOutput?.clauses ? `
+  ${
+    juridicaOutput?.clauses
+      ? `
   <div class="section">
     <h2>4. CONDIÇÕES GERAIS</h2>
-    ${juridicaOutput.clauses.map((clause: any, index: number) => `
+    ${juridicaOutput.clauses
+      .map(
+        (clause: any, index: number) => `
     <div class="clause">
       <h4>CLÁUSULA ${toRoman(index + 1)}: ${clause.title.toUpperCase()}</h4>
       <p>${clause.content}</p>
     </div>
-    `).join("")}
+    `
+      )
+      .join("")}
   </div>
-  ` : ""}
+  `
+      : ""
+  }
 
   <div class="section">
     <h2>5. VALIDADE DA PROPOSTA</h2>
@@ -456,7 +525,11 @@ function generateProposalHTML(
 // Convert number to Roman numeral
 function toRoman(num: number): string {
   const romanNumerals: [number, string][] = [
-    [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]
+    [10, "X"],
+    [9, "IX"],
+    [5, "V"],
+    [4, "IV"],
+    [1, "I"],
   ];
   let result = "";
   for (const [value, symbol] of romanNumerals) {
@@ -468,6 +541,29 @@ function toRoman(num: number): string {
   return result;
 }
 
+/** P2 XLSX refactor — round to 2 decimals (avoid IEEE 754 noise). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * P2 XLSX refactor — anota na coluna "Premissa" como o templater
+ * decompôs Mat/MO/Log, para auditoria de procurement entender de
+ * onde vem cada valor.
+ */
+function decompositionPremise(d: DecomposedItem): string {
+  switch (d.source) {
+    case "decomposed":
+      return "";
+    case "reconciled":
+      return "Componentes reconciliados (delta absorvido em Logística)";
+    case "synthesized-mat-mo":
+      return "Componentes sintetizados (60% material / 40% M.O.)";
+    case "synthesized-mat-mo-log":
+      return "Componentes sintetizados (30% material / 30% M.O. / 40% logística)";
+  }
+}
+
 // Generate real XLSX format using SheetJS library
 function generateMemoriaXLSX(
   project: Project,
@@ -476,19 +572,45 @@ function generateMemoriaXLSX(
   cashFlowItems: any[],
   comercialOutput?: any
 ): Buffer {
-  // Calculate totals
-  const totalDirect = budgetItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
-  const totalTax = budgetItems.reduce((sum, item) => sum + Number(item.taxAmount || 0), 0);
-  const totalLogistics = logisticsCosts.reduce((sum, cost) => sum + Number(cost.totalCost || 0), 0);
-  
+  // P2 XLSX refactor (P0.2 + P1.2 + P2.4) — separa itens logísticos do
+  // orçamento detalhado. Itens de budgetItems que sobrepõem com
+  // logisticsCosts (Jaccard ≥ 0.7) ou que têm cara de logística
+  // (frete, caçamba, container, taxa horário, etc) são movidos pra
+  // aba dedicada. Sem isso, a aba "Custos Logísticos" saía vazia e os
+  // mesmos itens apareciam no Orçamento Detalhado — procurement não
+  // conseguia renegociar por categoria.
+  const split = splitBudgetAndLogistics(budgetItems, logisticsCosts);
+  const cleanBudgetItems = split.cleanBudgetItems as typeof budgetItems;
+  const consolidatedLogistics = split.consolidatedLogistics;
+  if (split.stats.movedFromBudget > 0 || split.stats.duplicatesRemoved > 0) {
+    console.log(
+      `[Memória de Cálculo] Logística: ${split.stats.movedFromBudget} item(ns) movido(s) do orçamento, ` +
+        `${split.stats.duplicatesRemoved} duplicata(s) removida(s) (${split.stats.originalLogisticsCount} → ${consolidatedLogistics.length})`
+    );
+  }
+
+  // Calculate totals (após o split — totais refletem as listas corretas)
+  const totalDirect = cleanBudgetItems.reduce(
+    (sum, item) => sum + Number(item.totalCost || 0),
+    0
+  );
+  const totalTax = cleanBudgetItems.reduce(
+    (sum, item) => sum + Number(item.taxAmount || 0),
+    0
+  );
+  const totalLogistics = consolidatedLogistics.reduce(
+    (sum, cost) => sum + Number(cost.totalCost || 0),
+    0
+  );
+
   // CORREÇÃO CRÍTICA: Usar o preço final do agente Comercial como fonte única de verdade
   const custoBase = totalDirect + totalLogistics;
   const comercialFinalPrice = comercialOutput?.finalPrice || 0;
-  const comercialBdi = comercialOutput?.adjustedBdi || 0.30;
-  
+  const comercialBdi = comercialOutput?.adjustedBdi || 0.3;
+
   let totalFinal: number;
   let totalBdi: number;
-  
+
   if (comercialFinalPrice > 0 && comercialFinalPrice >= custoBase) {
     totalFinal = comercialFinalPrice;
     totalBdi = totalFinal - custoBase;
@@ -496,87 +618,219 @@ function generateMemoriaXLSX(
     totalBdi = custoBase * comercialBdi;
     totalFinal = custoBase + totalBdi;
   }
-  
-  // Calcular preços proporcionais
-  const markupFactor = totalDirect > 0 ? totalFinal / totalDirect : 1;
-  const itemsWithProportionalPrices = budgetItems.map(item => {
-    const quantity = Number(item.quantity || 0);
-    const unitCost = Number(item.unitCostTotal || 0);
-    const itemTotalCost = quantity * unitCost;
-    const proportionalPrice = itemTotalCost * markupFactor;
-    const proportionalBdi = proportionalPrice - itemTotalCost;
-    return { ...item, proportionalPrice, proportionalBdi };
+
+  // P2 XLSX refactor — markup que dilui BDI nos preços unitários.
+  // Cada Mat/MO/Log unitário sai com BDI embutido; Custo Total da linha
+  // = Qtd × (Mat + MO + Log) com fórmula nativa Excel. Procurement
+  // consegue auditar célula a célula sem recalcular fora da planilha.
+  const baseCost = totalDirect + totalLogistics;
+  const markupFactor = baseCost > 0 ? totalFinal / baseCost : 1;
+
+  // P2 XLSX refactor — normaliza decomposição por item antes de escrever.
+  // decomposeUnitCosts garante mat+mo+log == totalUnit (caso "reconciled")
+  // ou sintetiza split quando vieram zerados (caso "synthesized-*").
+  const decomposed: Array<{
+    item: BudgetItem;
+    decomp: DecomposedItem;
+    matUnitWithBdi: number;
+    moUnitWithBdi: number;
+    logUnitWithBdi: number;
+    totalUnitWithBdi: number;
+  }> = cleanBudgetItems.map(item => {
+    const decomp = decomposeUnitCosts(item);
+    return {
+      item,
+      decomp,
+      matUnitWithBdi: round2(decomp.matUnit * markupFactor),
+      moUnitWithBdi: round2(decomp.moUnit * markupFactor),
+      logUnitWithBdi: round2(decomp.logUnit * markupFactor),
+      totalUnitWithBdi: round2(decomp.totalUnit * markupFactor),
+    };
   });
-  
-  console.log('[Memória de Cálculo] Valores calculados:');
+
+  const sourceCounts = decomposed.reduce(
+    (acc, d) => {
+      acc[d.decomp.source] = (acc[d.decomp.source] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+
+  console.log("[Memória de Cálculo] Valores calculados:");
   console.log(`  - Custo Direto: R$ ${totalDirect.toFixed(2)}`);
   console.log(`  - Custo Logística: R$ ${totalLogistics.toFixed(2)}`);
   console.log(`  - Preço Final: R$ ${totalFinal.toFixed(2)}`);
-  
+  console.log(
+    `  - Markup factor (BDI dilution): ${markupFactor.toFixed(4)} (${((markupFactor - 1) * 100).toFixed(1)}% sobre custo base)`
+  );
+  console.log(
+    `  - Decomposição: ${JSON.stringify(sourceCounts)} (${decomposed.length} itens)`
+  );
+
   // Criar workbook usando SheetJS
   const wb = XLSX.utils.book_new();
-  
+
   // === Planilha 1: Orçamento Detalhado ===
+  // Layout (BDI diluído — sem coluna BDI/Preço Final separadas, P1.3):
+  //   A: Item | B: Código | C: Descrição | D: Unid. | E: Qtd. |
+  //   F: Custo Material (unit, com BDI) | G: Custo M.O. (unit, com BDI) |
+  //   H: Custo Logística (unit, com BDI) | I: Custo Total (=E*(F+G+H)) |
+  //   J: Impostos | K: Fonte | L: Cód. Fonte | M: Premissa
+  const HEADER_ROW_INDEX = 4; // 1-based (linha 4 = "Item, Código, ...")
   const orcamentoData = [
     [`MEMÓRIA DE CÁLCULO - ${project.name}`],
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [],
-    ["Item", "Código", "Descrição", "Unid.", "Qtd.", "Custo Material", "Custo M.O.", "Custo Logística", "Custo Total", "Impostos", "BDI", "Preço Final", "Fonte", "Cód. Fonte"],
-    ...itemsWithProportionalPrices.map((item, index) => [
+    [
+      "Item",
+      "Código",
+      "Descrição",
+      "Unid.",
+      "Qtd.",
+      "Custo Material",
+      "Custo M.O.",
+      "Custo Logística",
+      "Custo Total",
+      "Impostos",
+      "Fonte",
+      "Cód. Fonte",
+      "Premissa",
+    ],
+    ...decomposed.map((d, index) => [
       index + 1,
-      item.code || "",
-      item.description,
-      item.unit || "",
-      Number(item.quantity || 0),
-      Number(item.unitCostMaterial || 0),
-      Number(item.unitCostLabor || 0),
-      Number(item.unitCostLogistics || 0),
-      Number(item.totalCost || 0),
-      Number(item.taxAmount || 0),
-      Number(item.proportionalBdi.toFixed(2)),
-      Number(item.proportionalPrice.toFixed(2)),
-      item.source || "",
-      item.sourceCode || "",
+      // P2 XLSX refactor (P2.3) — popula Código com sourceCode quando
+      // a coluna principal vier vazia mas há código SINAPI/PINI puro.
+      d.item.code ||
+        (d.item.source &&
+        ["sinapi", "pini", "tcpo"].includes(String(d.item.source).toLowerCase())
+          ? d.item.sourceCode || ""
+          : ""),
+      d.item.description,
+      d.item.unit || "",
+      Number(d.item.quantity || 0),
+      d.matUnitWithBdi,
+      d.moUnitWithBdi,
+      d.logUnitWithBdi,
+      // I: total da linha — vai virar fórmula Excel após aoa_to_sheet.
+      // O número fica como fallback caso o cliente não suporte recálculo.
+      round2(Number(d.item.quantity || 0) * d.totalUnitWithBdi),
+      Number(d.item.taxAmount || 0),
+      d.item.source || "",
+      d.item.sourceCode || "",
+      decompositionPremise(d.decomp),
     ]),
     [],
-    ["TOTAL CUSTO DIRETO (Materiais + M.O.)", "", "", "", "", "", "", "", totalDirect],
-    ["TOTAL CUSTOS LOGÍSTICOS", "", "", "", "", "", "", "", totalLogistics],
-    ["CUSTO BASE (Direto + Logística)", "", "", "", "", "", "", "", custoBase],
-    ["BDI (Administração + Lucro + Tributos)", "", "", "", "", "", "", "", totalBdi],
+    [
+      "TOTAL CUSTO DIRETO (com BDI diluído)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      totalDirect * markupFactor,
+    ],
+    [
+      "TOTAL CUSTOS LOGÍSTICOS (com BDI diluído)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      totalLogistics * markupFactor,
+    ],
     ["PREÇO FINAL DE VENDA", "", "", "", "", "", "", "", totalFinal],
   ];
   const wsOrcamento = XLSX.utils.aoa_to_sheet(orcamentoData);
+
+  // P2 XLSX refactor (P0.1 + P1.4) — substitui valor de Custo Total por
+  // fórmula Excel nativa `=E_n * (F_n + G_n + H_n)`. Garante que mexer
+  // em quantidade ou componente propaga via planilha. Mantém o número
+  // calculado como fallback (cell.v) — clientes que não recalculam
+  // ainda enxergam o valor.
+  for (let i = 0; i < decomposed.length; i++) {
+    const rowNum = HEADER_ROW_INDEX + 1 + i; // 1-based, primeira linha de item
+    const totalCellAddr = XLSX.utils.encode_cell({ c: 8, r: rowNum - 1 }); // I
+    const totalCell = wsOrcamento[totalCellAddr];
+    if (totalCell) {
+      totalCell.f = `E${rowNum}*(F${rowNum}+G${rowNum}+H${rowNum})`;
+      totalCell.t = "n";
+    }
+  }
+
   wsOrcamento["!cols"] = [
-    { wch: 6 }, { wch: 12 }, { wch: 40 }, { wch: 8 }, { wch: 8 },
-    { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
-    { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+    { wch: 6 }, // A: Item
+    { wch: 14 }, // B: Código
+    { wch: 70 }, // C: Descrição (P2.1 — antes 216,8 pt; agora ~70 chars)
+    { wch: 8 }, // D: Unid.
+    { wch: 8 }, // E: Qtd.
+    { wch: 14 }, // F: Custo Material
+    { wch: 14 }, // G: Custo M.O.
+    { wch: 14 }, // H: Custo Logística
+    { wch: 14 }, // I: Custo Total
+    { wch: 12 }, // J: Impostos
+    { wch: 12 }, // K: Fonte
+    { wch: 14 }, // L: Cód. Fonte
+    { wch: 30 }, // M: Premissa
   ];
   XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento Detalhado");
-  
+
   // === Planilha 2: Custos Logísticos ===
-  const logisticaData = [
+  // P2 XLSX refactor (P0.2 + P2.4) — consolidated inclui itens
+  // originalmente em logisticsCosts MAIS itens promovidos do orçamento
+  // detalhado (frete, container, taxa horário aeroportuário etc).
+  // Categoria padronizada via mapLogisticsCategory ou "outros".
+  const LOG_HEADER_ROW_INDEX = 3; // 1-based — linha 3 = "Categoria, Descrição, ..."
+  const logisticaData: any[][] = [
     ["CUSTOS LOGÍSTICOS"],
     [],
     ["Categoria", "Descrição", "Qtd.", "Unid.", "Custo Unit.", "Custo Total"],
-    ...logisticsCosts.map(cost => [
-      cost.category || "",
+    ...consolidatedLogistics.map(cost => [
+      cost.category || "outros",
       cost.description || "",
       Number(cost.quantity || 0),
-      cost.unit || "",
+      cost.unit || "un",
       Number(cost.unitCost || 0),
+      // Vai virar fórmula =Cn*En na pós-processamento abaixo.
       Number(cost.totalCost || 0),
     ]),
     [],
     ["TOTAL LOGÍSTICA", "", "", "", "", totalLogistics],
   ];
   const wsLogistica = XLSX.utils.aoa_to_sheet(logisticaData);
+
+  // P2 XLSX refactor (P1.4) — Custo Total (col F) por linha = qty × unitCost.
+  for (let i = 0; i < consolidatedLogistics.length; i++) {
+    const rowNum = LOG_HEADER_ROW_INDEX + 1 + i;
+    const totalAddr = XLSX.utils.encode_cell({ c: 5, r: rowNum - 1 });
+    const cell = wsLogistica[totalAddr];
+    if (cell) {
+      cell.f = `C${rowNum}*E${rowNum}`;
+      cell.t = "n";
+    }
+  }
+
   wsLogistica["!cols"] = [
-    { wch: 18 }, { wch: 40 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+    { wch: 18 },
+    { wch: 60 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 14 },
+    { wch: 14 },
   ];
   XLSX.utils.book_append_sheet(wb, wsLogistica, "Custos Logísticos");
-  
+
   // === Planilha 3: Fluxo de Caixa ===
-  const fluxoData = [
+  // P2 XLSX refactor (P0.3 + P3.1) — N linhas (1 por semana) baseado em
+  // gestao.totalDuration (convertido pra semanas em agentPersistence).
+  // Antes: 4 pulsos gigantes. Agora: 1 linha/semana com Saldo Acumulado
+  // calculado via fórmula `=anterior + receita - despesa`. Alerta vermelho
+  // (SIM) sinaliza descoberto — capital de giro necessário.
+  const FLUXO_HEADER_ROW_INDEX = 3; // 1-based
+  const fluxoData: any[][] = [
     ["FLUXO DE CAIXA"],
     [],
     ["Semana", "Despesas", "Receitas", "Saldo Acumulado", "Alerta"],
@@ -589,11 +843,32 @@ function generateMemoriaXLSX(
     ]),
   ];
   const wsFluxo = XLSX.utils.aoa_to_sheet(fluxoData);
+
+  // P2 XLSX refactor (P1.4) — Saldo Acumulado vira fórmula:
+  // primeira linha: =C_n - B_n; demais: =D_anterior + C_n - B_n.
+  // Procurement consegue mexer numa despesa/receita e ver propagar.
+  for (let i = 0; i < cashFlowItems.length; i++) {
+    const rowNum = FLUXO_HEADER_ROW_INDEX + 1 + i;
+    const saldoAddr = XLSX.utils.encode_cell({ c: 3, r: rowNum - 1 });
+    const cell = wsFluxo[saldoAddr];
+    if (cell) {
+      cell.f =
+        i === 0
+          ? `C${rowNum}-B${rowNum}`
+          : `D${rowNum - 1}+C${rowNum}-B${rowNum}`;
+      cell.t = "n";
+    }
+  }
+
   wsFluxo["!cols"] = [
-    { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 8 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 10 },
   ];
   XLSX.utils.book_append_sheet(wb, wsFluxo, "Fluxo de Caixa");
-  
+
   // === Planilha 4: Resumo ===
   const resumoData = [
     ["RESUMO DO ORÇAMENTO"],
@@ -601,29 +876,73 @@ function generateMemoriaXLSX(
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [],
     ["Descrição", "Valor"],
-    ["Custo Direto (Materiais + M.O.)", totalDirect],
-    ["Custos Logísticos", totalLogistics],
-    ["CUSTO BASE (Direto + Logística)", custoBase],
+    // P2 XLSX refactor (P1.3) — BDI diluído nos preços unitários do
+    // Orçamento Detalhado. Resumo só mostra os 3 totais: Custo Direto
+    // (com BDI), Custos Logísticos (com BDI), Preço Final. Sem linha
+    // "BDI" agregada (operador rejeita explicitamente).
+    [
+      "Custo Direto (Materiais + M.O., com BDI diluído)",
+      totalDirect * markupFactor,
+    ],
+    ["Custos Logísticos (com BDI diluído)", totalLogistics * markupFactor],
     [],
     ["Impostos (para referência fiscal)", totalTax],
-    ["BDI (Administração + Lucro + Tributos)", totalBdi],
     [],
     ["PREÇO FINAL DE VENDA", totalFinal],
+    [],
+    ["Premissas:", ""],
+    [
+      `BDI ${((markupFactor - 1) * 100).toFixed(2)}% aplicado proporcionalmente nos preços unitários`,
+      "",
+    ],
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
-  wsResumo["!cols"] = [{ wch: 35 }, { wch: 18 }];
+  wsResumo["!cols"] = [{ wch: 50 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
-  
-  // Gerar buffer XLSX real
-  const xlsxBuffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+  // P2 XLSX refactor (P2.2) — formata cabeçalhos das 4 abas: bold +
+  // fundo cinza claro (PatternFill). Aplicado depois que todas as abas
+  // foram criadas.
+  applyHeaderStyle(wsOrcamento, HEADER_ROW_INDEX, 13);
+  applyHeaderStyle(wsLogistica, LOG_HEADER_ROW_INDEX, 6);
+  applyHeaderStyle(wsFluxo, FLUXO_HEADER_ROW_INDEX, 5);
+  applyHeaderStyle(wsResumo, 5, 2); // linha 5 = "Descrição, Valor"
+
+  // Gerar buffer XLSX real (cellStyles habilita preservação de cell.s)
+  const xlsxBuffer = XLSX.write(wb, {
+    type: "buffer",
+    bookType: "xlsx",
+    cellStyles: true,
+  });
   return Buffer.from(xlsxBuffer);
+}
+
+/**
+ * P2 XLSX refactor (P2.2) — aplica estilo de cabeçalho (bold + fundo
+ * cinza claro) em uma linha específica de uma worksheet. Não há erro se
+ * a célula não existir (linhas vazias passam intactas).
+ */
+function applyHeaderStyle(
+  ws: XLSX.WorkSheet,
+  rowIndex1Based: number,
+  numColumns: number
+): void {
+  for (let c = 0; c < numColumns; c++) {
+    const addr = XLSX.utils.encode_cell({ c, r: rowIndex1Based - 1 });
+    const cell = ws[addr];
+    if (!cell) continue;
+    cell.s = {
+      font: { bold: true },
+      fill: { fgColor: { rgb: "E5E7EB" } },
+      alignment: { horizontal: "center", vertical: "center" },
+    };
+  }
 }
 
 // Format currency for display
 export function formatCurrency(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-
 
 // Generate schedule PDF with Gantt chart
 export async function generateSchedulePDF(
@@ -644,15 +963,15 @@ export async function generateSchedulePDF(
     teamSummary,
     materialsSummary
   );
-  
+
   const pdfBuffer = Buffer.from(htmlContent, "utf-8");
-  
+
   const timestamp = Date.now();
   const fileName = `cronograma_${project.name.replace(/\s+/g, "_")}_${timestamp}.html`;
   const fileKey = `schedules/${project.id}/${fileName}`;
-  
+
   const { url } = await storagePut(fileKey, pdfBuffer, "text/html");
-  
+
   // Save document reference
   await createGeneratedDocument({
     projectId: project.id,
@@ -662,7 +981,7 @@ export async function generateSchedulePDF(
     fileKey,
     version: 1,
   });
-  
+
   return { url, fileKey };
 }
 
@@ -677,13 +996,23 @@ function generateScheduleHTML(
   materialsSummary: string
 ): string {
   // Generate Gantt chart bars
-  const ganttBars = scheduleItems.map((item, index) => {
-    const colors = ['#d97706', '#0ea5e9', '#10b981', '#8b5cf6', '#f43f5e', '#06b6d4', '#84cc16', '#f59e0b'];
-    const color = colors[index % colors.length];
-    const startPercent = ((item.startDay - 1) / totalDays) * 100;
-    const widthPercent = (item.duration / totalDays) * 100;
-    
-    return `
+  const ganttBars = scheduleItems
+    .map((item, index) => {
+      const colors = [
+        "#d97706",
+        "#0ea5e9",
+        "#10b981",
+        "#8b5cf6",
+        "#f43f5e",
+        "#06b6d4",
+        "#84cc16",
+        "#f59e0b",
+      ];
+      const color = colors[index % colors.length];
+      const startPercent = ((item.startDay - 1) / totalDays) * 100;
+      const widthPercent = (item.duration / totalDays) * 100;
+
+      return `
       <div class="gantt-row">
         <div class="gantt-label">${item.phase}</div>
         <div class="gantt-bar-container">
@@ -693,17 +1022,23 @@ function generateScheduleHTML(
         </div>
       </div>
     `;
-  }).join('');
-  
+    })
+    .join("");
+
   // Generate milestone markers
-  const milestoneMarkers = milestones.map(m => {
-    const position = ((m.day - 1) / totalDays) * 100;
-    return `<div class="milestone-marker" style="left: ${position}%;" title="Dia ${m.day}: ${m.description}">◆</div>`;
-  }).join('');
-  
+  const milestoneMarkers = milestones
+    .map(m => {
+      const position = ((m.day - 1) / totalDays) * 100;
+      return `<div class="milestone-marker" style="left: ${position}%;" title="Dia ${m.day}: ${m.description}">◆</div>`;
+    })
+    .join("");
+
   // Generate daily schedule rows
-  const dailyRows = dailySchedule.map(day => {
-    const activitiesList = day.activities.map((act: any) => `
+  const dailyRows = dailySchedule
+    .map(day => {
+      const activitiesList = day.activities
+        .map(
+          (act: any) => `
       <div class="activity-item">
         <strong>${act.description}</strong>
         <div class="activity-details">
@@ -712,27 +1047,32 @@ function generateScheduleHTML(
           <span>✅ ${act.deliverable}</span>
         </div>
       </div>
-    `).join('');
-    
-    const dayClass = day.isWorkDay ? 'work-day' : 'rest-day';
-    
-    return `
+    `
+        )
+        .join("");
+
+      const dayClass = day.isWorkDay ? "work-day" : "rest-day";
+
+      return `
       <tr class="${dayClass}">
         <td class="day-number">Dia ${day.day}</td>
         <td class="day-phase">${day.phase}</td>
         <td class="day-activities">${activitiesList}</td>
-        <td class="day-notes">${day.notes || '-'}</td>
+        <td class="day-notes">${day.notes || "-"}</td>
       </tr>
     `;
-  }).join('');
-  
+    })
+    .join("");
+
   // Generate day headers for Gantt
   const dayHeaders = [];
   for (let i = 1; i <= totalDays; i += Math.ceil(totalDays / 10)) {
     const position = ((i - 1) / totalDays) * 100;
-    dayHeaders.push(`<span class="day-marker" style="left: ${position}%;">D${i}</span>`);
+    dayHeaders.push(
+      `<span class="day-marker" style="left: ${position}%;">D${i}</span>`
+    );
   }
-  
+
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -992,7 +1332,7 @@ function generateScheduleHTML(
     <h2>📊 Gráfico de Gantt</h2>
     <div class="gantt-container">
       <div class="gantt-header">
-        ${dayHeaders.join('')}
+        ${dayHeaders.join("")}
       </div>
       <div class="milestone-markers">
         ${milestoneMarkers}
@@ -1038,19 +1378,23 @@ function generateScheduleHTML(
         </tr>
       </thead>
       <tbody>
-        ${milestones.map(m => `
+        ${milestones
+          .map(
+            m => `
           <tr>
             <td class="day-number">Dia ${m.day}</td>
             <td>${m.description}</td>
           </tr>
-        `).join('')}
+        `
+          )
+          .join("")}
       </tbody>
     </table>
   </div>
 
   <div class="footer">
     <p>Documento gerado automaticamente pelo sistema RR-Engine</p>
-    <p>Data de geração: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+    <p>Data de geração: ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</p>
   </div>
 </body>
 </html>
