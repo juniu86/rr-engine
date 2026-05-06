@@ -1351,7 +1351,9 @@ export class OrcamentistaAgent extends BaseAgent<
         `[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`
       );
       const chunkedInputs = createOrcamentistaChunkedInputs(input);
-      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas (concorrência limitada)`);
+      console.log(
+        `[Orcamentista] ${chunkedInputs.length} frentes criadas (concorrência limitada)`
+      );
 
       // Concorrência limitada via p-limit. Mesma justificativa do Engenheiro:
       // 7+ frentes em paralelo estouram rate limit do Anthropic. Concorrência
@@ -1795,7 +1797,32 @@ Lucro Real:
 - INSS: 11% sobre cessão de mão-de-obra (Simples isentas do Anexo IV)
 - ISS retido: quando tomador PJ e valor > R$ 1.000
 - IR retido: 1.5% para serviços de engenharia
-- PIS/COFINS/CSLL retido: 4.65% para órgãos públicos`;
+- PIS/COFINS/CSLL retido: 4.65% para órgãos públicos
+
+=== FORMATO DE OUTPUT (CRÍTICO — LEIA COM ATENÇÃO) ===
+O output JSON DEVE ter EXATAMENTE 3 chaves no nível raiz:
+\`classifiedItems\` (array), \`totalTaxes\` (number), \`alerts\` (array).
+
+NÃO use \`taxClassification\`, \`classification\`, \`items\`, \`summary\`,
+\`grandTotal\` ou qualquer outro nome no nível raiz. Não aninhe os dados
+sob nenhuma chave intermediária. O caller espera ler \`output.totalTaxes\`
+e \`output.classifiedItems[]\` diretamente.
+
+EXEMPLO DE OUTPUT CORRETO (formato canônico — siga este shape):
+\`\`\`json
+{
+  "classifiedItems": [
+    {"itemId": 1, "taxType": "iss", "taxAmount": 225.00, "retentions": []},
+    {"itemId": 2, "taxType": "icms", "taxAmount": 1140.00, "retentions": ["INSS 11%"]},
+    {"itemId": 3, "taxType": "both", "taxAmount": 850.50, "retentions": []}
+  ],
+  "totalTaxes": 2215.50,
+  "alerts": ["Item 5: bitributação ICMS+ISS — verificar se é serviço puro"]
+}
+\`\`\`
+
+\`totalTaxes\` é a soma aritmética de todos os \`taxAmount\` em
+\`classifiedItems\` — NÃO recalcule por fora.`;
   }
 
   getUserPrompt(input: TributarioInput): string {
@@ -3143,14 +3170,60 @@ em uma única chamada — execute todas as validações (1-8).
 - "approved_with_warnings": 0 erros críticos, 1+ warnings
 - "rejected": 1+ erros críticos
 
-=== SCORE DE VALIDAÇÃO ===
+=== SCORE DE VALIDAÇÃO (FÓRMULA OBRIGATÓRIA) ===
 
-Calcule o score de 0 a 100:
-- Cada validação crítica que passa: +15 pontos
-- Cada validação warning que passa: +10 pontos
-- Cada validação info que passa: +5 pontos
-- Cada erro crítico: -25 pontos
-- Cada warning: -10 pontos
+\`validationScore = round((passed_count / total_count) × 100)\`
+
+- \`passed_count\` = número de validações com \`passed: true\`
+- \`total_count\` = total de validações no array \`validations[]\`
+- Arredondar para inteiro (0–100). Sem total = 0; com 0 itens, score = 0.
+
+Esta fórmula é determinística e consistente entre runs. NÃO use a
+heurística antiga de "+15 por crítica, +10 por warning, -25 por erro".
+
+=== REGRAS DE \`passed\`, \`expected\` E \`actual\` (CRÍTICO) ===
+
+1. SEMPRE preencha \`expected\` E \`actual\` com strings não-vazias.
+   Para validações numéricas, use o número formatado (ex.: "310031.25").
+   Para validações descritivas, use string explicando a regra
+   (ex.: "≤ 50% do preço final").
+
+2. \`passed\` reflete se o invariante matemático foi satisfeito:
+   - Se \`expected === actual\` (ou dentro de tolerância 1%): \`passed: true\`
+   - Caso contrário: \`passed: false\`
+
+3. Se você NÃO conseguir avaliar (dado faltando, ambíguo): use
+   \`severity: "info"\` E \`passed: true\` (não falsificar com placeholder).
+
+EXEMPLO 1 — validação OK (matemática bate):
+\`\`\`json
+{
+  "rule": "price_consistency",
+  "description": "Preço Final = (Custo Direto + Logística) × (1 + BDI)",
+  "expected": "310031.25",
+  "actual": "310031.25",
+  "passed": true,
+  "severity": "info",
+  "recommendation": ""
+}
+\`\`\`
+
+EXEMPLO 2 — divergência real (matemática NÃO bate):
+\`\`\`json
+{
+  "rule": "tax_total_check",
+  "description": "Total de impostos não deve exceder 50% do preço final",
+  "expected": "≤ 155015.62 (50% × 310031.25)",
+  "actual": "182000.00 (58.7%)",
+  "passed": false,
+  "severity": "warning",
+  "recommendation": "Revisar regime tributário ou faixa do Simples"
+}
+\`\`\`
+
+NÃO crie validações com \`expected: ""\` ou \`actual: ""\`. NÃO marque
+\`passed: false\` quando a matemática efetivamente bate. Quando em dúvida,
+\`severity: "info"\` + \`passed: true\` é preferível a falsificar uma falha.
 
 Seja RIGOROSO e PRECISO. Sua auditoria é a última linha de defesa antes da proposta ser enviada ao cliente.
 

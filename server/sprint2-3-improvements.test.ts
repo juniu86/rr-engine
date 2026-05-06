@@ -159,8 +159,8 @@ describe('Provider Model Routing', () => {
     expect(caps.maxOutputTokens).toBe(32768);
   });
 
-  it('should give Sonnet 16K tokens', () => {
+  it('should give Sonnet 64K tokens (post-Sprint-3 streaming)', () => {
     const caps = getProviderCapabilities('claude-sonnet-4-6');
-    expect(caps.maxOutputTokens).toBe(16384);
+    expect(caps.maxOutputTokens).toBe(65536);
   });
 });

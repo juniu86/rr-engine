@@ -83,19 +83,21 @@ describe("JSON Truncation Prevention", () => {
       for (const ci of chunkedInputs) {
         expect(ci.location).toBe("São Paulo - SP");
         expect(ci.restrictions).toBe("Acesso restrito");
-        expect(ci.memorialDescritivo).toContain("[PARTE");
+        // Sprint-3: marker mudou de "[PARTE" para "[CHUNK".
+        expect(ci.memorialDescritivo).toContain("[CHUNK");
       }
     });
 
     it("deve numerar as partes corretamente", () => {
       const memorial = Array.from({ length: 50 }, (_, i) => `Item ${i + 1}: Serviço`).join("\n");
       const input = { memorialDescritivo: memorial, location: "RJ", restrictions: "" };
-      
+
       const chunkedInputs = createChunkedInputs(input);
       const total = chunkedInputs.length;
-      
+
       chunkedInputs.forEach((ci, idx) => {
-        expect(ci.memorialDescritivo).toContain(`[PARTE ${idx + 1} de ${total}]`);
+        // Sprint-3: formato passou a ser "[CHUNK 1/3 — INSTRUÇÕES ...]" em vez de "[PARTE 1 de 3]".
+        expect(ci.memorialDescritivo).toContain(`[CHUNK ${idx + 1}/${total}`);
       });
     });
   });
