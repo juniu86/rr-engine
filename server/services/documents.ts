@@ -630,7 +630,15 @@ function generateMemoriaXLSX(
     ],
     ...decomposed.map((d, index) => [
       index + 1,
-      d.item.code || "",
+      // P2 XLSX refactor (P2.3) — popula Código com sourceCode quando
+      // a coluna principal vier vazia mas há código SINAPI/PINI puro.
+      d.item.code ||
+        (d.item.source &&
+        ["sinapi", "pini", "tcpo"].includes(
+          String(d.item.source).toLowerCase()
+        )
+          ? d.item.sourceCode || ""
+          : ""),
       d.item.description,
       d.item.unit || "",
       Number(d.item.quantity || 0),
@@ -812,22 +820,67 @@ function generateMemoriaXLSX(
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [],
     ["Descrição", "Valor"],
-    ["Custo Direto (Materiais + M.O.)", totalDirect],
-    ["Custos Logísticos", totalLogistics],
-    ["CUSTO BASE (Direto + Logística)", custoBase],
+    // P2 XLSX refactor (P1.3) — BDI diluído nos preços unitários do
+    // Orçamento Detalhado. Resumo só mostra os 3 totais: Custo Direto
+    // (com BDI), Custos Logísticos (com BDI), Preço Final. Sem linha
+    // "BDI" agregada (operador rejeita explicitamente).
+    [
+      "Custo Direto (Materiais + M.O., com BDI diluído)",
+      totalDirect * markupFactor,
+    ],
+    ["Custos Logísticos (com BDI diluído)", totalLogistics * markupFactor],
     [],
     ["Impostos (para referência fiscal)", totalTax],
-    ["BDI (Administração + Lucro + Tributos)", totalBdi],
     [],
     ["PREÇO FINAL DE VENDA", totalFinal],
+    [],
+    ["Premissas:", ""],
+    [
+      `BDI ${(((markupFactor - 1) * 100).toFixed(2))}% aplicado proporcionalmente nos preços unitários`,
+      "",
+    ],
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
-  wsResumo["!cols"] = [{ wch: 35 }, { wch: 18 }];
+  wsResumo["!cols"] = [{ wch: 50 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
-  
-  // Gerar buffer XLSX real
-  const xlsxBuffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+  // P2 XLSX refactor (P2.2) — formata cabeçalhos das 4 abas: bold +
+  // fundo cinza claro (PatternFill). Aplicado depois que todas as abas
+  // foram criadas.
+  applyHeaderStyle(wsOrcamento, HEADER_ROW_INDEX, 13);
+  applyHeaderStyle(wsLogistica, LOG_HEADER_ROW_INDEX, 6);
+  applyHeaderStyle(wsFluxo, FLUXO_HEADER_ROW_INDEX, 5);
+  applyHeaderStyle(wsResumo, 5, 2); // linha 5 = "Descrição, Valor"
+
+  // Gerar buffer XLSX real (cellStyles habilita preservação de cell.s)
+  const xlsxBuffer = XLSX.write(wb, {
+    type: "buffer",
+    bookType: "xlsx",
+    cellStyles: true,
+  });
   return Buffer.from(xlsxBuffer);
+}
+
+/**
+ * P2 XLSX refactor (P2.2) — aplica estilo de cabeçalho (bold + fundo
+ * cinza claro) em uma linha específica de uma worksheet. Não há erro se
+ * a célula não existir (linhas vazias passam intactas).
+ */
+function applyHeaderStyle(
+  ws: XLSX.WorkSheet,
+  rowIndex1Based: number,
+  numColumns: number
+): void {
+  for (let c = 0; c < numColumns; c++) {
+    const addr = XLSX.utils.encode_cell({ c, r: rowIndex1Based - 1 });
+    const cell = ws[addr];
+    if (!cell) continue;
+    cell.s = {
+      font: { bold: true },
+      fill: { fgColor: { rgb: "E5E7EB" } },
+      alignment: { horizontal: "center", vertical: "center" },
+    };
+  }
 }
 
 // Format currency for display
