@@ -2,21 +2,34 @@
 
 Documento de contexto para sessões de implementação. Lê este arquivo antes de tocar qualquer coisa.
 
+## ATENÇÃO — atualização pós-migração total (06/05/2026)
+
+A migração total **saiu do tenant Manus**. Estamos em produção própria:
+
+- **Backend** (este repo) roda no Railway em `api.rres.com.br`. Branch ativa: `feat/sprint-3-railway-deploy` (vai mergear em main no Sprint 6).
+- **Frontend** (Next.js) está em outro repo (`juniu86/rr-engine-app`), hospedado no Vercel em `engine.rres.com.br`. **Tudo em `client/` deste repo é legado** — não mexer, será removido em fase futura.
+- **Banco** é MySQL plugin do Railway (não TiDB Cloud do Manus).
+- **Auth** é Clerk (`@clerk/backend.verifyToken`) em `server/_core/clerk-auth.ts`. OAuth Manus em `server/_core/oauth.ts` é legado, não usado.
+- **LLM** é Anthropic direto via streaming SSE + prompt caching ephemeral. Forge da Manus continua como fallback no código mas não é usado em produção.
+- **Storage** é Cloudflare R2 (S3-compatible). `server/storage.ts` reescrito pra usar `@aws-sdk/client-s3`.
+
+Para o snapshot completo da migração, ler `rr-engine-app/HANDOFF.md` (no repo do frontend).
+
 ## O que é o produto
 
 SaaS de orçamentação automatizada de obras civis. Entrada: memorial descritivo em texto/markdown. Saída: proposta comercial (PDF), memória de cálculo (XLSX) e cronograma físico. O motor é um pipeline sequencial de 10 agentes de IA orquestrados via tRPC.
 
-Versão atual: 3.1.0. Hospedado hoje em `rrengine.manus.space` (tenant Manus). Decisão estratégica já tomada: reconstruir fora do Manus. Esta fase de implementação prepara o produto para essa migração corrigindo dívida técnica e reduzindo acoplamento.
+Versão atual: 3.1.0.
 
 ## Stack
 
-- **Frontend:** React 19 + Vite 7 + Tailwind 4 + tRPC client + wouter (routing)
-- **Backend:** Node + Express 4 + tRPC 11 + Drizzle ORM
-- **Banco:** MySQL/TiDB Cloud (`gateway02.us-east-1.prod.aws.tidbcloud.com`)
-- **Auth:** OAuth Manus (será trocado em fase de migração separada — não toca por enquanto)
-- **LLM:** Forge da Manus (proxy) com rota direta para Anthropic API quando `ANTHROPIC_API_KEY` está provisionada
-- **Storage:** S3
+- **Backend (este repo):** Node 20 + Express 4 + tRPC 11 + Drizzle ORM
+- **Banco:** MySQL 8 (Railway plugin)
+- **Auth:** Clerk (validação JWT no backend via `@clerk/backend`)
+- **LLM:** Anthropic direto (streaming + prompt caching). Forge da Manus apenas como fallback histórico.
+- **Storage:** Cloudflare R2 (S3-compatible) via `@aws-sdk/client-s3`
 - **Pacote:** pnpm 10
+- **Frontend (outro repo):** Next.js 16 + Tailwind 4 + Clerk no `juniu86/rr-engine-app`
 
 Comandos principais:
 
@@ -218,10 +231,9 @@ Detalhes do tracing (incluindo o que aparece no dashboard) em `docs/observabilit
 
 ## O que NÃO mexer nesta fase
 
-- Camada de OAuth Manus (`server/_core/oauth.ts`). Será substituída na fase de migração para fora do Manus.
-- `vite-plugin-manus-runtime`. Idem.
-- Wrappers Manus em `_core/sdk.ts`, `dataApi.ts`, `notification.ts`, `imageGeneration.ts`, `voiceTranscription.ts`. Idem.
-- Stripe integration (`server/stripe/`). Funciona — não é prioridade nesta fase.
+- Camada de OAuth Manus (`server/_core/oauth.ts`) e wrappers em `_core/sdk.ts`, `dataApi.ts`, `notification.ts`, `imageGeneration.ts`, `voiceTranscription.ts`. **Legado pós-migração** — não está mais sendo usado em produção, mas remoção fica pra fase de cleanup futura.
+- `vite-plugin-manus-runtime` e qualquer coisa em `client/` (frontend Vite legado). Frontend ativo está em `juniu86/rr-engine-app` (Next.js).
+- ~~Stripe integration~~ — **Stripe agora é foco do Sprint 5**. Spec em `implementacao/SPRINT_5_STRIPE.md`.
 
 ## Como pedir contexto adicional
 
