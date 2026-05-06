@@ -1048,20 +1048,30 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
       );
       const chunkedInputs = createChunkedInputs(input);
       console.log(
-        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks (paralelos)`
+        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks (concorrência limitada)`
       );
 
-      // P0.4 P2.X: chunks rodam em paralelo (Promise.all). Cada chunk é uma
-      // chamada Anthropic independente, sem dependência entre si — Anthropic
-      // permite múltiplas requisições concorrentes (ratelimit por minuto, não
-      // por concorrência). Reduz tempo total de N×T pra ~T (gargalo: chunk mais
-      // lento). Pra memoriais de 7 chunks × 2 min cada, vai de 14 min pra 2.
+      // Concorrência limitada via p-limit. Anthropic Tier 1 tem rate limit
+      // baixo (8k OPM pra Opus). Disparar todos em paralelo causa 429.
+      // Concorrência 2 mantém ~3-4x speedup vs sequencial sem estourar tier.
+      // Configurável via env LLM_CHUNK_CONCURRENCY pra ajustar conforme tier.
+      const { default: pLimit } = await import("p-limit");
+      const concurrency = parseInt(
+        process.env.LLM_CHUNK_CONCURRENCY ?? "2",
+        10
+      );
+      const limit = pLimit(concurrency);
+
       const t0 = Date.now();
       const outputs = await Promise.all(
-        chunkedInputs.map((chunkInput, i) => {
-          console.log(`[EngenheiroTecnico] Disparando chunk ${i + 1}/${chunkedInputs.length}...`);
-          return super.execute(chunkInput);
-        })
+        chunkedInputs.map((chunkInput, i) =>
+          limit(() => {
+            console.log(
+              `[EngenheiroTecnico] Disparando chunk ${i + 1}/${chunkedInputs.length} (limite ${concurrency})...`
+            );
+            return super.execute(chunkInput);
+          })
+        )
       );
       console.log(
         `[EngenheiroTecnico] Todos os ${chunkedInputs.length} chunks completos em ${((Date.now() - t0) / 1000).toFixed(1)}s`
@@ -1341,19 +1351,28 @@ export class OrcamentistaAgent extends BaseAgent<
         `[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`
       );
       const chunkedInputs = createOrcamentistaChunkedInputs(input);
-      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas (paralelas)`);
+      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas (concorrência limitada)`);
 
-      // Frentes rodam em paralelo (Promise.all). Mesma justificativa do
-      // Engenheiro Tecnico: chamadas Anthropic independentes, sem dependencia
-      // entre frentes. Reduz tempo total de N×T para ~T.
+      // Concorrência limitada via p-limit. Mesma justificativa do Engenheiro:
+      // 7+ frentes em paralelo estouram rate limit do Anthropic. Concorrência
+      // 2 mantém speedup de 3-4x sem disparar 429.
+      const { default: pLimit } = await import("p-limit");
+      const concurrency = parseInt(
+        process.env.LLM_CHUNK_CONCURRENCY ?? "2",
+        10
+      );
+      const limit = pLimit(concurrency);
+
       const t0 = Date.now();
       const outputs = await Promise.all(
-        chunkedInputs.map((chunkInput, i) => {
-          console.log(
-            `[Orcamentista] Disparando frente ${i + 1}/${chunkedInputs.length} (${chunkInput.items.length} itens)...`
-          );
-          return super.execute(chunkInput);
-        })
+        chunkedInputs.map((chunkInput, i) =>
+          limit(() => {
+            console.log(
+              `[Orcamentista] Disparando frente ${i + 1}/${chunkedInputs.length} (${chunkInput.items.length} itens, limite ${concurrency})...`
+            );
+            return super.execute(chunkInput);
+          })
+        )
       );
       console.log(
         `[Orcamentista] Todas as ${chunkedInputs.length} frentes completas em ${((Date.now() - t0) / 1000).toFixed(1)}s`
