@@ -260,6 +260,19 @@ export async function persistAgentOutput(
     //   F3: { classification[] } — array no top-level
     // Normalizamos pra garantir totalTaxes no top-level (exigido pelo
     // validador no Comercial e usado pelo Auditor).
+    //
+    // P2 (estabilidade prompts): instrumenta log de "Schema OK" quando vier
+    // no formato declarado (F1). Permite medir taxa de drift em produção
+    // após o few-shot reforçado no prompt.
+    const isDeclaredFormat =
+      typeof output?.totalTaxes === 'number' &&
+      Array.isArray(output?.classifiedItems);
+    if (isDeclaredFormat) {
+      console.log(
+        `[Tributario] Schema OK (declared format) — totalTaxes=R$${Number(output.totalTaxes).toFixed(2)}, items=${output.classifiedItems.length}`
+      );
+    }
+
     if (typeof finalOutput?.totalTaxes !== 'number') {
       let derivedTaxes = 0;
 

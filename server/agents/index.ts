@@ -1795,7 +1795,32 @@ Lucro Real:
 - INSS: 11% sobre cessão de mão-de-obra (Simples isentas do Anexo IV)
 - ISS retido: quando tomador PJ e valor > R$ 1.000
 - IR retido: 1.5% para serviços de engenharia
-- PIS/COFINS/CSLL retido: 4.65% para órgãos públicos`;
+- PIS/COFINS/CSLL retido: 4.65% para órgãos públicos
+
+=== FORMATO DE OUTPUT (CRÍTICO — LEIA COM ATENÇÃO) ===
+O output JSON DEVE ter EXATAMENTE 3 chaves no nível raiz:
+\`classifiedItems\` (array), \`totalTaxes\` (number), \`alerts\` (array).
+
+NÃO use \`taxClassification\`, \`classification\`, \`items\`, \`summary\`,
+\`grandTotal\` ou qualquer outro nome no nível raiz. Não aninhe os dados
+sob nenhuma chave intermediária. O caller espera ler \`output.totalTaxes\`
+e \`output.classifiedItems[]\` diretamente.
+
+EXEMPLO DE OUTPUT CORRETO (formato canônico — siga este shape):
+\`\`\`json
+{
+  "classifiedItems": [
+    {"itemId": 1, "taxType": "iss", "taxAmount": 225.00, "retentions": []},
+    {"itemId": 2, "taxType": "icms", "taxAmount": 1140.00, "retentions": ["INSS 11%"]},
+    {"itemId": 3, "taxType": "both", "taxAmount": 850.50, "retentions": []}
+  ],
+  "totalTaxes": 2215.50,
+  "alerts": ["Item 5: bitributação ICMS+ISS — verificar se é serviço puro"]
+}
+\`\`\`
+
+\`totalTaxes\` é a soma aritmética de todos os \`taxAmount\` em
+\`classifiedItems\` — NÃO recalcule por fora.`;
   }
 
   getUserPrompt(input: TributarioInput): string {
