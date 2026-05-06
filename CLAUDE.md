@@ -200,6 +200,10 @@ DATABASE_URL=                  # MySQL/TiDB
 # Stripe
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_STARTER=          # Sprint 5 — Price ID do tier Starter (R$ 199/mês)
+STRIPE_PRICE_PRO=              # Sprint 5 — Price ID do tier Pro (R$ 499/mês)
+STRIPE_PRICE_BUSINESS=         # Sprint 5 — Price ID do tier Business (R$ 1499/mês)
+FRONTEND_URL=                  # default https://engine.rres.com.br (success/cancel URL do checkout)
 
 # AWS S3
 AWS_ACCESS_KEY_ID=
@@ -221,7 +225,8 @@ Detalhes do tracing (incluindo o que aparece no dashboard) em `docs/observabilit
 - Camada de OAuth Manus (`server/_core/oauth.ts`). Será substituída na fase de migração para fora do Manus.
 - `vite-plugin-manus-runtime`. Idem.
 - Wrappers Manus em `_core/sdk.ts`, `dataApi.ts`, `notification.ts`, `imageGeneration.ts`, `voiceTranscription.ts`. Idem.
-- Stripe integration (`server/stripe/`). Funciona — não é prioridade nesta fase.
+
+> **Sprint 5 (P1.7) — Stripe:** integração foi expandida para 3 tiers (Starter / Pro / Business) com cap de valor por obra. Detalhes em `implementacao/SPRINT_5_STRIPE.md`. UI vive no repo `rr-engine-app` (Next.js no Vercel).
 
 ## Como pedir contexto adicional
 

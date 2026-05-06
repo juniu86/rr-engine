@@ -1,0 +1,2 @@
+ALTER TABLE `subscriptions` MODIFY COLUMN `plan` enum('mensal','avulso','free','starter','pro','business') NOT NULL DEFAULT 'free';--> statement-breakpoint
+ALTER TABLE `subscriptions` ADD `obraValueCap` decimal(15,2);

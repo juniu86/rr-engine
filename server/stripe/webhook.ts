@@ -3,6 +3,7 @@ import {
   getStripeClient,
   handleCheckoutCompleted,
   handleSubscriptionUpdated,
+  handleSubscriptionDeleted,
   handleInvoicePaid,
 } from "./stripeService";
 
@@ -36,15 +37,23 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
   let event;
 
   try {
-    event = getStripeClient().webhooks.constructEvent(req.body, sig, webhookSecret);
+    event = getStripeClient().webhooks.constructEvent(
+      req.body,
+      sig,
+      webhookSecret
+    );
   } catch (err: any) {
-    console.error(`[Stripe Webhook] Signature verification failed: ${err.message}`);
+    console.error(
+      `[Stripe Webhook] Signature verification failed: ${err.message}`
+    );
     return res.status(400).json({ error: `Webhook Error: ${err.message}` });
   }
 
   // Handle test events
   if (event.id.startsWith("evt_test_")) {
-    console.log("[Webhook] Test event detected, returning verification response");
+    console.log(
+      "[Webhook] Test event detected, returning verification response"
+    );
     return res.json({ verified: true });
   }
 
@@ -63,8 +72,11 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
         break;
 
       case "customer.subscription.updated":
-      case "customer.subscription.deleted":
         await handleSubscriptionUpdated(event.data.object as any);
+        break;
+
+      case "customer.subscription.deleted":
+        await handleSubscriptionDeleted(event.data.object as any);
         break;
 
       case "invoice.paid":

@@ -21,7 +21,11 @@ import {
   generateSchedulePDF,
 } from "./services/documents";
 import { stripeRouter } from "./routers/stripe";
-import { canCreateBudget, consumeBudgetCredit } from "./stripe/stripeService";
+import {
+  canCreateBudget,
+  consumeBudgetCredit,
+  getCurrentSubscription,
+} from "./stripe/stripeService";
 import {
   persistAgentOutput,
   persistBudgetItems,
@@ -698,6 +702,49 @@ export const appRouter = router({
         }
 
         const boardResult = results.board as any;
+
+        // === Sprint 5 (P1.7) — CAP DE VALOR POR OBRA ===
+        // Compara comercial.finalPrice contra subscription.obraValueCap.
+        // Acima do cap: warning visível no auditor (severity=warning),
+        // NÃO bloqueia. obraValueCap=null (Business / planos legados) = sem cap.
+        try {
+          const comercialFinalPrice = Number(
+            (results.comercial as any)?.finalPrice ?? 0
+          );
+          if (comercialFinalPrice > 0) {
+            const subInfo = await getCurrentSubscription(ctx.user.id);
+            if (
+              subInfo?.obraValueCap &&
+              comercialFinalPrice > subInfo.obraValueCap
+            ) {
+              const auditor = results.auditor as any;
+              if (auditor) {
+                auditor.validations = Array.isArray(auditor.validations)
+                  ? auditor.validations
+                  : [];
+                auditor.validations.push({
+                  rule: "obra_value_cap",
+                  description: "Valor da obra excede o cap do plano contratado",
+                  expected: `Até R$ ${subInfo.obraValueCap.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (plano ${subInfo.plan})`,
+                  actual: `R$ ${comercialFinalPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+                  passed: false,
+                  severity: "warning",
+                  recommendation:
+                    "Faça upgrade para o plano Business para obras sem cap, ou divida o escopo em contratos menores.",
+                });
+                auditor.warnings = (auditor.warnings ?? 0) + 1;
+                if (auditor.auditSeal === "approved") {
+                  auditor.auditSeal = "approved_with_warnings";
+                }
+              }
+            }
+          }
+        } catch (capErr) {
+          console.warn(
+            "[Sprint 5] Falha ao validar obraValueCap, seguindo sem warning:",
+            capErr
+          );
+        }
 
         // === VALIDAÇÃO CRUZADA ENTRE AGENTES ===
         const coherenceValidation = validateAgentCoherence(results);

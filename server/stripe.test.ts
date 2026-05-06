@@ -102,15 +102,17 @@ describe("Stripe Business Logic", () => {
   });
 
   it("plano mensal deve ser mais vantajoso que avulso", () => {
-    const custoMensalPorOrcamento = (PLANS.mensal.priceInCents / 100) / PLANS.mensal.quotaLimit;
+    const custoMensalPorOrcamento =
+      PLANS.mensal.priceInCents / 100 / PLANS.mensal.quotaLimit;
     const custoAvulso = PLANS.avulso.priceInCents / 100;
     expect(custoMensalPorOrcamento).toBeLessThan(custoAvulso);
   });
 
   it("economia do plano mensal vs avulso deve ser ~50%", () => {
-    const custoMensalPorOrcamento = (PLANS.mensal.priceInCents / 100) / PLANS.mensal.quotaLimit;
+    const custoMensalPorOrcamento =
+      PLANS.mensal.priceInCents / 100 / PLANS.mensal.quotaLimit;
     const custoAvulso = PLANS.avulso.priceInCents / 100;
-    const economia = 1 - (custoMensalPorOrcamento / custoAvulso);
+    const economia = 1 - custoMensalPorOrcamento / custoAvulso;
     expect(economia).toBeGreaterThan(0.4); // Pelo menos 40% de economia
     expect(economia).toBeLessThan(0.6); // Não mais que 60%
   });
@@ -129,7 +131,7 @@ describe("Stripe tRPC Router", () => {
   it("deve exportar stripeRouter com as procedures corretas", async () => {
     const { stripeRouter } = await import("./routers/stripe");
     expect(stripeRouter).toBeDefined();
-    
+
     // Verificar que o router tem as procedures esperadas
     const routerDef = stripeRouter._def;
     expect(routerDef).toBeDefined();
@@ -174,16 +176,27 @@ describe("Payment History", () => {
     expect(procedures).toContain("getPaymentHistory");
   });
 
-  it("stripe router deve ter 7 procedures no total", async () => {
+  it("stripe router deve expor todas as procedures (legados + Sprint 5)", async () => {
     const { stripeRouter } = await import("./routers/stripe");
     const procedures = Object.keys((stripeRouter as any)._def.procedures || {});
-    expect(procedures).toHaveLength(7);
-    expect(procedures).toContain("getPlans");
-    expect(procedures).toContain("getPlanInfo");
-    expect(procedures).toContain("canCreateBudget");
-    expect(procedures).toContain("createSubscriptionCheckout");
-    expect(procedures).toContain("createSingleBudgetCheckout");
-    expect(procedures).toContain("getPaymentHistory");
-    expect(procedures).toContain("createPortalSession");
+    // Sprint 5 adicionou listPlans, createCheckout, cancelSubscription,
+    // getCurrentSubscription. Legados continuam (compat com checkouts antigos).
+    expect(procedures).toEqual(
+      expect.arrayContaining([
+        // Sprint 5 (P1.7)
+        "listPlans",
+        "createCheckout",
+        "cancelSubscription",
+        "getCurrentSubscription",
+        // Legados
+        "getPlans",
+        "getPlanInfo",
+        "canCreateBudget",
+        "createSubscriptionCheckout",
+        "createSingleBudgetCheckout",
+        "getPaymentHistory",
+        "createPortalSession",
+      ])
+    );
   });
 });
