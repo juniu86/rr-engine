@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import { authenticateRequestWithClerk } from "./clerk-auth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -8,15 +8,23 @@ export type TrpcContext = {
   user: User | null;
 };
 
+/**
+ * Cria o contexto tRPC para cada request.
+ *
+ * A autenticação é feita via Clerk JWT no header `Authorization: Bearer <token>`.
+ * Procedures públicas funcionam sem token (user = null); procedures protegidas
+ * exigem que `ctx.user` exista (validação em `protectedProcedure`).
+ */
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   let user: User | null = null;
 
   try {
-    user = await sdk.authenticateRequest(opts.req);
+    user = await authenticateRequestWithClerk(opts.req);
   } catch (error) {
-    // Authentication is optional for public procedures.
+    // Auth opcional para public procedures. Se o token vier inválido em uma
+    // protected procedure, o middleware do tRPC barra com FORBIDDEN.
     user = null;
   }
 

@@ -30,13 +30,16 @@ const PROVIDER_CAPABILITIES: Record<string, ProviderCapabilities> = {
     providerName: "Anthropic Claude Opus",
   },
   "claude-sonnet": {
-    maxOutputTokens: 16384,
+    // Claude Sonnet 4.x suporta 64k de output. Gestão em obras grandes
+    // (cronograma item por item de 130+ itens) chega a estourar 32k.
+    // Vamos no teto. Streaming evita timeout em outputs longos.
+    maxOutputTokens: 65536,
     supportsThinking: true,
     supportsStrictSchema: false,
     providerName: "Anthropic Claude Sonnet",
   },
   claude: {
-    maxOutputTokens: 16384,
+    maxOutputTokens: 65536,
     supportsThinking: true,
     supportsStrictSchema: false,
     providerName: "Anthropic Claude",

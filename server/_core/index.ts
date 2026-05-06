@@ -3,7 +3,6 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -29,9 +28,55 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+/**
+ * CORS manual — permite requests do frontend Vercel (engine.rres.com.br) e
+ * de origins de dev (localhost). Lista controlada via env CORS_ORIGINS
+ * (CSV de origins). Default cobre prod + dev local.
+ */
+function getAllowedOrigins(): string[] {
+  const fromEnv = process.env.CORS_ORIGINS;
+  if (fromEnv) {
+    return fromEnv
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+  return [
+    "https://engine.rres.com.br",
+    "https://www.engine.rres.com.br",
+    "http://localhost:3000",
+    "http://localhost:3001",
+  ];
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // CORS — antes de qualquer middleware de body/auth.
+  const allowedOrigins = getAllowedOrigins();
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET,POST,PUT,DELETE,OPTIONS"
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Requested-With"
+      );
+    }
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   // Stripe webhook MUST be registered BEFORE express.json() for signature verification
   app.post(
     "/api/stripe/webhook",
@@ -41,8 +86,12 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // OAuth callback under /api/oauth/callback
-  registerOAuthRoutes(app);
+
+  // Healthcheck (Railway usa pra verificar liveness)
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -51,11 +100,24 @@ async function startServer() {
       createContext,
     })
   );
-  // development mode uses Vite, production mode uses static files
+
+  // Modo de servir frontend:
+  //  - development: Vite dev server (HMR) — quando rodando local sem Next.
+  //  - production:  API-only por padrão. Para servir SPA legacy, setar
+  //    SERVE_FRONTEND=true (não usado em prod nova).
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
-  } else {
+  } else if (process.env.SERVE_FRONTEND === "true") {
     serveStatic(app);
+  } else {
+    // API-only: rota raiz responde algo amigável.
+    app.get("/", (_req, res) => {
+      res.json({
+        service: "rr-engine API",
+        version: process.env.npm_package_version || "3.1.0",
+        docs: "https://engine.rres.com.br",
+      });
+    });
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");

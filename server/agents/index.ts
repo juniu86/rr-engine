@@ -38,6 +38,84 @@ import type {
 } from "../../shared/agents";
 import { AGENT_NAMES } from "../../shared/agents";
 
+/**
+ * Remove markdown code fences que o Claude às vezes envolve a saída JSON
+ * mesmo quando o prompt pede texto puro (e mesmo com response_format).
+ * Suporta:
+ *   ```json\n{...}\n```
+ *   ```\n{...}\n```
+ *   ` ```json{...}``` `
+ *   {...}                 (sem fences — passa intacto)
+ */
+function stripCodeFences(text: string): string {
+  const trimmed = text.trim();
+  // Match opening fence (```json ou apenas ```), conteúdo, fence final.
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  return trimmed;
+}
+
+/**
+ * Converte JS literals inválidos em JSON (undefined, NaN, Infinity) pra null.
+ * Claude às vezes vaza esses tokens mesmo quando o prompt pede JSON estrito.
+ *
+ * Cuidado: aplica APENAS quando aparecem como valor (após ':' ou ',' ou '['),
+ * pra não quebrar string literals que contenham a palavra "undefined".
+ */
+function sanitizeJsLiteralsForJson(text: string): string {
+  return text
+    .replace(/(:|\[|,)\s*undefined\b/g, "$1 null")
+    .replace(/(:|\[|,)\s*NaN\b/g, "$1 null")
+    .replace(/(:|\[|,)\s*Infinity\b/g, "$1 null")
+    .replace(/(:|\[|,)\s*-Infinity\b/g, "$1 null");
+}
+
+/**
+ * Remove trailing commas antes de } ou ] — JSON estrito não aceita.
+ * Claude às vezes adiciona, especialmente em arrays multi-linha.
+ *
+ * Regex usa lookahead pra preservar conteúdo de strings (uma string com
+ * "}" interno é raro o suficiente pra ignorar — se virar problema, troca
+ * por parser stateful).
+ */
+function removeTrailingCommas(text: string): string {
+  return text.replace(/,(\s*[}\]])/g, "$1");
+}
+
+/**
+ * Tenta JSON.parse com saneamento progressivo. Em ordem:
+ *  1. parse direto
+ *  2. parse após sanitizar literals JS (undefined, NaN, Infinity → null)
+ *  3. parse após remover trailing commas
+ *  4. parse com tudo combinado
+ *
+ * Se nada funcionar, lança o erro ORIGINAL com snippet do conteúdo
+ * pra debug.
+ */
+function tolerantJsonParse<T>(text: string): T {
+  // Tentativa 1: parse direto.
+  try {
+    return JSON.parse(text) as T;
+  } catch (err1) {
+    // Tentativa 2: literals JS inválidos.
+    try {
+      return JSON.parse(sanitizeJsLiteralsForJson(text)) as T;
+    } catch {}
+    // Tentativa 3: trailing commas.
+    try {
+      return JSON.parse(removeTrailingCommas(text)) as T;
+    } catch {}
+    // Tentativa 4: tudo junto.
+    try {
+      return JSON.parse(
+        removeTrailingCommas(sanitizeJsLiteralsForJson(text))
+      ) as T;
+    } catch {}
+    // Re-lança o erro original com snippet pra debug.
+    throw err1;
+  }
+}
+
 // Base agent class
 abstract class BaseAgent<TInput, TOutput> {
   abstract name: string;
@@ -305,15 +383,18 @@ abstract class BaseAgent<TInput, TOutput> {
     }
 
     // Etapa 3: Processar resposta (lógica extraída para método privado)
-    const content = this._processLLMResponse(response);
+    const rawContent = this._processLLMResponse(response);
+    // Strippar markdown code fences que o Claude às vezes adiciona.
+    const content = stripCodeFences(rawContent);
     console.log(
       `[Agent ${this.name}] Content preview:`,
       content.substring(0, 200)
     );
 
-    // Etapa 4: Parse do JSON
+    // Etapa 4: Parse do JSON com tolerância progressiva (literals JS,
+    // trailing commas). Se nenhuma tentativa funcionar, cai no catch.
     try {
-      const parsed = JSON.parse(content) as TOutput;
+      const parsed = tolerantJsonParse<TOutput>(content);
       console.log(`[Agent ${this.name}] Successfully parsed output`);
       return parsed;
     } catch (parseError) {
@@ -967,17 +1048,24 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
       );
       const chunkedInputs = createChunkedInputs(input);
       console.log(
-        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks`
+        `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks (paralelos)`
       );
 
-      const outputs: EngenheiroTecnicoOutput[] = [];
-      for (let i = 0; i < chunkedInputs.length; i++) {
-        console.log(
-          `[EngenheiroTecnico] Processando chunk ${i + 1}/${chunkedInputs.length}...`
-        );
-        const chunkOutput = await super.execute(chunkedInputs[i]);
-        outputs.push(chunkOutput);
-      }
+      // P0.4 P2.X: chunks rodam em paralelo (Promise.all). Cada chunk é uma
+      // chamada Anthropic independente, sem dependência entre si — Anthropic
+      // permite múltiplas requisições concorrentes (ratelimit por minuto, não
+      // por concorrência). Reduz tempo total de N×T pra ~T (gargalo: chunk mais
+      // lento). Pra memoriais de 7 chunks × 2 min cada, vai de 14 min pra 2.
+      const t0 = Date.now();
+      const outputs = await Promise.all(
+        chunkedInputs.map((chunkInput, i) => {
+          console.log(`[EngenheiroTecnico] Disparando chunk ${i + 1}/${chunkedInputs.length}...`);
+          return super.execute(chunkInput);
+        })
+      );
+      console.log(
+        `[EngenheiroTecnico] Todos os ${chunkedInputs.length} chunks completos em ${((Date.now() - t0) / 1000).toFixed(1)}s`
+      );
 
       const merged = mergeEngenheiroOutputs(outputs);
       console.log(
@@ -1253,16 +1341,23 @@ export class OrcamentistaAgent extends BaseAgent<
         `[Orcamentista] Budget grande (${input.items.length} itens) - chunking em frentes`
       );
       const chunkedInputs = createOrcamentistaChunkedInputs(input);
-      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas`);
+      console.log(`[Orcamentista] ${chunkedInputs.length} frentes criadas (paralelas)`);
 
-      const outputs: OrcamentistaOutput[] = [];
-      for (let i = 0; i < chunkedInputs.length; i++) {
-        console.log(
-          `[Orcamentista] Frente ${i + 1}/${chunkedInputs.length} (${chunkedInputs[i].items.length} itens)...`
-        );
-        const out = await super.execute(chunkedInputs[i]);
-        outputs.push(out);
-      }
+      // Frentes rodam em paralelo (Promise.all). Mesma justificativa do
+      // Engenheiro Tecnico: chamadas Anthropic independentes, sem dependencia
+      // entre frentes. Reduz tempo total de N×T para ~T.
+      const t0 = Date.now();
+      const outputs = await Promise.all(
+        chunkedInputs.map((chunkInput, i) => {
+          console.log(
+            `[Orcamentista] Disparando frente ${i + 1}/${chunkedInputs.length} (${chunkInput.items.length} itens)...`
+          );
+          return super.execute(chunkInput);
+        })
+      );
+      console.log(
+        `[Orcamentista] Todas as ${chunkedInputs.length} frentes completas em ${((Date.now() - t0) / 1000).toFixed(1)}s`
+      );
 
       const merged = mergeOrcamentistaOutputs(outputs);
       console.log(

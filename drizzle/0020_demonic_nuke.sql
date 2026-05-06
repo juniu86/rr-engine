@@ -17,5 +17,5 @@ CREATE TABLE `price_database_entries` (
 );
 --> statement-breakpoint
 CREATE INDEX `price_db_search_idx` ON `price_database_entries` (`source`,`state`,`isActive`);--> statement-breakpoint
-CREATE INDEX `price_db_description_idx` ON `price_database_entries` (`description`);--> statement-breakpoint
+CREATE INDEX `price_db_description_idx` ON `price_database_entries` (`description`(255));--> statement-breakpoint
 CREATE INDEX `price_db_active_source_idx` ON `price_database_entries` (`isActive`,`source`);

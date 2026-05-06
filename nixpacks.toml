@@ -1,0 +1,13 @@
+# Configuração explícita do NIXPACKS pra deploy no Railway.
+# O default usa "pnpm i --frozen-lockfile" e falha quando lockfile esta
+# desatualizado em relacao ao package.json (caso de novas deps adicionadas
+# entre commits — ex: @clerk/backend no Sprint 3).
+
+[phases.install]
+cmds = ["pnpm install --no-frozen-lockfile"]
+
+[phases.build]
+cmds = ["pnpm build:server"]
+
+[start]
+cmd = "pnpm start"
