@@ -583,12 +583,23 @@ async function invokeAnthropicDirect(
 
   // 5. Call Anthropic API. Mesmo com streaming mantemos timeouts altos
   //    como rede de segurança caso a Anthropic trave entre eventos.
-  const { Agent } = await import("undici");
-  const dispatcher = new Agent({
-    headersTimeout: 5 * 60 * 1000, // 5 min — com stream raramente atinge
-    bodyTimeout: 10 * 60 * 1000, // 10 min — body é o stream inteiro
-    connectTimeout: 30 * 1000,
-  });
+  //
+  // Tentamos importar undici como módulo (dependência explícita); se não
+  // estiver disponível no runtime (ex: ambiente de teste mock), seguimos
+  // sem dispatcher customizado — fetch usa o default.
+  let dispatcher: unknown;
+  try {
+    const undici = await import("undici");
+    dispatcher = new undici.Agent({
+      headersTimeout: 5 * 60 * 1000,
+      bodyTimeout: 10 * 60 * 1000,
+      connectTimeout: 30 * 1000,
+    });
+  } catch {
+    // Sem undici, segue com defaults do Node fetch (timeout pode dispararar
+    // em outputs muito longos, mas o streaming reduz o risco).
+    dispatcher = undefined;
+  }
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
