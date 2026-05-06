@@ -1178,11 +1178,54 @@ export const appRouter = router({
           });
         }
 
-        // Marcar como aprovado após confirmação do usuário
-        await db.updateProject(input.projectId, {
-          status: "approved",
-          warningMessages: null, // Limpar warnings após confirmação
-        });
+        // Antes de aprovar, gravar totais finais na tabela projects (fonte
+        // única de verdade pra UI). Bug anterior: este caminho não gravava
+        // totalPrice, então o dashboard ficava sem o valor mesmo com
+        // proposta confirmada.
+        try {
+          const finalBudgetItems = await db.getBudgetItemsByProjectId(
+            input.projectId
+          );
+          const finalDirectCost = finalBudgetItems.reduce(
+            (sum: number, item: any) => sum + Number(item.totalCost || 0),
+            0
+          );
+          const finalLogistics = await db.getLogisticsCostsByProjectId(
+            input.projectId
+          );
+          const finalLogisticsCost = finalLogistics.reduce(
+            (sum: number, c: any) => sum + Number(c.totalCost || 0),
+            0
+          );
+          const executions = await db.getAgentExecutionsByProjectId(
+            input.projectId
+          );
+          const comercialExec = executions.find(
+            (e: any) => e.agentType === "comercial"
+          );
+          const finalPrice =
+            (comercialExec?.output as any)?.finalPrice ?? 0;
+
+          await db.updateProject(input.projectId, {
+            status: "approved",
+            warningMessages: null,
+            totalCostDirect: String(Math.round(finalDirectCost * 100) / 100),
+            totalCostIndirect: String(
+              Math.round(finalLogisticsCost * 100) / 100
+            ),
+            totalPrice: String(finalPrice),
+          });
+          console.log(
+            `[confirmProposal] Totais gravados: Direto R$${finalDirectCost.toFixed(2)}, Logística R$${finalLogisticsCost.toFixed(2)}, Preço R$${Number(finalPrice).toFixed(2)}`
+          );
+        } catch (err) {
+          console.error("[confirmProposal] Error saving final totals:", err);
+          // Mesmo se falhar a gravação dos totais, marca como aprovado.
+          await db.updateProject(input.projectId, {
+            status: "approved",
+            warningMessages: null,
+          });
+        }
 
         return { success: true, message: "Proposta confirmada com sucesso!" };
       }),
