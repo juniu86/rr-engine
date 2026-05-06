@@ -6,6 +6,7 @@ import {
   decomposeUnitCosts,
   type DecomposedItem,
 } from "./xlsx/itemDecomposition";
+import { splitBudgetAndLogistics } from "./xlsx/budgetLogisticsSplit";
 
 /** Escape HTML special characters to prevent XSS in generated documents */
 function escapeHtml(str: string | null | undefined): string {
@@ -503,10 +504,36 @@ function generateMemoriaXLSX(
   cashFlowItems: any[],
   comercialOutput?: any
 ): Buffer {
-  // Calculate totals
-  const totalDirect = budgetItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
-  const totalTax = budgetItems.reduce((sum, item) => sum + Number(item.taxAmount || 0), 0);
-  const totalLogistics = logisticsCosts.reduce((sum, cost) => sum + Number(cost.totalCost || 0), 0);
+  // P2 XLSX refactor (P0.2 + P1.2 + P2.4) — separa itens logísticos do
+  // orçamento detalhado. Itens de budgetItems que sobrepõem com
+  // logisticsCosts (Jaccard ≥ 0.7) ou que têm cara de logística
+  // (frete, caçamba, container, taxa horário, etc) são movidos pra
+  // aba dedicada. Sem isso, a aba "Custos Logísticos" saía vazia e os
+  // mesmos itens apareciam no Orçamento Detalhado — procurement não
+  // conseguia renegociar por categoria.
+  const split = splitBudgetAndLogistics(budgetItems, logisticsCosts);
+  const cleanBudgetItems = split.cleanBudgetItems as typeof budgetItems;
+  const consolidatedLogistics = split.consolidatedLogistics;
+  if (split.stats.movedFromBudget > 0 || split.stats.duplicatesRemoved > 0) {
+    console.log(
+      `[Memória de Cálculo] Logística: ${split.stats.movedFromBudget} item(ns) movido(s) do orçamento, ` +
+        `${split.stats.duplicatesRemoved} duplicata(s) removida(s) (${split.stats.originalLogisticsCount} → ${consolidatedLogistics.length})`
+    );
+  }
+
+  // Calculate totals (após o split — totais refletem as listas corretas)
+  const totalDirect = cleanBudgetItems.reduce(
+    (sum, item) => sum + Number(item.totalCost || 0),
+    0
+  );
+  const totalTax = cleanBudgetItems.reduce(
+    (sum, item) => sum + Number(item.taxAmount || 0),
+    0
+  );
+  const totalLogistics = consolidatedLogistics.reduce(
+    (sum, cost) => sum + Number(cost.totalCost || 0),
+    0
+  );
   
   // CORREÇÃO CRÍTICA: Usar o preço final do agente Comercial como fonte única de verdade
   const custoBase = totalDirect + totalLogistics;
@@ -541,7 +568,7 @@ function generateMemoriaXLSX(
     moUnitWithBdi: number;
     logUnitWithBdi: number;
     totalUnitWithBdi: number;
-  }> = budgetItems.map(item => {
+  }> = cleanBudgetItems.map(item => {
     const decomp = decomposeUnitCosts(item);
     return {
       item,
@@ -688,24 +715,47 @@ function generateMemoriaXLSX(
   XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento Detalhado");
   
   // === Planilha 2: Custos Logísticos ===
-  const logisticaData = [
+  // P2 XLSX refactor (P0.2 + P2.4) — consolidated inclui itens
+  // originalmente em logisticsCosts MAIS itens promovidos do orçamento
+  // detalhado (frete, container, taxa horário aeroportuário etc).
+  // Categoria padronizada via mapLogisticsCategory ou "outros".
+  const LOG_HEADER_ROW_INDEX = 3; // 1-based — linha 3 = "Categoria, Descrição, ..."
+  const logisticaData: any[][] = [
     ["CUSTOS LOGÍSTICOS"],
     [],
     ["Categoria", "Descrição", "Qtd.", "Unid.", "Custo Unit.", "Custo Total"],
-    ...logisticsCosts.map(cost => [
-      cost.category || "",
+    ...consolidatedLogistics.map(cost => [
+      cost.category || "outros",
       cost.description || "",
       Number(cost.quantity || 0),
-      cost.unit || "",
+      cost.unit || "un",
       Number(cost.unitCost || 0),
+      // Vai virar fórmula =Cn*En na pós-processamento abaixo.
       Number(cost.totalCost || 0),
     ]),
     [],
     ["TOTAL LOGÍSTICA", "", "", "", "", totalLogistics],
   ];
   const wsLogistica = XLSX.utils.aoa_to_sheet(logisticaData);
+
+  // P2 XLSX refactor (P1.4) — Custo Total (col F) por linha = qty × unitCost.
+  for (let i = 0; i < consolidatedLogistics.length; i++) {
+    const rowNum = LOG_HEADER_ROW_INDEX + 1 + i;
+    const totalAddr = XLSX.utils.encode_cell({ c: 5, r: rowNum - 1 });
+    const cell = wsLogistica[totalAddr];
+    if (cell) {
+      cell.f = `C${rowNum}*E${rowNum}`;
+      cell.t = "n";
+    }
+  }
+
   wsLogistica["!cols"] = [
-    { wch: 18 }, { wch: 40 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+    { wch: 18 },
+    { wch: 60 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 14 },
+    { wch: 14 },
   ];
   XLSX.utils.book_append_sheet(wb, wsLogistica, "Custos Logísticos");
   
