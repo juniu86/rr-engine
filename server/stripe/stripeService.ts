@@ -109,6 +109,50 @@ export async function createSingleBudgetCheckout(
   return session;
 }
 
+// ==================== Helpers ====================
+
+/**
+ * P2: Resolve `current_period_start` / `current_period_end` de uma
+ * Subscription, lidando com a mudança de schema do Stripe — em versões
+ * recentes (≥ 2025-04+) os campos saíram da raiz e vivem em
+ * `subscription.items.data[0]`. Os tipos da SDK confirmam:
+ * `Stripe.SubscriptionItem.current_period_*` é `number`, enquanto
+ * `Stripe.Subscription` não declara mais esses campos.
+ *
+ * Retorna `{ start, end }` em segundos UNIX, ou null se ambos faltarem
+ * (caso em que o caller deve pular o update — sem isso, drizzle persistia
+ * `1970-01-01` em prod e poluía os logs).
+ *
+ * Aceita qualquer objeto pra acomodar webhook payloads não-tipados.
+ */
+export function getSubscriptionPeriod(
+  sub: unknown
+): { start: number; end: number } | null {
+  if (!sub || typeof sub !== "object") return null;
+  const subAny = sub as Record<string, unknown>;
+
+  // Camada 1 (legado, ainda usada por algumas versões da API): raiz
+  const rootStart = Number(subAny.current_period_start);
+  const rootEnd = Number(subAny.current_period_end);
+  if (rootStart > 0 && rootEnd > 0) {
+    return { start: rootStart, end: rootEnd };
+  }
+
+  // Camada 2 (atual): primeiro item de subscription.items.data
+  const items = (subAny.items as { data?: Array<Record<string, unknown>> })
+    ?.data;
+  const firstItem = items?.[0];
+  if (firstItem) {
+    const itemStart = Number(firstItem.current_period_start);
+    const itemEnd = Number(firstItem.current_period_end);
+    if (itemStart > 0 && itemEnd > 0) {
+      return { start: itemStart, end: itemEnd };
+    }
+  }
+
+  return null;
+}
+
 // ==================== 3-TIER CHECKOUT (Sprint 5 / P1.7) ====================
 
 const FRONTEND_URL = process.env.FRONTEND_URL ?? "https://engine.rres.com.br";
@@ -566,6 +610,14 @@ export async function handleCheckoutCompleted(
       .where(eq(subscriptions.userId, userId))
       .limit(1);
 
+    // P2: leitura defensiva dos period dates (raiz OU items[0]).
+    const period = getSubscriptionPeriod(stripeSub);
+    if (!period) {
+      console.warn(
+        `[Stripe Webhook] Subscription ${session.subscription} sem current_period_* válido — pulando update de período`
+      );
+    }
+
     const tierData = tierDataFor(plan);
     const subData = {
       userId,
@@ -576,12 +628,8 @@ export async function handleCheckoutCompleted(
       quotaUsed: 0,
       quotaLimit: tierData.quotaLimit,
       obraValueCap: tierData.obraValueCap,
-      currentPeriodStart: new Date(
-        ((stripeSub as any).current_period_start || 0) * 1000
-      ),
-      currentPeriodEnd: new Date(
-        ((stripeSub as any).current_period_end || 0) * 1000
-      ),
+      currentPeriodStart: period ? new Date(period.start * 1000) : null,
+      currentPeriodEnd: period ? new Date(period.end * 1000) : null,
     };
 
     if (existing) {
@@ -637,17 +685,24 @@ export async function handleSubscriptionUpdated(
     paused: "canceled",
   };
 
+  // P2: leitura defensiva — campos de período migraram da raiz pra
+  // subscription.items.data[0] em versões recentes da Stripe API.
+  const period = getSubscriptionPeriod(subscription);
+  const updateData: Record<string, unknown> = {
+    status: (statusMap[subscription.status] || "incomplete") as any,
+  };
+  if (period) {
+    updateData.currentPeriodStart = new Date(period.start * 1000);
+    updateData.currentPeriodEnd = new Date(period.end * 1000);
+  } else {
+    console.warn(
+      `[Stripe Webhook] Subscription ${subscription.id} sem current_period_* válido em updated event — pulando atualização de período`
+    );
+  }
+
   await db
     .update(subscriptions)
-    .set({
-      status: (statusMap[subscription.status] || "incomplete") as any,
-      currentPeriodStart: new Date(
-        ((subscription as any).current_period_start || 0) * 1000
-      ),
-      currentPeriodEnd: new Date(
-        ((subscription as any).current_period_end || 0) * 1000
-      ),
-    })
+    .set(updateData)
     .where(eq(subscriptions.id, sub.id));
 
   console.log(
@@ -699,21 +754,23 @@ export async function handleInvoicePaid(invoice: Stripe.Invoice) {
       // que acabou de ser pago. Sem essa atualização, canCreateBudget
       // continua usando o currentPeriodEnd antigo até o próximo
       // customer.subscription.updated.
+      // P2: leitura defensiva — campos migraram pra subscription.items.data[0].
       const stripeSub = await getStripeClient().subscriptions.retrieve(
         invoiceAny.subscription as string
       );
-      const stripeAny = stripeSub as any;
+      const period = getSubscriptionPeriod(stripeSub);
+      const updateData: Record<string, unknown> = { quotaUsed: 0 };
+      if (period) {
+        updateData.currentPeriodStart = new Date(period.start * 1000);
+        updateData.currentPeriodEnd = new Date(period.end * 1000);
+      } else {
+        console.warn(
+          `[Stripe Webhook] Subscription ${invoiceAny.subscription} sem current_period_* válido em invoice.paid — quota resetada mas período não atualizado`
+        );
+      }
       await db
         .update(subscriptions)
-        .set({
-          quotaUsed: 0,
-          currentPeriodStart: new Date(
-            (stripeAny.current_period_start || 0) * 1000
-          ),
-          currentPeriodEnd: new Date(
-            (stripeAny.current_period_end || 0) * 1000
-          ),
-        })
+        .set(updateData)
         .where(eq(subscriptions.id, sub.id));
 
       console.log(
