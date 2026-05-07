@@ -50,7 +50,12 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
+      // P3: ctx.req agora é estruturalmente compatível mas não é
+      // tipado como Express.Request (vide _core/context.ts). Cast
+      // pra evitar erro de assinatura — em runtime é Request real.
+      const cookieOptions = getSessionCookieOptions(
+        ctx.req as unknown as import("express").Request
+      );
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
@@ -1203,8 +1208,7 @@ export const appRouter = router({
           const comercialExec = executions.find(
             (e: any) => e.agentType === "comercial"
           );
-          const finalPrice =
-            (comercialExec?.output as any)?.finalPrice ?? 0;
+          const finalPrice = (comercialExec?.output as any)?.finalPrice ?? 0;
 
           await db.updateProject(input.projectId, {
             status: "approved",

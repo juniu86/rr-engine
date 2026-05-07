@@ -1,0 +1,51 @@
+name: Publish api-types
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/routers.ts"
+      - "server/routers/**"
+      - "shared/**"
+      - "packages/api-types/**"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # precisamos do histórico para `git rev-list --count`
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@juniu86"
+          cache: "pnpm"
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Bump version (patch = commit count)
+        working-directory: packages/api-types
+        run: |
+          # Versão = 0.1.<N> onde N = commits no main que tocaram tipos.
+          # Garante monotônico sem precisar de tag manual.
+          COMMITS=$(git rev-list --count HEAD -- ../../server/routers.ts ../../server/routers ../../shared ../../packages/api-types)
+          npm version "0.1.${COMMITS}" --no-git-tag-version --allow-same-version
+
+      - name: Build
+        working-directory: packages/api-types
+        run: pnpm build
+
+      - name: Publish
+        working-directory: packages/api-types
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

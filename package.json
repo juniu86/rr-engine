@@ -14,7 +14,9 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "build:types": "pnpm --filter @juniu86/rr-engine-api-types build",
+    "publish:types": "pnpm --filter @juniu86/rr-engine-api-types publish"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
