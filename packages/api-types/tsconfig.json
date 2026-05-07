@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../..",
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": false,
+    "noEmit": false,
+    "composite": false,
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": false,
+    "isolatedModules": true,
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "types": ["node"],
+    "baseUrl": "../..",
+    "paths": {
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": [
+    "index.ts",
+    "../../server/**/*.ts",
+    "../../shared/**/*.ts",
+    "../../drizzle/schema.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "../../server/**/*.test.ts",
+    "../../client/**",
+    "../../node_modules/**",
+    "../../packages/api-types/dist*/**"
+  ]
+}

@@ -115,3 +115,5 @@ temp/
 /memoria_calculo_*.xls
 /teste-*.md
 /test-*.md
+**/dist-raw/
+**/dist/

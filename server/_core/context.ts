@@ -2,9 +2,47 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import type { User } from "../../drizzle/schema";
 import { authenticateRequestWithClerk } from "./clerk-auth";
 
+/**
+ * P3 — Subset estrutural do `Request` do Express usado pelas procedures.
+ *
+ * Usar `CreateExpressContextOptions["req"]` direto fazia o tsc emitir
+ * referências profundas a `@types/express-serve-static-core` e `@types/qs`
+ * no `dist/index.d.ts` do `packages/api-types`, quebrando a portabilidade
+ * (TS2742). Como o cliente tRPC NUNCA acessa `ctx.req`/`ctx.res`, basta
+ * um shape mínimo cobrindo o que `routers.ts` realmente usa.
+ *
+ * Em runtime, o objeto continua sendo o `Request` completo do Express —
+ * usamos cast `as unknown as TrpcRequest` em `createContext`.
+ */
+export interface TrpcRequest {
+  headers: {
+    authorization?: string;
+    origin?: string;
+    cookie?: string;
+  } & Record<string, string | string[] | undefined>;
+  protocol: string;
+  get(name: string): string | undefined;
+  cookies?: Record<string, string>;
+  body?: unknown;
+  ip?: string;
+  url?: string;
+}
+
+/** Subset estrutural do `Response` do Express. */
+export interface TrpcResponse {
+  clearCookie(name: string, options?: Record<string, unknown>): TrpcResponse;
+  cookie(
+    name: string,
+    value: string,
+    options?: Record<string, unknown>
+  ): TrpcResponse;
+  status(code: number): TrpcResponse;
+  json(data: unknown): TrpcResponse;
+}
+
 export type TrpcContext = {
-  req: CreateExpressContextOptions["req"];
-  res: CreateExpressContextOptions["res"];
+  req: TrpcRequest;
+  res: TrpcResponse;
   user: User | null;
 };
 
@@ -29,8 +67,10 @@ export async function createContext(
   }
 
   return {
-    req: opts.req,
-    res: opts.res,
+    // Cast estrutural — em runtime são os objetos completos do Express.
+    // O subset `TrpcRequest`/`TrpcResponse` cobre só o que routers.ts usa.
+    req: opts.req as unknown as TrpcRequest,
+    res: opts.res as unknown as TrpcResponse,
     user,
   };
 }
