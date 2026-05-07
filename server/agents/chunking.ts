@@ -1,15 +1,107 @@
 /**
  * Chunking Strategy para Memoriais Grandes
- * 
+ *
  * Divide memoriais com muitos itens em chunks menores para evitar
  * truncamento de JSON quando o output excede o limite de tokens.
- * 
+ *
  * Usado principalmente pelo EngenheiroTecnicoAgent.
  */
 
-import type { EngenheiroTecnicoInput, EngenheiroTecnicoOutput, MissingInfoRequest } from "../../shared/agents";
+import { createHash } from "node:crypto";
+import type {
+  EngenheiroTecnicoInput,
+  EngenheiroTecnicoOutput,
+  MissingInfoRequest,
+} from "../../shared/agents";
 import { dedupItems, countActualRemovals, countSuspects } from "./dedupUtils";
 import { logger, incrementStat } from "../utils/logger";
+
+// ==================== Partial-rerun cache (P2) ====================
+
+/**
+ * Snapshot de um chunk individual processado pelo Engenheiro. Persistido
+ * dentro de `agentExecutions.output._chunkSnapshots` na 1ª run; consultado
+ * na 2ª run (quando o user responde `missingInfoRequests`) para decidir
+ * quais chunks pular.
+ *
+ * Sem esse cache, a 2ª run reprocessa todos os N chunks gastando ~$3-5
+ * em Opus mesmo que só 1-2 chunks tenham missingInfo. Em obras com
+ * memorial grande (>25 linhas), isso dobra o custo do Engenheiro.
+ */
+export interface ChunkSnapshot {
+  chunkIndex: number;
+  /** Hash do conteúdo do chunk (não do memorial inteiro) — invalida se editado. */
+  chunkHash: string;
+  /** Foi este chunk que solicitou input do user? Se sim, deve ser re-rodado. */
+  hadMissingInfo: boolean;
+  /** Output completo do chunk pra replay. */
+  output: EngenheiroTecnicoOutput;
+}
+
+/**
+ * Hash determinístico de um texto (sha256 hex). Usado pra detectar
+ * mudanças no memorial / no conteúdo de cada chunk entre runs.
+ */
+export function hashText(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * Decide quais chunks devem ser re-rodados na execução atual a partir do
+ * snapshot da execução anterior. Política:
+ *  - Se NÃO há snapshot prévio → roda todos.
+ *  - Se memorial inteiro mudou (hash diferente) → invalida tudo, roda todos.
+ *  - Para cada chunk: se hash idêntico E `hadMissingInfo === false` → reusa.
+ *    Caso contrário → re-roda.
+ *
+ * Retorna `{ toRerun: Set<chunkIndex>, reused: Map<chunkIndex, output> }`.
+ */
+export function planChunkRerun(
+  currentChunks: string[],
+  currentMemorialHash: string,
+  previous?: {
+    memorialHash: string;
+    chunkSnapshots: ChunkSnapshot[];
+  } | null
+): {
+  toRerun: Set<number>;
+  reused: Map<number, EngenheiroTecnicoOutput>;
+  reason: "no-cache" | "memorial-changed" | "partial-reuse" | "full-reuse";
+} {
+  const toRerun = new Set<number>();
+  const reused = new Map<number, EngenheiroTecnicoOutput>();
+
+  if (!previous || !previous.chunkSnapshots?.length) {
+    for (let i = 0; i < currentChunks.length; i++) toRerun.add(i);
+    return { toRerun, reused, reason: "no-cache" };
+  }
+
+  if (previous.memorialHash !== currentMemorialHash) {
+    for (let i = 0; i < currentChunks.length; i++) toRerun.add(i);
+    return { toRerun, reused, reason: "memorial-changed" };
+  }
+
+  const snapsByIndex = new Map(
+    previous.chunkSnapshots.map(s => [s.chunkIndex, s])
+  );
+  for (let i = 0; i < currentChunks.length; i++) {
+    const snap = snapsByIndex.get(i);
+    const currentChunkHash = hashText(currentChunks[i]);
+    const canReuse =
+      snap !== undefined &&
+      snap.chunkHash === currentChunkHash &&
+      snap.hadMissingInfo === false;
+    if (canReuse) {
+      reused.set(i, snap!.output);
+    } else {
+      toRerun.add(i);
+    }
+  }
+
+  const reason: "partial-reuse" | "full-reuse" =
+    toRerun.size === 0 ? "full-reuse" : "partial-reuse";
+  return { toRerun, reused, reason };
+}
 
 export interface ChunkConfig {
   /** Máximo de linhas por chunk (default: 20) */
@@ -28,7 +120,7 @@ const DEFAULT_CHUNK_CONFIG: ChunkConfig = {
  * Threshold: 25 linhas (margem de segurança para ~20 itens de engenharia).
  */
 export function needsChunking(memorial: string, threshold = 25): boolean {
-  const lines = memorial.split('\n').filter(l => l.trim().length > 0);
+  const lines = memorial.split("\n").filter(l => l.trim().length > 0);
   return lines.length > threshold;
 }
 
@@ -39,8 +131,8 @@ export function splitMemorialIntoChunks(
   memorial: string,
   config: ChunkConfig = DEFAULT_CHUNK_CONFIG
 ): string[] {
-  const lines = memorial.split('\n').filter(l => l.trim().length > 0);
-  
+  const lines = memorial.split("\n").filter(l => l.trim().length > 0);
+
   if (lines.length <= config.maxItemsPerChunk) {
     return [memorial];
   }
@@ -50,7 +142,7 @@ export function splitMemorialIntoChunks(
 
   for (let i = 0; i < lines.length; i += step) {
     const chunkLines = lines.slice(i, i + config.maxItemsPerChunk);
-    chunks.push(chunkLines.join('\n'));
+    chunks.push(chunkLines.join("\n"));
   }
 
   return chunks;
@@ -107,7 +199,9 @@ ${chunk}`;
  * Merge de múltiplos outputs do EngenheiroTecnico em um único output consolidado.
  * Deduplica itens pelo par (group + itemNumber).
  */
-export function mergeEngenheiroOutputs(outputs: EngenheiroTecnicoOutput[]): EngenheiroTecnicoOutput {
+export function mergeEngenheiroOutputs(
+  outputs: EngenheiroTecnicoOutput[]
+): EngenheiroTecnicoOutput {
   if (outputs.length === 0) {
     return {
       items: [],
@@ -139,14 +233,22 @@ export function mergeEngenheiroOutputs(outputs: EngenheiroTecnicoOutput[]): Enge
   if (removedCount > 0) {
     logger.warn(
       `[ChunkMerge] Engenheiro: ${removedCount} duplicatas removidas`,
-      { details: dedup.duplicatesRemoved.filter(d => d.reason !== "suspect_only_logged") }
+      {
+        details: dedup.duplicatesRemoved.filter(
+          d => d.reason !== "suspect_only_logged"
+        ),
+      }
     );
     incrementStat("duplicatesRemoved", removedCount);
   }
   if (suspectCount > 0) {
     logger.info(
       `[ChunkMerge] Engenheiro: ${suspectCount} suspeitas (não removidas)`,
-      { details: dedup.duplicatesRemoved.filter(d => d.reason === "suspect_only_logged") }
+      {
+        details: dedup.duplicatesRemoved.filter(
+          d => d.reason === "suspect_only_logged"
+        ),
+      }
     );
   }
 
@@ -158,18 +260,31 @@ export function mergeEngenheiroOutputs(outputs: EngenheiroTecnicoOutput[]): Enge
       outputs.flatMap(o => o.missingInfoRequests ?? [])
     ),
     items: dedup.items,
-    pendingItems: Array.from(new Set(outputs.flatMap(o => o.pendingItems ?? []))),
-    nbrReferences: Array.from(new Set(outputs.flatMap(o => o.nbrReferences ?? []))),
-    criticalNotes: Array.from(new Set(outputs.flatMap(o => o.criticalNotes ?? []))),
-    groupsProcessed: Array.from(new Set(outputs.flatMap(o => o.groupsProcessed ?? []))),
-    totalItemsExtracted: outputs.reduce((sum, o) => sum + (o.totalItemsExtracted ?? 0), 0),
+    pendingItems: Array.from(
+      new Set(outputs.flatMap(o => o.pendingItems ?? []))
+    ),
+    nbrReferences: Array.from(
+      new Set(outputs.flatMap(o => o.nbrReferences ?? []))
+    ),
+    criticalNotes: Array.from(
+      new Set(outputs.flatMap(o => o.criticalNotes ?? []))
+    ),
+    groupsProcessed: Array.from(
+      new Set(outputs.flatMap(o => o.groupsProcessed ?? []))
+    ),
+    totalItemsExtracted: outputs.reduce(
+      (sum, o) => sum + (o.totalItemsExtracted ?? 0),
+      0
+    ),
   };
 }
 
 /**
  * Deduplica solicitações de informação faltante pelo fieldId.
  */
-function deduplicateMissingInfo(requests: MissingInfoRequest[]): MissingInfoRequest[] {
+function deduplicateMissingInfo(
+  requests: MissingInfoRequest[]
+): MissingInfoRequest[] {
   const seen = new Map<string, MissingInfoRequest>();
   for (const req of requests) {
     if (!seen.has(req.fieldId)) {
