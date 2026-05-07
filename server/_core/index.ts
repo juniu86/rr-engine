@@ -9,6 +9,10 @@ import { serveStatic, setupVite } from "./vite";
 import { stripeWebhookHandler } from "../stripe/webhook";
 import { shutdownTracing } from "../services/tracing";
 
+// Marker pra confirmar nos Deploy Logs do Railway que o build atual subiu.
+// Trocar valor a cada investigação de "build cacheado".
+console.log("[boot] BUILD_MARKER=2026-05-07-applyAuditCorrections-fix");
+
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
