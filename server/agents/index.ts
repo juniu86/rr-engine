@@ -9,6 +9,7 @@ import {
   type DuplicateFinding,
   type AuditorBudgetItem,
 } from "./dedupUtils";
+import { tolerantJsonParse, tryTolerantJsonParse } from "./jsonRepair";
 
 /**
  * P2 ADENDO (dedup semântica): normaliza description para deduplicar
@@ -71,66 +72,8 @@ function stripCodeFences(text: string): string {
   return trimmed;
 }
 
-/**
- * Converte JS literals inválidos em JSON (undefined, NaN, Infinity) pra null.
- * Claude às vezes vaza esses tokens mesmo quando o prompt pede JSON estrito.
- *
- * Cuidado: aplica APENAS quando aparecem como valor (após ':' ou ',' ou '['),
- * pra não quebrar string literals que contenham a palavra "undefined".
- */
-function sanitizeJsLiteralsForJson(text: string): string {
-  return text
-    .replace(/(:|\[|,)\s*undefined\b/g, "$1 null")
-    .replace(/(:|\[|,)\s*NaN\b/g, "$1 null")
-    .replace(/(:|\[|,)\s*Infinity\b/g, "$1 null")
-    .replace(/(:|\[|,)\s*-Infinity\b/g, "$1 null");
-}
-
-/**
- * Remove trailing commas antes de } ou ] — JSON estrito não aceita.
- * Claude às vezes adiciona, especialmente em arrays multi-linha.
- *
- * Regex usa lookahead pra preservar conteúdo de strings (uma string com
- * "}" interno é raro o suficiente pra ignorar — se virar problema, troca
- * por parser stateful).
- */
-function removeTrailingCommas(text: string): string {
-  return text.replace(/,(\s*[}\]])/g, "$1");
-}
-
-/**
- * Tenta JSON.parse com saneamento progressivo. Em ordem:
- *  1. parse direto
- *  2. parse após sanitizar literals JS (undefined, NaN, Infinity → null)
- *  3. parse após remover trailing commas
- *  4. parse com tudo combinado
- *
- * Se nada funcionar, lança o erro ORIGINAL com snippet do conteúdo
- * pra debug.
- */
-function tolerantJsonParse<T>(text: string): T {
-  // Tentativa 1: parse direto.
-  try {
-    return JSON.parse(text) as T;
-  } catch (err1) {
-    // Tentativa 2: literals JS inválidos.
-    try {
-      return JSON.parse(sanitizeJsLiteralsForJson(text)) as T;
-    } catch {}
-    // Tentativa 3: trailing commas.
-    try {
-      return JSON.parse(removeTrailingCommas(text)) as T;
-    } catch {}
-    // Tentativa 4: tudo junto.
-    try {
-      return JSON.parse(
-        removeTrailingCommas(sanitizeJsLiteralsForJson(text))
-      ) as T;
-    } catch {}
-    // Re-lança o erro original com snippet pra debug.
-    throw err1;
-  }
-}
+// JSON parsing helpers moved to ./jsonRepair.ts (P2: + escape de aspas
+// não-escapadas + tryTolerantJsonParse pra retry de correção).
 
 // Base agent class
 abstract class BaseAgent<TInput, TOutput> {
@@ -408,7 +351,8 @@ abstract class BaseAgent<TInput, TOutput> {
     );
 
     // Etapa 4: Parse do JSON com tolerância progressiva (literals JS,
-    // trailing commas). Se nenhuma tentativa funcionar, cai no catch.
+    // trailing commas, escape de aspas não-escapadas). Se nenhuma
+    // tentativa funcionar, cai no catch.
     try {
       const parsed = tolerantJsonParse<TOutput>(content);
       console.log(`[Agent ${this.name}] Successfully parsed output`);
@@ -416,7 +360,9 @@ abstract class BaseAgent<TInput, TOutput> {
     } catch (parseError) {
       console.error(`[Agent ${this.name}] JSON parse error:`, parseError);
 
-      // Detectar JSON truncado via estrutura
+      // Detectar JSON truncado via estrutura — não vale a pena pedir
+      // correção pra LLM se o output veio incompleto (vai voltar com
+      // o mesmo problema).
       const trimmed = content.trim();
       const isLikelyTruncated =
         (trimmed.startsWith("{") && !trimmed.endsWith("}")) ||
@@ -429,10 +375,76 @@ abstract class BaseAgent<TInput, TOutput> {
         );
       }
 
+      // P2 — retry de correção: pede pra própria LLM consertar a sintaxe
+      // do output anterior. Custo: ~$0,05–$0,30. Bem mais barato que
+      // perder o pipeline inteiro (caso real DGOA: ~$10 em tokens já
+      // gastos upstream).
+      try {
+        const corrected = await this._retryWithCorrection(
+          content,
+          parseError as Error,
+          preferredModel
+        );
+        if (corrected) {
+          console.log(
+            `[Agent ${this.name}] JSON corrigido via retry da própria LLM`
+          );
+          return corrected;
+        }
+      } catch (retryErr) {
+        console.error(
+          `[Agent ${this.name}] Retry de correção falhou:`,
+          retryErr
+        );
+      }
+
       throw new Error(
-        `Agent ${this.name} returned invalid JSON: ${content.substring(0, 200)}...`
+        `Agent ${this.name} returned invalid JSON (mesmo após retry de correção): ${content.substring(0, 200)}...`
       );
     }
+  }
+
+  /**
+   * P2 — uma tentativa adicional pedindo pra própria LLM corrigir
+   * APENAS sintaxe JSON. Não altera valores. Retorna `null` quando
+   * mesmo após correção o output não parseou.
+   */
+  private async _retryWithCorrection(
+    brokenContent: string,
+    originalError: Error,
+    model: string
+  ): Promise<TOutput | null> {
+    console.log(
+      `[Agent ${this.name}] Pedindo correção JSON via LLM (model=${model})...`
+    );
+    const correctionResponse = await invokeLLM({
+      model,
+      // Temp 0 — mexe só na sintaxe, valores ficam idênticos.
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a JSON syntax fixer. Your only job is to repair JSON syntax errors " +
+            "(unescaped quotes inside strings, missing commas, unbalanced brackets, " +
+            "trailing commas, JS literals like undefined/NaN). Output ONLY the corrected " +
+            "JSON, no markdown, no commentary. Preserve all values exactly as they were.",
+        },
+        {
+          role: "user",
+          content:
+            `O output JSON abaixo veio com erro de sintaxe (\`${originalError.message}\`). ` +
+            `Corrija APENAS os erros de sintaxe JSON. NÃO altere valores. ` +
+            `Devolva o mesmo conteúdo, apenas com sintaxe válida.\n\n` +
+            `--- OUTPUT BRUTO ---\n${brokenContent}`,
+        },
+      ],
+      // Sem response_format pra evitar a mesma armadilha que produziu
+      // o erro original (Anthropic ignora).
+    });
+    const correctedRaw = this._processLLMResponse(correctionResponse);
+    const correctedContent = stripCodeFences(correctedRaw);
+    return tryTolerantJsonParse<TOutput>(correctedContent);
   }
 
   /**
