@@ -222,7 +222,8 @@ export async function generateMemoriaCalculo(
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
   cashFlowItems: any[],
-  comercialOutput?: any
+  comercialOutput?: any,
+  tributarioOutput?: any
 ): Promise<{ url: string; fileKey: string }> {
   // Generate real XLSX using SheetJS library
   const xlsxBuffer = generateMemoriaXLSX(
@@ -230,7 +231,8 @@ export async function generateMemoriaCalculo(
     budgetItems,
     logisticsCosts,
     cashFlowItems,
-    comercialOutput
+    comercialOutput,
+    tributarioOutput
   );
 
   const timestamp = Date.now();
@@ -570,7 +572,8 @@ function generateMemoriaXLSX(
   budgetItems: BudgetItem[],
   logisticsCosts: any[],
   cashFlowItems: any[],
-  comercialOutput?: any
+  comercialOutput?: any,
+  tributarioOutput?: any
 ): Buffer {
   // P2 XLSX refactor (P0.2 + P1.2 + P2.4) — separa itens logísticos do
   // orçamento detalhado. Itens de budgetItems que sobrepõem com
@@ -594,30 +597,58 @@ function generateMemoriaXLSX(
     (sum, item) => sum + Number(item.totalCost || 0),
     0
   );
-  const totalTax = cleanBudgetItems.reduce(
+  // P0 (07/05/2026, Bug 1): Tributário consolida tributos no nível do
+  // projeto (`totalTaxes`), não por item — `budget_items.taxAmount` é
+  // sempre 0 por design. Antes, o XLSX somava o campo zero e mostrava
+  // "Tributos: R$ 0,00" mesmo com Tributário tendo rodado e calculado
+  // ~R$ 300k. Agora consumimos diretamente `tributarioOutput.totalTaxes`,
+  // com fallback pra soma dos itens (caso schema antigo).
+  const tributarioTotalTaxes = Number(
+    (tributarioOutput as any)?.totalTaxes ?? 0
+  );
+  const totalTaxFromItems = cleanBudgetItems.reduce(
     (sum, item) => sum + Number(item.taxAmount || 0),
     0
   );
+  const totalTax =
+    tributarioTotalTaxes > 0 ? tributarioTotalTaxes : totalTaxFromItems;
   const totalLogistics = consolidatedLogistics.reduce(
     (sum, cost) => sum + Number(cost.totalCost || 0),
     0
   );
 
-  // CORREÇÃO CRÍTICA: Usar o preço final do agente Comercial como fonte única de verdade
+  // P0 (07/05/2026, Bug 2) — fonte única de verdade do preço final:
+  // `projects.totalPrice` no banco. Dashboard lê esse campo; XLSX agora
+  // também. Antes, XLSX recalculava com `custoBase × (1 + BDI)` quando
+  // `comercialFinalPrice < custoBase`, gerando divergência (dashboard
+  // R$ 2.126k vs XLSX R$ 2.269k no smoke "Posto Paulo Sérgio"). Ordem de
+  // precedência: project.totalPrice → comercialOutput.finalPrice →
+  // custoBase × (1 + BDI) como último recurso.
   const custoBase = totalDirect + totalLogistics;
-  const comercialFinalPrice = comercialOutput?.finalPrice || 0;
-  const comercialBdi = comercialOutput?.adjustedBdi || 0.3;
+  const comercialFinalPrice = Number(comercialOutput?.finalPrice) || 0;
+  const comercialBdi = Number(comercialOutput?.adjustedBdi) || 0.3;
+  const projectTotalPrice = Number(project.totalPrice) || 0;
 
   let totalFinal: number;
   let totalBdi: number;
+  let totalFinalSource: "project" | "comercial" | "fallback";
 
-  if (comercialFinalPrice > 0 && comercialFinalPrice >= custoBase) {
+  if (projectTotalPrice > 0) {
+    totalFinal = projectTotalPrice;
+    totalBdi = Math.max(0, totalFinal - custoBase);
+    totalFinalSource = "project";
+  } else if (comercialFinalPrice > 0) {
     totalFinal = comercialFinalPrice;
-    totalBdi = totalFinal - custoBase;
+    totalBdi = Math.max(0, totalFinal - custoBase);
+    totalFinalSource = "comercial";
   } else {
     totalBdi = custoBase * comercialBdi;
     totalFinal = custoBase + totalBdi;
+    totalFinalSource = "fallback";
   }
+  console.log(
+    `[Memória de Cálculo] totalFinal source=${totalFinalSource} (project=${projectTotalPrice.toFixed(2)}, comercial=${comercialFinalPrice.toFixed(2)}, custoBase=${custoBase.toFixed(2)}, totalFinal=${totalFinal.toFixed(2)})`
+  );
 
   // P2 XLSX refactor — markup que dilui BDI nos preços unitários.
   // Cada Mat/MO/Log unitário sai com BDI embutido; Custo Total da linha
@@ -671,11 +702,14 @@ function generateMemoriaXLSX(
   const wb = XLSX.utils.book_new();
 
   // === Planilha 1: Orçamento Detalhado ===
-  // Layout (BDI diluído — sem coluna BDI/Preço Final separadas, P1.3):
+  // Layout (BDI diluído — sem coluna BDI/Preço Final separadas, P1.3.
+  // P0 07/05/2026, Bug 5: removida coluna "Custo Logística" — aparecia
+  // sempre 0 no orçamento detalhado porque logística é macro-rateada na
+  // aba "Custos Logísticos", não item-a-item. Confundia procurement.):
   //   A: Item | B: Código | C: Descrição | D: Unid. | E: Qtd. |
   //   F: Custo Material (unit, com BDI) | G: Custo M.O. (unit, com BDI) |
-  //   H: Custo Logística (unit, com BDI) | I: Custo Total (=E*(F+G+H)) |
-  //   J: Impostos | K: Fonte | L: Cód. Fonte | M: Premissa
+  //   H: Custo Total (=E*(F+G)) |
+  //   I: Impostos | J: Fonte | K: Cód. Fonte | L: Premissa
   const HEADER_ROW_INDEX = 4; // 1-based (linha 4 = "Item, Código, ...")
   const orcamentoData = [
     [`MEMÓRIA DE CÁLCULO - ${project.name}`],
@@ -689,7 +723,6 @@ function generateMemoriaXLSX(
       "Qtd.",
       "Custo Material",
       "Custo M.O.",
-      "Custo Logística",
       "Custo Total",
       "Impostos",
       "Fonte",
@@ -708,11 +741,11 @@ function generateMemoriaXLSX(
       d.item.description,
       d.item.unit || "",
       Number(d.item.quantity || 0),
-      d.matUnitWithBdi,
+      // P0 Bug 5: matUnit + logUnit colapsado em material (logística é
+      // macro, não item-a-item). Mantém invariante qty × (mat + mo) = total.
+      d.matUnitWithBdi + d.logUnitWithBdi,
       d.moUnitWithBdi,
-      d.logUnitWithBdi,
-      // I: total da linha — vai virar fórmula Excel após aoa_to_sheet.
-      // O número fica como fallback caso o cliente não suporte recálculo.
+      // H: total da linha — vai virar fórmula Excel após aoa_to_sheet.
       round2(Number(d.item.quantity || 0) * d.totalUnitWithBdi),
       Number(d.item.taxAmount || 0),
       d.item.source || "",
@@ -722,7 +755,6 @@ function generateMemoriaXLSX(
     [],
     [
       "TOTAL CUSTO DIRETO (com BDI diluído)",
-      "",
       "",
       "",
       "",
@@ -739,24 +771,21 @@ function generateMemoriaXLSX(
       "",
       "",
       "",
-      "",
       totalLogistics * markupFactor,
     ],
-    ["PREÇO FINAL DE VENDA", "", "", "", "", "", "", "", totalFinal],
+    ["PREÇO FINAL DE VENDA", "", "", "", "", "", "", totalFinal],
   ];
   const wsOrcamento = XLSX.utils.aoa_to_sheet(orcamentoData);
 
-  // P2 XLSX refactor (P0.1 + P1.4) — substitui valor de Custo Total por
-  // fórmula Excel nativa `=E_n * (F_n + G_n + H_n)`. Garante que mexer
-  // em quantidade ou componente propaga via planilha. Mantém o número
-  // calculado como fallback (cell.v) — clientes que não recalculam
-  // ainda enxergam o valor.
+  // P0 (Bug 5, 07/05/2026) — Custo Total agora coluna H (era I). Fórmula
+  // colapsa logística no material: `=E_n * (F_n + G_n)`. Logística
+  // segue sendo macro-rateada na aba "Custos Logísticos".
   for (let i = 0; i < decomposed.length; i++) {
     const rowNum = HEADER_ROW_INDEX + 1 + i; // 1-based, primeira linha de item
-    const totalCellAddr = XLSX.utils.encode_cell({ c: 8, r: rowNum - 1 }); // I
+    const totalCellAddr = XLSX.utils.encode_cell({ c: 7, r: rowNum - 1 }); // H
     const totalCell = wsOrcamento[totalCellAddr];
     if (totalCell) {
-      totalCell.f = `E${rowNum}*(F${rowNum}+G${rowNum}+H${rowNum})`;
+      totalCell.f = `E${rowNum}*(F${rowNum}+G${rowNum})`;
       totalCell.t = "n";
     }
   }
@@ -767,14 +796,13 @@ function generateMemoriaXLSX(
     { wch: 70 }, // C: Descrição (P2.1 — antes 216,8 pt; agora ~70 chars)
     { wch: 8 }, // D: Unid.
     { wch: 8 }, // E: Qtd.
-    { wch: 14 }, // F: Custo Material
+    { wch: 14 }, // F: Custo Material (inclui logística diluída — Bug 5)
     { wch: 14 }, // G: Custo M.O.
-    { wch: 14 }, // H: Custo Logística
-    { wch: 14 }, // I: Custo Total
-    { wch: 12 }, // J: Impostos
-    { wch: 12 }, // K: Fonte
-    { wch: 14 }, // L: Cód. Fonte
-    { wch: 30 }, // M: Premissa
+    { wch: 14 }, // H: Custo Total
+    { wch: 12 }, // I: Impostos
+    { wch: 12 }, // J: Fonte
+    { wch: 14 }, // K: Cód. Fonte
+    { wch: 30 }, // L: Premissa
   ];
   XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento Detalhado");
 
@@ -886,13 +914,20 @@ function generateMemoriaXLSX(
     ],
     ["Custos Logísticos (com BDI diluído)", totalLogistics * markupFactor],
     [],
-    ["Impostos (para referência fiscal)", totalTax],
+    // P0 (07/05/2026, Bug 1) — antes essa linha vinha sempre R$ 0,00
+    // porque XLSX somava `budget_items.taxAmount` (sempre 0). Agora usa
+    // `tributarioOutput.totalTaxes` direto, fonte de verdade.
+    ["Tributos (calculados pelo agente Tributário)", totalTax],
     [],
     ["PREÇO FINAL DE VENDA", totalFinal],
     [],
     ["Premissas:", ""],
     [
       `BDI ${((markupFactor - 1) * 100).toFixed(2)}% aplicado proporcionalmente nos preços unitários`,
+      "",
+    ],
+    [
+      `Tributos calculados separadamente pelo regime fiscal da empresa (não inclusos no BDI acima)`,
       "",
     ],
   ];
@@ -903,7 +938,7 @@ function generateMemoriaXLSX(
   // P2 XLSX refactor (P2.2) — formata cabeçalhos das 4 abas: bold +
   // fundo cinza claro (PatternFill). Aplicado depois que todas as abas
   // foram criadas.
-  applyHeaderStyle(wsOrcamento, HEADER_ROW_INDEX, 13);
+  applyHeaderStyle(wsOrcamento, HEADER_ROW_INDEX, 12); // 12 colunas (Bug 5: removida Custo Logística)
   applyHeaderStyle(wsLogistica, LOG_HEADER_ROW_INDEX, 6);
   applyHeaderStyle(wsFluxo, FLUXO_HEADER_ROW_INDEX, 5);
   applyHeaderStyle(wsResumo, 5, 2); // linha 5 = "Descrição, Valor"

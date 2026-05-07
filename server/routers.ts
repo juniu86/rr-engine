@@ -2471,12 +2471,23 @@ export const appRouter = router({
         const comercialExec = executions.find(e => e.agentType === "comercial");
         const comercialOutput = comercialExec?.output;
 
+        // P0 (07/05/2026, Bug 1): Tributário roda no pipeline e calcula
+        // totalTaxes, mas o XLSX antigo somava `budget_items.taxAmount`
+        // (sempre 0 por design — taxas são consolidadas no projeto, não
+        // por item). Agora passamos tributarioOutput pro gerador usar
+        // `totalTaxes` direto na linha "Tributos" do Resumo.
+        const tributarioExec = executions.find(
+          e => e.agentType === "tributario"
+        );
+        const tributarioOutput = tributarioExec?.output;
+
         const result = await generateMemoriaCalculo(
           project,
           budgetItems,
           logisticsCosts,
           cashFlowItems,
-          comercialOutput
+          comercialOutput,
+          tributarioOutput
         );
         return result;
       }),
