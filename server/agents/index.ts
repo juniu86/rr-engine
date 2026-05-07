@@ -1067,17 +1067,68 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
     }
 
     // Verificar se precisa de chunking (memoriais grandes)
-    const { needsChunking, createChunkedInputs, mergeEngenheiroOutputs } =
-      await import("./chunking");
+    const {
+      needsChunking,
+      createChunkedInputs,
+      splitMemorialIntoChunks,
+      mergeEngenheiroOutputs,
+      hashText,
+      planChunkRerun,
+    } = await import("./chunking");
 
     if (needsChunking(memorial)) {
       console.log(
         `[EngenheiroTecnico] Memorial grande detectado - usando chunking`
       );
       const chunkedInputs = createChunkedInputs(input);
+      // Hashes dos chunks brutos (sem o preâmbulo "[CHUNK X/Y — INSTRUÇÕES]")
+      // pra invalidação consistente entre runs.
+      const rawChunks = splitMemorialIntoChunks(memorial);
+      const memorialHash = hashText(memorial);
       console.log(
         `[EngenheiroTecnico] Dividido em ${chunkedInputs.length} chunks (concorrência limitada)`
       );
+
+      // P2 (partial rerun): consulta snapshot da execução anterior. Se o
+      // memorial não mudou, reutiliza outputs de chunks que NÃO tinham
+      // missingInfoRequests — economiza Opus quando user responde
+      // missingInfo de chunks específicos.
+      const meta = input as unknown as { _agentExecutionId?: number };
+      let previousSnapshot: {
+        memorialHash: string;
+        chunkSnapshots: import("./chunking").ChunkSnapshot[];
+      } | null = null;
+      if (temRespostasUsuario && meta._agentExecutionId) {
+        try {
+          const { getAgentExecutionById } = await import("../db");
+          const prevExec = await getAgentExecutionById(meta._agentExecutionId);
+          const prevOutput = prevExec?.output as Record<string, unknown> | null;
+          const cached = prevOutput?._chunkSnapshots;
+          const prevHash = prevOutput?._memorialHash;
+          if (
+            Array.isArray(cached) &&
+            typeof prevHash === "string" &&
+            cached.length > 0
+          ) {
+            previousSnapshot = {
+              memorialHash: prevHash,
+              chunkSnapshots: cached as import("./chunking").ChunkSnapshot[],
+            };
+          }
+        } catch (err) {
+          console.warn(
+            `[EngenheiroTecnico] Falha ao ler snapshot anterior, rodando todos os chunks:`,
+            err
+          );
+        }
+      }
+
+      const plan = planChunkRerun(rawChunks, memorialHash, previousSnapshot);
+      if (plan.reused.size > 0) {
+        console.log(
+          `[EngenheiroTecnico] Partial rerun (${plan.reason}): ${plan.reused.size} chunk(s) reutilizado(s), ${plan.toRerun.size} re-rodado(s)`
+        );
+      }
 
       // Concorrência limitada via p-limit. Anthropic Tier 1 tem rate limit
       // baixo (8k OPM pra Opus). Disparar todos em paralelo causa 429.
@@ -1092,24 +1143,54 @@ Prefira INFERIR a PERGUNTAR. Só pergunte quando não houver como deduzir.`;
 
       const t0 = Date.now();
       const outputs = await Promise.all(
-        chunkedInputs.map((chunkInput, i) =>
-          limit(() => {
+        chunkedInputs.map((chunkInput, i) => {
+          const reusedOutput = plan.reused.get(i);
+          if (reusedOutput) {
+            console.log(
+              `[EngenheiroTecnico] Chunk ${i + 1}/${chunkedInputs.length}: REUTILIZADO (sem missingInfo na run anterior)`
+            );
+            return Promise.resolve(reusedOutput);
+          }
+          return limit(() => {
             console.log(
               `[EngenheiroTecnico] Disparando chunk ${i + 1}/${chunkedInputs.length} (limite ${concurrency})...`
             );
             return super.execute(chunkInput);
-          })
-        )
+          });
+        })
       );
       console.log(
         `[EngenheiroTecnico] Todos os ${chunkedInputs.length} chunks completos em ${((Date.now() - t0) / 1000).toFixed(1)}s`
       );
 
       const merged = mergeEngenheiroOutputs(outputs);
+
+      // P2 (partial rerun): persiste snapshot pra próxima execução.
+      // _chunkSnapshots e _memorialHash trafegam dentro do output JSON;
+      // são lidos no início da próxima execute() pra decidir reuso.
+      const newSnapshots: import("./chunking").ChunkSnapshot[] =
+        chunkedInputs.map((_, i) => {
+          const out = outputs[i];
+          const hadMissingInfo =
+            (out.missingInfoRequests?.length ?? 0) > 0 ||
+            out.analysisStatus === "waiting_for_user_input";
+          return {
+            chunkIndex: i,
+            chunkHash: hashText(rawChunks[i]),
+            hadMissingInfo,
+            output: out,
+          };
+        });
+      const mergedWithSnapshot = {
+        ...merged,
+        _chunkSnapshots: newSnapshots,
+        _memorialHash: memorialHash,
+      } as unknown as EngenheiroTecnicoOutput;
+
       console.log(
         `[EngenheiroTecnico] Chunks merged: ${merged.items?.length || 0} items`
       );
-      return merged;
+      return mergedWithSnapshot;
     }
 
     // Chamar LLM (memorial cabe em uma chamada)
