@@ -32,7 +32,7 @@ const TIERS = [
     tier: "starter",
     name: "RR Engine — Starter",
     description:
-      "5 orçamentos/mês com cap de R$ 500.000 por obra. Para profissionais autônomos e escritórios pequenos.",
+      "2 orçamentos/mês com cap de R$ 500.000 por obra. Para profissionais autônomos e escritórios pequenos.",
     priceCents: 19900,
     envVar: "STRIPE_PRICE_STARTER",
   },
@@ -40,7 +40,7 @@ const TIERS = [
     tier: "pro",
     name: "RR Engine — Pro",
     description:
-      "20 orçamentos/mês com cap de R$ 5.000.000 por obra. Para construtoras com volume médio.",
+      "7 orçamentos/mês com cap de R$ 5.000.000 por obra. Para construtoras com volume médio.",
     priceCents: 49900,
     envVar: "STRIPE_PRICE_PRO",
   },
@@ -48,7 +48,7 @@ const TIERS = [
     tier: "business",
     name: "RR Engine — Business",
     description:
-      "Orçamentos ilimitados sem cap de valor por obra. Para construtoras médias/grandes.",
+      "20 orçamentos/mês sem cap de valor por obra. Para construtoras médias/grandes.",
     priceCents: 149900,
     envVar: "STRIPE_PRICE_BUSINESS",
   },

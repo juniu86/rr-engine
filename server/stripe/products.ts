@@ -45,10 +45,12 @@ export const TIERS: Record<Tier, TierDefinition> = {
       "Para profissionais autônomos e escritórios pequenos validando o produto.",
     priceMonthlyCents: 19900,
     currency: "BRL",
-    quota: 5,
+    // P0 (07/05/2026): cap reduzido de 5 → 2. Custo real médio R$ 70/orçamento;
+    // 2 orçamentos = R$ 140 de custo, mantém R$ 59 (30%) de margem. 5 era prejuízo.
+    quota: 2,
     capCents: 50_000_000, // R$ 500.000,00
     features: [
-      "5 orçamentos por mês",
+      "2 orçamentos por mês",
       "Cap de R$ 500.000 por obra",
       "10 agentes de IA especializados",
       "Exportação PDF/XLSX",
@@ -63,10 +65,12 @@ export const TIERS: Record<Tier, TierDefinition> = {
       "Para construtoras e escritórios de orçamento com volume mensal médio.",
     priceMonthlyCents: 49900,
     currency: "BRL",
-    quota: 20,
+    // P0 (07/05/2026): cap reduzido de 20 → 7. 7 × R$ 70 = R$ 490 (margem
+    // R$ 9, 1.8%). 20 dava prejuízo de ~R$ 900 no pior caso.
+    quota: 7,
     capCents: 500_000_000, // R$ 5.000.000,00
     features: [
-      "20 orçamentos por mês",
+      "7 orçamentos por mês",
       "Cap de R$ 5.000.000 por obra",
       "10 agentes de IA especializados",
       "Exportação PDF/XLSX",
@@ -81,10 +85,13 @@ export const TIERS: Record<Tier, TierDefinition> = {
       "Para construtoras médias/grandes com volume alto e obras de qualquer porte.",
     priceMonthlyCents: 149900,
     currency: "BRL",
-    quota: null,
+    // P0 (07/05/2026): "ilimitado" virou cap explícito de 20. 20 × R$ 70 =
+    // R$ 1.400 (margem R$ 99, 6.6%). Plano "ilimitado" volta como tier
+    // futuro (Enterprise) com pricing customizado.
+    quota: 20,
     capCents: null,
     features: [
-      "Orçamentos ilimitados",
+      "20 orçamentos por mês",
       "Sem cap de valor por obra",
       "10 agentes de IA especializados",
       "Exportação PDF/XLSX",
