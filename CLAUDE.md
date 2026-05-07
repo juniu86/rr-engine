@@ -240,6 +240,8 @@ Detalhes do tracing (incluindo o que aparece no dashboard) em `docs/observabilit
 
 > **Sprint 5 (P1.7) — Stripe:** integração foi expandida para 3 tiers (Starter / Pro / Business) com cap de valor por obra. Detalhes em `implementacao/SPRINT_5_STRIPE.md`. UI vive no repo `rr-engine-app` (Next.js no Vercel).
 
+> **P0 (07/05/2026) — Cap de quota mensal:** Starter=2, Pro=7, Business=20 orçamentos/mês (era 5/20/ilimitado). Cobre custo real R$ 70/orçamento. Ajustar caps em `server/stripe/products.ts:TIERS.<tier>.quota`. Tests asserting quotas em `server/stripe/sprint5.test.ts`. Spec em `implementacao/P0_QUOTA_CAP_POR_PLANO.md`.
+
 ## Como pedir contexto adicional
 
 Se precisar de informação fora do escopo de um ticket (decisão de produto, justificativa de negócio, dados que não estão no repo), pause o ticket e abra issue ou pergunte ao founder Reginaldo. Não inventar requisitos.

@@ -182,15 +182,17 @@ afterEach(() => {
 describe("TIERS catálogo (Sprint 5)", () => {
   it("define 3 tiers com preços e caps esperados", () => {
     expect(TIERS.starter.priceMonthlyCents).toBe(19900);
-    expect(TIERS.starter.quota).toBe(5);
+    // P0 (07/05/2026): caps reduzidos pra cobrir custo real R$ 70/orçamento.
+    expect(TIERS.starter.quota).toBe(2);
     expect(TIERS.starter.capCents).toBe(50_000_000);
 
     expect(TIERS.pro.priceMonthlyCents).toBe(49900);
-    expect(TIERS.pro.quota).toBe(20);
+    expect(TIERS.pro.quota).toBe(7);
     expect(TIERS.pro.capCents).toBe(500_000_000);
 
     expect(TIERS.business.priceMonthlyCents).toBe(149900);
-    expect(TIERS.business.quota).toBeNull();
+    // P0: Business deixou de ser "ilimitado" (null) — cap explícito de 20.
+    expect(TIERS.business.quota).toBe(20);
     expect(TIERS.business.capCents).toBeNull();
   });
 
@@ -233,24 +235,39 @@ const seedSub = (overrides: Partial<SubRow>): SubRow => {
   return row;
 };
 
-describe("canCreateBudget por tier (Sprint 5)", () => {
-  it("Starter dentro da quota → allowed=true", async () => {
-    seedSub({ plan: "starter", quotaUsed: 2, quotaLimit: 5 });
+describe("canCreateBudget por tier (Sprint 5 + P0 caps)", () => {
+  // P0 (07/05/2026): caps reduzidos a 2/7/20 (era 5/20/null=unlimited).
+  it("Starter dentro do novo cap (2) → allowed=true", async () => {
+    seedSub({ plan: "starter", quotaUsed: 1, quotaLimit: 2 });
     const r = await canCreateBudget(1);
     expect(r.allowed).toBe(true);
     expect(r.plan).toBe("starter");
-    expect(r.quotaUsed).toBe(2);
-    expect(r.quotaLimit).toBe(5);
+    expect(r.quotaUsed).toBe(1);
+    expect(r.quotaLimit).toBe(2);
   });
 
-  it("Pro com quota esgotada → allowed=false", async () => {
-    seedSub({ plan: "pro", quotaUsed: 20, quotaLimit: 20 });
+  it("Starter com quota esgotada (2/2) → allowed=false", async () => {
+    seedSub({ plan: "starter", quotaUsed: 2, quotaLimit: 2 });
+    const r = await canCreateBudget(1);
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/Limite de 2/);
+  });
+
+  it("Pro com quota esgotada (7/7) → allowed=false", async () => {
+    seedSub({ plan: "pro", quotaUsed: 7, quotaLimit: 7 });
+    const r = await canCreateBudget(1);
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/Limite de 7/);
+  });
+
+  it("Business com quota esgotada (20/20) → allowed=false (P0: era ilimitado)", async () => {
+    seedSub({ plan: "business", quotaUsed: 20, quotaLimit: 20 });
     const r = await canCreateBudget(1);
     expect(r.allowed).toBe(false);
     expect(r.reason).toMatch(/Limite de 20/);
   });
 
-  it("Business com quotaLimit=0 (ilimitado) → allowed=true sem limite", async () => {
+  it("legado quotaLimit=0 (ex: subs criadas antes de P0) ainda passa como ilimitado", async () => {
     seedSub({
       plan: "business",
       quotaUsed: 999,
@@ -292,7 +309,16 @@ describe("getCurrentSubscription (Sprint 5)", () => {
     expect(r?.quotaLimit).toBe(5);
   });
 
-  it("retorna obraValueCap null para Business", async () => {
+  it("retorna obraValueCap null e quotaLimit numérico (Business P0)", async () => {
+    // P0 (07/05/2026): Business agora tem quotaLimit=20.
+    seedSub({ plan: "business", obraValueCap: null, quotaLimit: 20 });
+    const r = await getCurrentSubscription(1);
+    expect(r?.plan).toBe("business");
+    expect(r?.obraValueCap).toBeNull();
+    expect(r?.quotaLimit).toBe(20);
+  });
+
+  it("legado: quotaLimit=0 (subs antigos) ainda mapeia pra null", async () => {
     seedSub({ plan: "business", obraValueCap: null, quotaLimit: 0 });
     const r = await getCurrentSubscription(1);
     expect(r?.obraValueCap).toBeNull();
@@ -360,12 +386,13 @@ describe("Webhook handlers (Sprint 5)", () => {
     expect(fakeDb.subs).toHaveLength(1);
     const row = fakeDb.subs[0];
     expect(row.plan).toBe("pro");
-    expect(row.quotaLimit).toBe(20);
+    // P0 (07/05/2026): Pro quota reduzido de 20 → 7.
+    expect(row.quotaLimit).toBe(7);
     expect(row.obraValueCap).toBe("5000000.00");
     expect(row.status).toBe("active");
   });
 
-  it("handleCheckoutCompleted Business deixa obraValueCap null", async () => {
+  it("handleCheckoutCompleted Business: quotaLimit=20 (P0) e obraValueCap=null", async () => {
     const session = {
       id: "cs_test",
       customer: "cus_x",
@@ -376,7 +403,8 @@ describe("Webhook handlers (Sprint 5)", () => {
     await handleCheckoutCompleted(session);
     expect(fakeDb.subs[0].plan).toBe("business");
     expect(fakeDb.subs[0].obraValueCap).toBeNull();
-    expect(fakeDb.subs[0].quotaLimit).toBe(0);
+    // P0 (07/05/2026): Business deixou de ser ilimitado — agora 20.
+    expect(fakeDb.subs[0].quotaLimit).toBe(20);
   });
 
   it("handleSubscriptionDeleted marca status='canceled'", async () => {
