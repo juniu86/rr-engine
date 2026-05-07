@@ -43,6 +43,59 @@ import {
 import { isCompleteTaxSettings } from "../shared/types";
 import { getLangfuse } from "./services/tracing";
 
+/**
+ * Issue #82 — loga warning quando um projeto vira `status='approved'`
+ * mesmo com `auditSeal='rejected'` no último output do Auditor.
+ *
+ * Decisão de produto (07/05/2026): "Allow + log warning" — o operador
+ * pode aprovar mesmo com o Auditor rejeitando, mas a inconsistência
+ * NÃO pode passar silenciosa. Logamos no console e (se Langfuse estiver
+ * ativo) registramos como evento estruturado pra investigação posterior.
+ *
+ * Não bloqueia o flow — só observabilidade.
+ */
+async function warnIfAuditorRejected(
+  projectId: number,
+  context: string
+): Promise<void> {
+  try {
+    const executions = await db.getAgentExecutionsByProjectId(projectId);
+    const auditorExec = executions.find((e: any) => e.agentType === "auditor");
+    const auditorOutput = (auditorExec?.output as any) || {};
+    if (auditorOutput.auditSeal !== "rejected") return;
+
+    const notes = String(auditorOutput.auditNotes ?? "").slice(0, 300);
+    console.warn(
+      `[#82] Projeto ${projectId} aprovado em "${context}" mesmo com auditSeal=rejected. ` +
+        `criticalErrors=${auditorOutput.criticalErrors ?? "?"}, ` +
+        `validationScore=${auditorOutput.validationScore ?? "?"}, ` +
+        `notes="${notes}"`
+    );
+
+    // P2.2 Langfuse: emite evento ad-hoc se tracing estiver ativo. Falha
+    // do tracing nunca derruba o flow — try/catch interno.
+    try {
+      const langfuse = getLangfuse();
+      (langfuse as any)?.event?.({
+        name: "auditor_rejected_but_approved",
+        metadata: {
+          projectId,
+          context,
+          auditSeal: auditorOutput.auditSeal,
+          criticalErrors: auditorOutput.criticalErrors,
+          validationScore: auditorOutput.validationScore,
+          notes,
+        },
+        level: "WARNING",
+      });
+    } catch {
+      /* tracing nunca pode quebrar o pipeline */
+    }
+  } catch (err) {
+    console.warn("[#82] warnIfAuditorRejected falhou, ignorando:", err);
+  }
+}
+
 export const appRouter = router({
   system: systemRouter,
   stripe: stripeRouter,
@@ -1050,6 +1103,13 @@ export const appRouter = router({
             const revisedBoardResult = revisedResults.board as any;
 
             if (revisedBoardResult?.approved) {
+              // #82: revisão financeira aprovou — logamos warning se o
+              // Auditor ainda diz rejected (provavelmente o re-run do
+              // Auditor pós-revisão deveria ter rodado, mas se não...)
+              await warnIfAuditorRejected(
+                input.projectId,
+                "executeAll/post-financial-revision"
+              );
               await db.updateProject(input.projectId, { status: "approved" });
               return {
                 success: true,
@@ -1210,6 +1270,10 @@ export const appRouter = router({
           );
           const finalPrice = (comercialExec?.output as any)?.finalPrice ?? 0;
 
+          // #82: o operador confirmou a proposta apesar dos warnings.
+          // Loga warning se o Auditor diz rejected — não bloqueia.
+          await warnIfAuditorRejected(input.projectId, "confirmProposal");
+
           await db.updateProject(input.projectId, {
             status: "approved",
             warningMessages: null,
@@ -1225,6 +1289,11 @@ export const appRouter = router({
         } catch (err) {
           console.error("[confirmProposal] Error saving final totals:", err);
           // Mesmo se falhar a gravação dos totais, marca como aprovado.
+          // #82: warning aqui também (catch path).
+          await warnIfAuditorRejected(
+            input.projectId,
+            "confirmProposal/totals-fallback"
+          );
           await db.updateProject(input.projectId, {
             status: "approved",
             warningMessages: null,
@@ -1347,6 +1416,48 @@ export const appRouter = router({
         } catch (err) {
           console.error(
             "[AuditCorrections] Error updating orcamentista execution:",
+            err
+          );
+        }
+
+        // 7. Limpar `corrections.budgetItemsToRemove` e
+        // `corrections.logisticsToRemove` no output do Auditor para evitar
+        // que o AuditCorrectionsModal volte a aparecer ao recarregar a
+        // página. Mantém histórico em campos auxiliares (appliedAt e
+        // counts) pra auditoria futura.
+        try {
+          const allExecs = await db.getAgentExecutionsByProjectId(
+            input.projectId
+          );
+          const auditorExec = allExecs.find(
+            (e: any) => e.agentType === "auditor"
+          );
+          if (auditorExec?.output) {
+            const currentOutput = auditorExec.output as Record<string, any>;
+            const currentCorrections =
+              (currentOutput.corrections as Record<string, any> | undefined) ??
+              {};
+            const updatedOutput = {
+              ...currentOutput,
+              corrections: {
+                ...currentCorrections,
+                budgetItemsToRemove: [],
+                logisticsToRemove: [],
+                appliedAt: new Date().toISOString(),
+                appliedBudgetCount: budgetRemoved,
+                appliedLogisticsCount: logisticsRemoved,
+              },
+            };
+            await db.updateAgentExecution(auditorExec.id, {
+              output: updatedOutput as any,
+            });
+            console.log(
+              `[AuditCorrections] Limpou corrections.budgetItemsToRemove/logisticsToRemove no output do Auditor (project ${input.projectId})`
+            );
+          }
+        } catch (err) {
+          console.error(
+            "[AuditCorrections] Error clearing auditor corrections:",
             err
           );
         }
