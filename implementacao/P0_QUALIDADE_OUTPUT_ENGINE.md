@@ -32,7 +32,7 @@ Para um posto de combustíveis no Simples Nacional, deveriam aparecer ~R$ 300k e
 
 ### Bug 2 — Total do dashboard ≠ total da planilha (P0 crítico)
 
-**Sintoma:**
+**Sintoma — caso 1 (projeto 11, Posto Paulo Sérgio):**
 
 | Onde | Total |
 |---|---|
@@ -41,6 +41,18 @@ Para um posto de combustíveis no Simples Nacional, deveriam aparecer ~R$ 300k e
 | **Diferença** | **R$ 142.903,82** |
 
 R$ 2.126.670,73 não aparece em nenhuma aba do XLSX.
+
+**Sintoma — caso 2 (projeto 12, Fórmula 1) — agravamento:**
+
+| Onde | Custo direto | Total / Preço venda |
+|---|---|---|
+| Dashboard | R$ 13.575,40 | R$ 169.719,25 |
+| Planilha | R$ 181.473,82 | R$ 181.708,02 |
+| Razão | **13x diferença** | R$ 11.988 a menos |
+
+E pior — **BDI da planilha é R$ 234,20 sobre custo direto de R$ 181.473,82 = 0,13%.** Pela NBR 12721, esse projeto deveria ter BDI próximo de 33% (~R$ 60.000). Empresa vendendo sem margem.
+
+Esse é problema separado mas relacionado: agente Comercial ou pipeline de cálculo do BDI está retornando valor próximo de zero em alguns casos. Investigar `server/services/comercialCalculator.ts` ou onde quer que o BDI seja aplicado. Provavelmente confusão entre BDI percentual (decimal 0,33) e BDI absoluto, ou um campo sendo lido como `0` quando deveria ser `33`.
 
 **Hipótese forte:**
 
