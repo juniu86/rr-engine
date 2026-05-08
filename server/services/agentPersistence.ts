@@ -8,6 +8,86 @@
 import * as db from "../db";
 import type { AgentType } from "../../shared/agents";
 
+// ==================== TOTAL WEEKS DERIVATION (P0 — 07/05/2026) ====================
+
+/**
+ * Heurística pra inferir total de semanas do projeto a partir do output
+ * do Gestão de Projetos, lidando com 3 inconsistências reais observadas:
+ *
+ *  1. Schema de saída do agente declara `totalDuration` E `totalDays`
+ *     mas na prática o LLM populava ora um, ora outro, ora ambos com
+ *     valores em UNIDADES diferentes (totalDuration às vezes vinha em
+ *     semanas, às vezes em dias).
+ *  2. shared/agents.ts type tem `scheduleItems[].endWeek` (semanas);
+ *     o schema tem `endDay` (dias). LLM usa ora um, ora outro.
+ *  3. Em obras grandes (8 meses real), o LLM colocava totalDuration=4 ou
+ *     totalDuration=null e o fallback `finInput.cashFlow?.length || 4`
+ *     dava FC de 4 semanas (errado).
+ *
+ * Política: usar `scheduleItems` como fonte primária (max endDay/endWeek),
+ * inferindo unidade pela magnitude. Fallback em ordem de confiança até
+ * `project.estimatedDuration` (assumido em dias). Mínimo 4 semanas.
+ */
+function deriveTotalWeeks(
+  gestaoOutput: any,
+  projectInfo?: { estimatedDuration?: number | null },
+  cashFlowFallbackLength?: number
+): number {
+  // Fonte 1 (mais confiável): scheduleItems max endDay/endWeek
+  const scheduleItems = Array.isArray(gestaoOutput?.scheduleItems)
+    ? gestaoOutput.scheduleItems
+    : [];
+  if (scheduleItems.length > 0) {
+    const maxEnd = scheduleItems.reduce((max: number, s: any) => {
+      const end = Number(s.endDay ?? s.endWeek ?? s.duration ?? 0);
+      return end > max ? end : max;
+    }, 0);
+    if (maxEnd > 0) {
+      // Heurística de unidade: schedules de obra raramente passam de 60
+      // semanas; magnitude > 60 quase sempre é dias. Threshold 60 é
+      // conservador (cobre obra de até 1 ano em semanas).
+      const isWeekly = maxEnd <= 60;
+      const weeks = isWeekly ? maxEnd : Math.ceil(maxEnd / 7);
+      return Math.max(4, weeks);
+    }
+  }
+
+  // Fonte 2: totalDays direto (campo dedicado)
+  const totalDaysRaw = Number(gestaoOutput?.totalDays ?? 0);
+  if (totalDaysRaw > 0) {
+    return Math.max(4, Math.ceil(totalDaysRaw / 7));
+  }
+
+  // Fonte 3: totalDuration — inferir unidade
+  const totalDurationRaw = Number(gestaoOutput?.totalDuration ?? 0);
+  if (totalDurationRaw > 0) {
+    const isLikelyWeeks = totalDurationRaw <= 60;
+    return isLikelyWeeks
+      ? Math.max(4, totalDurationRaw)
+      : Math.max(4, Math.ceil(totalDurationRaw / 7));
+  }
+
+  // Fonte 4: project.estimatedDuration (dias)
+  const estimated = Number(projectInfo?.estimatedDuration ?? 0);
+  if (estimated > 0) {
+    return Math.max(4, Math.ceil(estimated / 7));
+  }
+
+  // Fallback final: cashFlow do LLM ou 4 semanas
+  return Math.max(4, cashFlowFallbackLength || 4);
+}
+
+/** Descrição pra logging — qual fonte foi usada na derivação. */
+function describeWeeksSource(gestaoOutput: any): string {
+  const items = gestaoOutput?.scheduleItems;
+  if (Array.isArray(items) && items.length > 0) {
+    return `scheduleItems(${items.length} fases)`;
+  }
+  if (Number(gestaoOutput?.totalDays ?? 0) > 0) return `totalDays`;
+  if (Number(gestaoOutput?.totalDuration ?? 0) > 0) return `totalDuration`;
+  return `fallback`;
+}
+
 // ==================== LOGISTICS CATEGORY MAPPING ====================
 
 type LogisticsCategory =
@@ -554,33 +634,39 @@ export async function persistAgentOutput(
       ? Number((tributarioExec.output as any).totalTaxes) || 0
       : 0;
 
-    // P2 XLSX refactor (P0.3) — duração real vem do agente Gestão de
-    // Projetos (campo totalDuration em DIAS, ou totalDays). Convertemos
-    // pra semanas (ceil) para alimentar deterministicCashFlow, que então
-    // expande pra N linhas semanais. Sem isso, finInput.cashFlow?.length
-    // costuma vir 4 (LLM trunca) e o fluxo de caixa saía com 4 pulsos
-    // gigantes em vez de cronograma físico-financeiro real.
+    // P0 (07/05/2026) — derivação robusta de totalWeeks para o fluxo de caixa.
+    // O Gestão de Projetos tem schema inconsistente: às vezes preenche
+    // `totalDuration` em DIAS (matching scheduleItems[].endDay), outras vezes
+    // em SEMANAS (matching shared/agents.ts type). E em alguns casos só
+    // preenche `totalDays`. Pra evitar FC com 4 semanas em obra de 8 meses,
+    // usamos múltiplas fontes em ordem de confiança:
+    //   1. scheduleItems: max(endDay/endWeek) — fonte mais confiável
+    //   2. totalDays / totalDuration / project.estimatedDuration
+    //   3. Heurística por magnitude (números pequenos → semanas, grandes → dias)
     const gestaoExec = opts.executions?.find(
       (e: any) => e.agentType === "gestao_projetos"
     );
     const gestaoOutput = (gestaoExec?.output as any) || {};
-    const totalDays = Number(
-      gestaoOutput.totalDuration ?? gestaoOutput.totalDays ?? 0
+    const projectFromInput = opts.agentInput?._projectInfo as
+      | { estimatedDuration?: number | null }
+      | undefined;
+
+    const totalWeeks = deriveTotalWeeks(
+      gestaoOutput,
+      projectFromInput,
+      finInput.cashFlow?.length
     );
-    const weeksFromGestao =
-      totalDays > 0 ? Math.max(1, Math.ceil(totalDays / 7)) : 0;
-    const totalDuration =
-      weeksFromGestao > 0 ? weeksFromGestao : finInput.cashFlow?.length || 4;
-    if (weeksFromGestao > 0) {
+
+    if (totalWeeks > 4) {
       console.log(
-        `[Financeiro] Cash flow expandido para ${weeksFromGestao} semanas (gestao.totalDuration=${totalDays} dias)`
+        `[Financeiro] Cash flow expandido para ${totalWeeks} semanas (derivado: ${describeWeeksSource(gestaoOutput)})`
       );
     }
 
     const deterministicResult = calculateDeterministicCashFlow({
       totalCost: finInput.totalCost || 0,
       totalPrice: finInput.totalPrice || 0,
-      totalDuration,
+      totalDuration: totalWeeks,
       totalTaxes,
     });
 
