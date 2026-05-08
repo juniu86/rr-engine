@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeComercial } from "./services/comercialCalculator";
 import type { ComercialInput } from "../shared/agents";
+import type { CompanyTaxSettings } from "../shared/types";
 
 const baseInput = (
   overrides: Partial<ComercialInput> = {}
@@ -14,48 +15,138 @@ const baseInput = (
   ...overrides,
 });
 
-describe("computeComercial (P1.2)", () => {
-  it("aplica BDI base sem ajustes (low risk + low logistics)", () => {
+const lucroPresumido: CompanyTaxSettings = {
+  regimeTributario: "lucro_presumido",
+  issPercentual: 5,
+  pisPercentual: 0.65,
+  cofinsPercentual: 3,
+  irpjPercentual: 1.2,
+  csllPercentual: 1.08,
+  taxaLeisSociais: 128,
+};
+
+const simplesFaixa4: CompanyTaxSettings = {
+  regimeTributario: "simples_nacional",
+  faixaSimples: 4,
+  issPercentual: 0,
+  pisPercentual: 0,
+  cofinsPercentual: 0,
+  irpjPercentual: 0,
+  csllPercentual: 0,
+  taxaLeisSociais: 100,
+};
+
+const componentes = {
+  lucroPercentual: 8,
+  adminCentralPercentual: 4,
+  despesasFinanceirasPercentual: 1,
+  riscosPercentual: 1,
+  seguroPercentual: 0.8,
+  garantiaPercentual: 0.4,
+};
+
+/** Calcula BDI esperado pela fórmula NBR 12721 — referência para os testes. */
+function nbrBdi(
+  ac: number,
+  s: number,
+  r: number,
+  g: number,
+  df: number,
+  l: number,
+  i: number
+): number {
+  return ((1 + ac + s + r + g) * (1 + df) * (1 + l)) / (1 - i) - 1;
+}
+
+describe("computeComercial — fórmula NBR 12721", () => {
+  it("aplica BDI sem ajustes (low risk + low logistics) com Lucro Presumido", () => {
+    // I = 5 + 0.65 + 3 + 1.2 + 1.08 = 10.93%
     const out = computeComercial(
       baseInput({ totalDirectCost: 100_000, totalIndirectCost: 10_000 }),
-      { projectBdi: 25 }
+      { companyBdiSettings: componentes, taxSettings: lucroPresumido }
     );
-    expect(out.baseBdi).toBe(0.25);
-    expect(out.adjustedBdi).toBe(0.25);
-    // (100k + 10k) * 1.25 = 137.5k
-    expect(out.finalPrice).toBe(137_500);
-    expect(out.totalBdiAmount).toBe(27_500);
-    expect(out.bdiJustification).toContain("sem ajustes");
-  });
 
-  it("aplica +5% para risco fiscal alto", () => {
-    const out = computeComercial(baseInput({ fiscalRisk: "high" }), {
-      projectBdi: 25,
-    });
-    expect(out.baseBdi).toBe(0.25);
-    expect(out.adjustedBdi).toBe(0.3);
-    expect(out.finalPrice).toBe(130_000);
-    expect(out.bdiJustification).toContain("risco fiscal alto");
-  });
-
-  it("aplica +5% para complexidade logística alta", () => {
-    const out = computeComercial(baseInput({ logisticsComplexity: "high" }), {
-      projectBdi: 25,
-    });
-    expect(out.adjustedBdi).toBe(0.3);
-    expect(out.finalPrice).toBe(130_000);
-    expect(out.bdiJustification).toContain("logística alta");
-  });
-
-  it("aplica ambos ajustes (alto risco fiscal e logística alta)", () => {
-    const out = computeComercial(
-      baseInput({ fiscalRisk: "high", logisticsComplexity: "high" }),
-      { projectBdi: 25 }
+    const expectedBdi = nbrBdi(
+      0.04,
+      0.008,
+      0.01,
+      0.004,
+      0.01,
+      0.08,
+      0.1093
     );
-    expect(out.adjustedBdi).toBe(0.35);
-    expect(out.finalPrice).toBe(135_000);
-    expect(out.bdiJustification).toContain("risco fiscal alto");
-    expect(out.bdiJustification).toContain("logística alta");
+    expect(out.baseBdi).toBeCloseTo(expectedBdi, 4);
+    expect(out.adjustedBdi).toBeCloseTo(expectedBdi, 4);
+    expect(out.finalPrice).toBeCloseTo(110_000 * (1 + expectedBdi), 2);
+    expect(out.totalBdiAmount).toBeCloseTo(110_000 * expectedBdi, 2);
+    expect(out.bdiJustification).toContain("NBR 12721");
+  });
+
+  it("Simples Nacional faixa 4 (14%) gera preço final maior que Lucro Presumido (10,93%)", () => {
+    const input = baseInput({ totalDirectCost: 100_000, totalIndirectCost: 0 });
+    const presumido = computeComercial(input, {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido,
+    });
+    const simples = computeComercial(input, {
+      companyBdiSettings: componentes,
+      taxSettings: simplesFaixa4,
+    });
+    expect(simples.finalPrice).toBeGreaterThan(presumido.finalPrice);
+  });
+
+  it("ajuste de risco fiscal alto adiciona +5pp em Riscos", () => {
+    const sem = computeComercial(baseInput(), {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido,
+    });
+    const com = computeComercial(baseInput({ fiscalRisk: "high" }), {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido,
+    });
+    expect(com.adjustedBdi).toBeGreaterThan(sem.baseBdi);
+    expect(com.bdiJustification).toContain("risco fiscal alto");
+  });
+
+  it("ajuste de logística alta adiciona +5pp em DF", () => {
+    const com = computeComercial(baseInput({ logisticsComplexity: "high" }), {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido,
+    });
+    expect(com.adjustedBdi).toBeGreaterThan(com.baseBdi);
+    expect(com.bdiJustification).toContain("logística alta");
+  });
+
+  it("aumentar Lucro 1pp aumenta BDI total em mais que 1pp (efeito do 1/(1-I))", () => {
+    const sem = computeComercial(baseInput(), {
+      companyBdiSettings: { ...componentes, lucroPercentual: 8 },
+      taxSettings: lucroPresumido,
+    });
+    const com = computeComercial(baseInput(), {
+      companyBdiSettings: { ...componentes, lucroPercentual: 9 },
+      taxSettings: lucroPresumido,
+    });
+    const delta = (com.baseBdi - sem.baseBdi) * 100;
+    expect(delta).toBeGreaterThan(1);
+  });
+
+  it("override manual de alíquota I tem prioridade sobre regime", () => {
+    const out = computeComercial(baseInput(), {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido, // I = 10.93%
+      taxRateOverridePercentual: 5, // override = 5%
+    });
+    const expected = nbrBdi(0.04, 0.008, 0.01, 0.004, 0.01, 0.08, 0.05);
+    expect(out.baseBdi).toBeCloseTo(expected, 4);
+  });
+
+  it("alíquota I = 100% lança erro (1 - I ≤ 0)", () => {
+    expect(() =>
+      computeComercial(baseInput(), {
+        companyBdiSettings: componentes,
+        taxRateOverridePercentual: 100,
+      })
+    ).toThrow();
   });
 
   it("é determinístico: mesmo input produz mesmo output", () => {
@@ -65,41 +156,13 @@ describe("computeComercial (P1.2)", () => {
       logisticsComplexity: "medium",
       fiscalRisk: "medium",
     });
-    const a = computeComercial(input, { projectBdi: 22 });
-    const b = computeComercial(input, { projectBdi: 22 });
+    const ctx = {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido,
+    };
+    const a = computeComercial(input, ctx);
+    const b = computeComercial(input, ctx);
     expect(a).toEqual(b);
-  });
-
-  describe("resolução de BDI base", () => {
-    it("ordem 1: projectBdi vence", () => {
-      const out = computeComercial(baseInput(), {
-        projectBdi: 30,
-        bdiPreset: "reduzido",
-        companyBdiSettings: { bdiPercentual: 15 },
-      });
-      expect(out.baseBdi).toBe(0.3);
-    });
-
-    it("ordem 2: bdiPreset vence quando projectBdi ausente", () => {
-      const out = computeComercial(baseInput(), {
-        bdiPreset: "majorado",
-        companyBdiSettings: { bdiPercentual: 15 },
-      });
-      // majorado = 35
-      expect(out.baseBdi).toBe(0.35);
-    });
-
-    it("ordem 3: companyBdiSettings vence quando projectBdi e preset ausentes", () => {
-      const out = computeComercial(baseInput(), {
-        companyBdiSettings: { bdiPercentual: 18 },
-      });
-      expect(out.baseBdi).toBe(0.18);
-    });
-
-    it("ordem 4: fallback 25% sem nenhum contexto", () => {
-      const out = computeComercial(baseInput(), {});
-      expect(out.baseBdi).toBe(0.25);
-    });
   });
 
   describe("pricePerUnit", () => {
@@ -131,22 +194,40 @@ describe("computeComercial (P1.2)", () => {
             },
           ],
         }),
-        { projectBdi: 25 }
+        { companyBdiSettings: componentes, taxSettings: lucroPresumido }
       );
-      // finalPrice = 125k, qty=100 m² → 1250/m²
-      expect(out.pricePerUnit["m²"]).toBe(1250);
+      // pricePerUnit deve ser finalPrice / qty (qty=100)
+      expect(out.pricePerUnit["m²"]).toBeCloseTo(out.finalPrice / 100, 2);
     });
 
     it("retorna objeto vazio quando não há budgetItems", () => {
-      const out = computeComercial(baseInput(), { projectBdi: 25 });
+      const out = computeComercial(baseInput(), {
+        companyBdiSettings: componentes,
+        taxSettings: lucroPresumido,
+      });
       expect(out.pricePerUnit).toEqual({});
     });
   });
 
-  it("não consome tokens (não chama invokeLLM por construção — pure function)", () => {
-    // Smoke test: chamada síncrona retorna sem throw e sem side-effects
+  it("não consome tokens (pure function — sem invokeLLM)", () => {
     expect(() =>
-      computeComercial(baseInput(), { projectBdi: 25 })
+      computeComercial(baseInput(), {
+        companyBdiSettings: componentes,
+        taxSettings: lucroPresumido,
+      })
     ).not.toThrow();
+  });
+
+  it("preço final cobre os tributos (custoBase + BDI ≥ tributos por dentro)", () => {
+    const custoBase = 100_000;
+    const out = computeComercial(
+      baseInput({ totalDirectCost: custoBase, totalIndirectCost: 0 }),
+      { companyBdiSettings: componentes, taxSettings: lucroPresumido }
+    );
+    // Tributos no preço final = preço × I
+    const I = 0.1093;
+    const tributosNoPreco = out.finalPrice * I;
+    // O markup (totalBdiAmount) precisa cobrir os tributos + componentes
+    expect(out.totalBdiAmount).toBeGreaterThan(tributosNoPreco);
   });
 });

@@ -567,6 +567,27 @@ export const companySettings = mysqlTable("company_settings", {
     .default("1.00")
     .notNull(),
 
+  // Seguros (%) — componente S da fórmula NBR 12721
+  seguroPercentual: decimal("seguroPercentual", { precision: 6, scale: 2 })
+    .default("0.80")
+    .notNull(),
+
+  // Garantias (%) — componente G da fórmula NBR 12721
+  garantiaPercentual: decimal("garantiaPercentual", { precision: 6, scale: 2 })
+    .default("0.40")
+    .notNull(),
+
+  // Override manual da alíquota I (tributos sobre faturamento, %).
+  // Quando NULL, o sistema resolve I pelo regime fiscal:
+  //   - Simples Nacional: tabela do Anexo IV pela faixa
+  //   - Lucro Presumido/Real: ISS + PIS + COFINS + IRPJ + CSLL
+  // Permite empresas com benefício fiscal específico ajustarem sem mexer
+  // nos campos individuais.
+  aliquotaTributosOverride: decimal("aliquotaTributosOverride", {
+    precision: 6,
+    scale: 2,
+  }),
+
   // Regime Tributário
   regimeTributario: mysqlEnum("regimeTributario", [
     "simples_nacional",

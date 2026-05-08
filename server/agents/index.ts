@@ -2043,14 +2043,14 @@ export class ComercialAgent extends BaseAgent<ComercialInput, ComercialOutput> {
       "../services/comercialCalculator"
     );
     const ctx = input as unknown as {
-      projectBdi?: number;
-      bdiPreset?: string;
       companyBdiSettings?: import("../services/comercialCalculator").CompanyBdiSettings;
+      taxSettings?: import("../../shared/types").CompanyTaxSettings;
+      taxRateOverridePercentual?: number | null;
     };
     return computeComercial(input, {
-      projectBdi: ctx.projectBdi,
-      bdiPreset: ctx.bdiPreset,
       companyBdiSettings: ctx.companyBdiSettings,
+      taxSettings: ctx.taxSettings,
+      taxRateOverridePercentual: ctx.taxRateOverridePercentual,
     });
   }
 
@@ -2211,17 +2211,39 @@ ${compactJson(input.logisticsCosts)}
 RESTRIÇÕES: ${input.restrictions}
 
 === INSTRUÇÕES OBRIGATÓRIAS ===
-1. Crie um cronograma DIA A DIA (não apenas semanas)
-2. Para cada dia, liste as atividades específicas que serão executadas
-3. Inclua detalhes como:
-   - Equipe necessária para cada atividade
-   - Materiais que serão utilizados
+1. Crie um cronograma DIA A DIA em \`dailySchedule\` (não apenas semanas).
+2. Para cada dia, liste as atividades específicas com:
+   - Equipe necessária
+   - Materiais utilizados
    - Entregas esperadas ao final do dia
-4. Identifique dependências entre atividades
-5. Marque dias de folga/cura (ex: cura do concreto)
-6. O cronograma deve ser um RELATÓRIO COMPLETO que o cliente possa acompanhar
+3. Marque dias de folga/cura (ex: cura do concreto).
+4. O cronograma deve ser um RELATÓRIO COMPLETO que o cliente acompanhe.
 
-EXEMPLO DE FORMATO:
+=== CAMPOS OBRIGATÓRIOS DA SAÍDA ===
+Você DEVE preencher TODOS os campos abaixo. Saída com qualquer um vazio
+é considerada INCOMPLETA e será rejeitada:
+
+- \`dailySchedule\`: cronograma dia a dia (descrito acima).
+- \`scheduleItems\`: lista de FASES AGREGADAS, cada uma com
+  \`{ phase, description, startDay, endDay, duration }\`. Tipicamente entre
+  8 e 20 fases (ex.: "Mobilização", "Demolição", "Estrutura", "Alvenaria",
+  "Instalações elétricas", "Instalações hidráulicas", "Revestimento",
+  "Pintura", "Acabamento final", "Limpeza"). NÃO deixe esse array vazio.
+- \`milestones\`: marcos relevantes \`{ day, description }\`. Ex.: "Estrutura
+  concluída", "Início dos revestimentos", "Entrega final".
+- \`totalDays\`: número total de dias corridos do projeto.
+- \`totalDuration\`: total em semanas (\`Math.ceil(totalDays / 5)\` para dias
+  úteis ou \`/ 7\` para corridos — escolha consistente com dailySchedule).
+- \`criticalPath\`: lista de fases no caminho crítico.
+- \`teamSummary\`: 1-3 frases descrevendo a equipe típica do projeto
+  (ex.: "Equipe de 2 pedreiros, 1 servente e 1 eletricista, com apoio
+  de 1 encarregado durante toda a execução."). NÃO retorne string vazia.
+- \`materialsSummary\`: 1-3 frases listando os principais grupos de
+  materiais (ex.: "Cimento, areia, brita e blocos cerâmicos para
+  estrutura; cerâmica e porcelanato para revestimentos; tinta acrílica
+  para acabamento."). NÃO retorne string vazia.
+
+EXEMPLO DE FORMATO (dailySchedule):
 Dia 1: Mobilização e preparo
 - Chegada da equipe (2 pedreiros + 1 servente)
 - Instalação do canteiro de obras
