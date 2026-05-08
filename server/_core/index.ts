@@ -1,4 +1,7 @@
 import "dotenv/config";
+// Sentry deve ser inicializado ANTES de qualquer outro import pra
+// instrumentar libs (Express, http, etc) automaticamente.
+import { Sentry } from "./sentry";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
@@ -119,6 +122,10 @@ async function startServer() {
       });
     });
   }
+
+  // Sentry error handler — depois de todas as rotas, antes do listen.
+  // Captura erros não tratados que escaparam dos handlers de cada rota.
+  Sentry.setupExpressErrorHandler(app);
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
