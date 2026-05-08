@@ -443,10 +443,24 @@ export const appRouter = router({
           const companySettingsSingle = await db.getCompanySettingsOrDefault(
             ctx.user.id
           );
-          const singleBdiValue = project.bdiPercentual
-            ? parseFloat(project.bdiPercentual as string) / 100
-            : parseFloat(companySettingsSingle.bdiPercentual as string) / 100 ||
-              0.25;
+          const { normalizeBdiPercent: normalizeBdiSingleAgent } = await import(
+            "./services/comercialCalculator"
+          );
+          const singleProjectBdiNorm = normalizeBdiSingleAgent(
+            project.bdiPercentual,
+            "singleAgent.projectBdi"
+          );
+          if (singleProjectBdiNorm.warning)
+            console.warn(singleProjectBdiNorm.warning);
+          const singleCompanyBdiNorm = normalizeBdiSingleAgent(
+            companySettingsSingle.bdiPercentual,
+            "singleAgent.companyBdi"
+          );
+          if (singleCompanyBdiNorm.warning)
+            console.warn(singleCompanyBdiNorm.warning);
+          const singleBdiValue =
+            (singleProjectBdiNorm.value ?? singleCompanyBdiNorm.value ?? 25) /
+            100;
 
           const finalOutput = await persistAgentOutput(
             input.agentType,
@@ -595,11 +609,29 @@ export const appRouter = router({
         const companySettings = await db.getCompanySettingsOrDefault(
           ctx.user.id
         );
-        const projectBdiValue = project.bdiPercentual
-          ? parseFloat(project.bdiPercentual as string) / 100
-          : null;
+        const { normalizeBdiPercent: normalizeBdiStartPipeline } = await import(
+          "./services/comercialCalculator"
+        );
+        const startProjectBdiNorm = normalizeBdiStartPipeline(
+          project.bdiPercentual,
+          "startPipeline.projectBdi"
+        );
+        if (startProjectBdiNorm.warning)
+          console.warn(startProjectBdiNorm.warning);
+        const startCompanyBdiNorm = normalizeBdiStartPipeline(
+          companySettings.bdiPercentual,
+          "startPipeline.companyBdi"
+        );
+        if (startCompanyBdiNorm.warning)
+          console.warn(startCompanyBdiNorm.warning);
+        const projectBdiValue =
+          startProjectBdiNorm.value !== null
+            ? startProjectBdiNorm.value / 100
+            : null;
         const companyBdiValue =
-          parseFloat(companySettings.bdiPercentual as string) / 100 || 0.25;
+          startCompanyBdiNorm.value !== null
+            ? startCompanyBdiNorm.value / 100
+            : 0.25;
         const effectiveBdiPercent = projectBdiValue ?? companyBdiValue;
 
         // P0.1: dispara o engine determinístico em paralelo. A função já é
@@ -1380,9 +1412,15 @@ export const appRouter = router({
           0
         );
 
-        const bdiPercent = project.bdiPercentual
-          ? parseFloat(project.bdiPercentual as string)
-          : 25;
+        const { normalizeBdiPercent } = await import(
+          "./services/comercialCalculator"
+        );
+        const bdiNorm = normalizeBdiPercent(
+          project.bdiPercentual,
+          "applyAuditCorrections.projectBdi"
+        );
+        if (bdiNorm.warning) console.warn(bdiNorm.warning);
+        const bdiPercent = bdiNorm.value ?? 25;
         const baseCost = correctedDirectCost + correctedLogisticsCost;
         const correctedFinalPrice =
           Math.round(baseCost * (1 + bdiPercent / 100) * 100) / 100;
@@ -2650,9 +2688,23 @@ async function executeRemainingAgents(
 
   // P0-2 FIX: Buscar BDI dinâmico do projeto/empresa
   const pipelineCompanySettings = await db.getCompanySettingsOrDefault(userId);
-  const pipelineBdiValue = project.bdiPercentual
-    ? parseFloat(project.bdiPercentual as string) / 100
-    : parseFloat(pipelineCompanySettings.bdiPercentual as string) / 100 || 0.25;
+  const { normalizeBdiPercent: normalizeBdiPercentPipeline } = await import(
+    "./services/comercialCalculator"
+  );
+  const pipelineProjectBdiNorm = normalizeBdiPercentPipeline(
+    project.bdiPercentual,
+    "pipeline.projectBdi"
+  );
+  if (pipelineProjectBdiNorm.warning)
+    console.warn(pipelineProjectBdiNorm.warning);
+  const pipelineCompanyBdiNorm = normalizeBdiPercentPipeline(
+    pipelineCompanySettings.bdiPercentual,
+    "pipeline.companyBdi"
+  );
+  if (pipelineCompanyBdiNorm.warning)
+    console.warn(pipelineCompanyBdiNorm.warning);
+  const pipelineBdiValue =
+    (pipelineProjectBdiNorm.value ?? pipelineCompanyBdiNorm.value ?? 25) / 100;
 
   for (const agentType of remainingAgents) {
     const executions = await db.getAgentExecutionsByProjectId(projectId);

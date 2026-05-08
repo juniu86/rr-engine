@@ -18,6 +18,51 @@ const BDI_PRESETS: Record<string, number> = {
   personalizado: 25, // se "personalizado" mas sem valor numérico, fallback
 };
 
+/**
+ * P0 (07/05/2026) Bug projeto 12: BDI vinha como 0,13% no XLSX porque o valor
+ * estava persistido em decimal (0.33) onde convenção do DB é percent (33.00).
+ *
+ * Normaliza um valor de BDI assumido em percent (33 = 33%):
+ *   - null/undefined/NaN/0 → { value: null } (caller decide fallback)
+ *   - 0 < x < 1 → assume confusão decimal-como-percent, multiplica por 100
+ *   - 1 ≤ x ≤ 200 → mantém
+ *   - x > 200 → clamp para null (BDI > 200% é implausível, provavelmente erro)
+ *
+ * Retorna o valor normalizado em percent + warning quando ajustou.
+ */
+export function normalizeBdiPercent(
+  raw: number | string | null | undefined,
+  label = "bdi"
+): { value: number | null; warning?: string } {
+  if (raw === null || raw === undefined || raw === "") {
+    return { value: null };
+  }
+  const num = typeof raw === "string" ? parseFloat(raw) : Number(raw);
+  if (!Number.isFinite(num) || num === 0) {
+    return { value: null };
+  }
+  if (num < 0) {
+    return {
+      value: null,
+      warning: `[${label}] BDI negativo (${num}) ignorado.`,
+    };
+  }
+  if (num < 1) {
+    const corrected = num * 100;
+    return {
+      value: corrected,
+      warning: `[${label}] BDI ${num} parece decimal (esperado percent, ex: 33). Normalizado para ${corrected}%.`,
+    };
+  }
+  if (num > 200) {
+    return {
+      value: null,
+      warning: `[${label}] BDI ${num}% > 200% — descartado como input inválido.`,
+    };
+  }
+  return { value: num };
+}
+
 export interface CompanyBdiSettings {
   bdiPercentual: number;
   lucroPercentual?: number;
@@ -61,11 +106,16 @@ export function computeComercial(
       ? BDI_PRESETS[context.bdiPreset]
       : undefined;
 
+  const projectBdiNorm = normalizeBdiPercent(context.projectBdi, "projectBdi");
+  if (projectBdiNorm.warning) console.warn(projectBdiNorm.warning);
+  const companyBdiNorm = normalizeBdiPercent(
+    context.companyBdiSettings?.bdiPercentual,
+    "companyBdi"
+  );
+  if (companyBdiNorm.warning) console.warn(companyBdiNorm.warning);
+
   const baseBdi =
-    context.projectBdi ??
-    presetValue ??
-    context.companyBdiSettings?.bdiPercentual ??
-    25;
+    projectBdiNorm.value ?? presetValue ?? companyBdiNorm.value ?? 25;
 
   const ajustes: string[] = [];
   let bdiAjustado = baseBdi;
