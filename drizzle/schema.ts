@@ -53,6 +53,7 @@ export const projects = mysqlTable(
       "blocked",
       "pending_confirmation",
       "waiting_for_input",
+      "cancelled",
     ])
       .default("draft")
       .notNull(),
@@ -127,6 +128,7 @@ export const agentExecutions = mysqlTable(
       "failed",
       "needs_review",
       "waiting_for_user_input",
+      "cancelled",
     ])
       .default("pending")
       .notNull(),

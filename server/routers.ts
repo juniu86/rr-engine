@@ -1227,6 +1227,80 @@ export const appRouter = router({
         }
       }),
 
+    /**
+     * Interrompe a execução de um orçamento em andamento.
+     *
+     * Quem pode chamar: owner do projeto.
+     * Estados aceitos: processing, waiting_for_input, pending_confirmation, review.
+     * Estados rejeitados: approved, rejected, blocked, draft, cancelled.
+     *
+     * Comportamento: marca o projeto como `cancelled` e atualiza todos os
+     * `agent_executions` ainda em pending/running/waiting_for_user_input
+     * para `cancelled`. O loop de execução (executeRemainingAgents) tem
+     * guard que verifica o status antes de cada agente — se cancelado,
+     * abandona o pipeline na próxima iteração.
+     *
+     * Quota mensal: NÃO é devolvida — o orçamento contou no momento da
+     * criação e cancelar não estorna. Decisão de produto pra evitar abuso
+     * (cancelar/recriar infinito).
+     */
+    cancelExecution: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+
+        const cancellableStates = [
+          "processing",
+          "waiting_for_input",
+          "pending_confirmation",
+          "review",
+        ];
+        if (!cancellableStates.includes(project.status)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Não é possível cancelar projeto com status "${project.status}". Estados aceitos: ${cancellableStates.join(", ")}.`,
+          });
+        }
+
+        // 1. Marca o projeto como cancelado
+        await db.updateProject(input.projectId, {
+          status: "cancelled",
+          warningMessages:
+            "Execução interrompida pelo usuário. A quota mensal não foi devolvida.",
+        });
+
+        // 2. Marca os agentes em curso como cancelados (não bloqueia
+        // resposta atual de LLM em flight, mas a próxima iteração do
+        // loop respeita o status do projeto)
+        const executions = await db.getAgentExecutionsByProjectId(
+          input.projectId
+        );
+        for (const exec of executions) {
+          if (
+            exec.status === "pending" ||
+            exec.status === "running" ||
+            exec.status === "waiting_for_user_input"
+          ) {
+            await db.updateAgentExecution(exec.id, {
+              status: "cancelled" as any,
+              completedAt: new Date(),
+            });
+          }
+        }
+
+        console.log(
+          `[cancelExecution] Projeto ${input.projectId} cancelado pelo usuário ${ctx.user.id}`
+        );
+
+        return {
+          success: true,
+          message: "Execução interrompida.",
+        };
+      }),
+
     // Confirmar proposta após alertas do Board
     confirmProposal: protectedProcedure
       .input(z.object({ projectId: z.number() }))
@@ -2655,6 +2729,19 @@ async function executeRemainingAgents(
     : parseFloat(pipelineCompanySettings.bdiPercentual as string) / 100 || 0.25;
 
   for (const agentType of remainingAgents) {
+    // Guard de cancelamento — verifica antes de cada agente se o usuário
+    // interrompeu a execução. Se sim, abandona o pipeline imediatamente.
+    const currentProject = await db.getProjectById(projectId);
+    if (currentProject?.status === "cancelled") {
+      console.log(
+        `[Pipeline] Execução cancelada pelo usuário antes do agente ${agentType}. Abortando.`
+      );
+      return {
+        status: "cancelled",
+        completedAgents,
+      };
+    }
+
     const executions = await db.getAgentExecutionsByProjectId(projectId);
     const execution = executions.find(e => e.agentType === agentType);
     if (!execution) continue;
