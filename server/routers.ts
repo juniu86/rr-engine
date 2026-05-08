@@ -41,7 +41,50 @@ import {
   type DeterministicResult,
 } from "./services/deterministicValidator";
 import { isCompleteTaxSettings } from "../shared/types";
+import type { CompanyTaxSettings } from "../shared/types";
 import { getLangfuse } from "./services/tracing";
+import { computeComercial } from "./services/comercialCalculator";
+import type { CompanyBdiSettings } from "./services/comercialCalculator";
+import { extractFinalTotalsFromExecutions } from "./services/projectTotals";
+
+/**
+ * Constrói um CompanyTaxSettings a partir do row de company_settings.
+ * Retorna null se a config estiver incompleta (gating do pipeline).
+ */
+function buildCompanyTaxSettings(
+  settings: any
+): CompanyTaxSettings | undefined {
+  if (!settings) return undefined;
+  const built = {
+    regimeTributario: settings.regimeTributario,
+    issPercentual: parseFloat(settings.issPercentual ?? "0"),
+    pisPercentual: parseFloat(settings.pisPercentual ?? "0"),
+    cofinsPercentual: parseFloat(settings.cofinsPercentual ?? "0"),
+    irpjPercentual: parseFloat(settings.irpjPercentual ?? "0"),
+    csllPercentual: parseFloat(settings.csllPercentual ?? "0"),
+    taxaLeisSociais: parseFloat(settings.taxaLeisSociais ?? "0"),
+    faixaSimples: settings.faixaSimples ?? undefined,
+  };
+  return isCompleteTaxSettings(built) ? built : undefined;
+}
+
+/**
+ * Constrói os componentes do BDI (NBR 12721) a partir do row de
+ * company_settings. Defaults aplicados em computeComercial quando ausente.
+ */
+function buildCompanyBdiSettings(settings: any): CompanyBdiSettings {
+  if (!settings) return {};
+  return {
+    lucroPercentual: parseFloat(settings.lucroPercentual ?? "8"),
+    adminCentralPercentual: parseFloat(settings.adminCentralPercentual ?? "4"),
+    despesasFinanceirasPercentual: parseFloat(
+      settings.despesasFinanceirasPercentual ?? "1"
+    ),
+    riscosPercentual: parseFloat(settings.riscosPercentual ?? "1"),
+    seguroPercentual: parseFloat(settings.seguroPercentual ?? "0.8"),
+    garantiaPercentual: parseFloat(settings.garantiaPercentual ?? "0.4"),
+  };
+}
 
 /**
  * Issue #82 — loga warning quando um projeto vira `status='approved'`
@@ -1187,34 +1230,39 @@ export const appRouter = router({
             await db.updateProject(input.projectId, { status: "approved" });
           }
 
-          // Correção 3: Gravar totais finais na tabela projects (fonte única de verdade)
+          // P0 BDI fix — gravar totais finais usando outputs dos agentes
+          // (não somar `budget_items` direto da DB, que mistura logística).
           try {
-            const finalBudgetItems = await db.getBudgetItemsByProjectId(
+            const executions = await db.getAgentExecutionsByProjectId(
               input.projectId
             );
-            const finalDirectCost = finalBudgetItems.reduce(
-              (sum: number, item: any) => sum + Number(item.totalCost || 0),
-              0
+            const totals = extractFinalTotalsFromExecutions(
+              executions as Array<{
+                agentType: string;
+                status: string;
+                output: any;
+              }>
             );
-            const finalLogistics = await db.getLogisticsCostsByProjectId(
-              input.projectId
-            );
-            const finalLogisticsCost = finalLogistics.reduce(
-              (sum: number, c: any) => sum + Number(c.totalCost || 0),
-              0
-            );
-            const comercialResult = results.comercial as any;
-
-            await db.updateProject(input.projectId, {
-              totalCostDirect: String(Math.round(finalDirectCost * 100) / 100),
-              totalCostIndirect: String(
-                Math.round(finalLogisticsCost * 100) / 100
-              ),
-              totalPrice: String(comercialResult?.finalPrice || 0),
-            });
-            console.log(
-              `[Pipeline] Totais finais gravados: Direto R$${finalDirectCost.toFixed(2)}, Logística R$${finalLogisticsCost.toFixed(2)}, Preço R$${comercialResult?.finalPrice?.toFixed(2) || 0}`
-            );
+            if (totals) {
+              await db.updateProject(input.projectId, {
+                totalCostDirect: String(totals.totalCostDirect),
+                totalCostIndirect: String(totals.totalCostIndirect),
+                totalBdi: String(totals.totalBdi),
+                totalTaxes: String(totals.totalTaxes),
+                totalPrice: String(totals.totalPrice),
+              });
+              console.log(
+                `[Pipeline] Totais finais gravados (NBR 12721): Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
+                  `Logística R$${totals.totalCostIndirect.toFixed(2)}, ` +
+                  `BDI R$${totals.totalBdi.toFixed(2)}, ` +
+                  `Tributos R$${totals.totalTaxes.toFixed(2)}, ` +
+                  `Preço R$${totals.totalPrice.toFixed(2)}`
+              );
+            } else {
+              console.warn(
+                `[Pipeline] Não foi possível extrair totais — agentes essenciais ainda não rodaram.`
+              );
+            }
           } catch (err) {
             console.error("[Pipeline] Error saving final totals:", err);
           }
@@ -1317,49 +1365,56 @@ export const appRouter = router({
           });
         }
 
-        // Antes de aprovar, gravar totais finais na tabela projects (fonte
-        // única de verdade pra UI). Bug anterior: este caminho não gravava
-        // totalPrice, então o dashboard ficava sem o valor mesmo com
-        // proposta confirmada.
+        // P0 BDI fix — gravar totais finais usando outputs dos agentes.
+        // Bug anterior: somava `budget_items` direto da DB, que mistura
+        // itens de logística embutidos pelo LLM (corrigidos só no XLSX
+        // via `splitBudgetAndLogistics`). Resultado: custo direto inflado
+        // e logística zerada no dashboard. Agora usa orcOutput.totalDirectCost
+        // e logOutput.totalLogisticsCost direto, que vêm separados.
         try {
-          const finalBudgetItems = await db.getBudgetItemsByProjectId(
-            input.projectId
-          );
-          const finalDirectCost = finalBudgetItems.reduce(
-            (sum: number, item: any) => sum + Number(item.totalCost || 0),
-            0
-          );
-          const finalLogistics = await db.getLogisticsCostsByProjectId(
-            input.projectId
-          );
-          const finalLogisticsCost = finalLogistics.reduce(
-            (sum: number, c: any) => sum + Number(c.totalCost || 0),
-            0
-          );
           const executions = await db.getAgentExecutionsByProjectId(
             input.projectId
           );
-          const comercialExec = executions.find(
-            (e: any) => e.agentType === "comercial"
+          const totals = extractFinalTotalsFromExecutions(
+            executions as Array<{
+              agentType: string;
+              status: string;
+              output: any;
+            }>
           );
-          const finalPrice = (comercialExec?.output as any)?.finalPrice ?? 0;
 
           // #82: o operador confirmou a proposta apesar dos warnings.
           // Loga warning se o Auditor diz rejected — não bloqueia.
           await warnIfAuditorRejected(input.projectId, "confirmProposal");
 
-          await db.updateProject(input.projectId, {
-            status: "approved",
-            warningMessages: null,
-            totalCostDirect: String(Math.round(finalDirectCost * 100) / 100),
-            totalCostIndirect: String(
-              Math.round(finalLogisticsCost * 100) / 100
-            ),
-            totalPrice: String(finalPrice),
-          });
-          console.log(
-            `[confirmProposal] Totais gravados: Direto R$${finalDirectCost.toFixed(2)}, Logística R$${finalLogisticsCost.toFixed(2)}, Preço R$${Number(finalPrice).toFixed(2)}`
-          );
+          if (totals) {
+            await db.updateProject(input.projectId, {
+              status: "approved",
+              warningMessages: null,
+              totalCostDirect: String(totals.totalCostDirect),
+              totalCostIndirect: String(totals.totalCostIndirect),
+              totalBdi: String(totals.totalBdi),
+              totalTaxes: String(totals.totalTaxes),
+              totalPrice: String(totals.totalPrice),
+            });
+            console.log(
+              `[confirmProposal] Totais gravados (NBR 12721): Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
+                `Logística R$${totals.totalCostIndirect.toFixed(2)}, ` +
+                `BDI R$${totals.totalBdi.toFixed(2)}, ` +
+                `Tributos R$${totals.totalTaxes.toFixed(2)}, ` +
+                `Preço R$${totals.totalPrice.toFixed(2)}`
+            );
+          } else {
+            // Fallback — agentes essenciais não disponíveis. Aprova sem
+            // gravar totais (caminho raro, geralmente ocorre em desenvolvimento).
+            await db.updateProject(input.projectId, {
+              status: "approved",
+              warningMessages: null,
+            });
+            console.warn(
+              `[confirmProposal] Aprovado sem totais — agentes essenciais ausentes.`
+            );
+          }
         } catch (err) {
           console.error("[confirmProposal] Error saving final totals:", err);
           // Mesmo se falhar a gravação dos totais, marca como aprovado.
@@ -1438,7 +1493,9 @@ export const appRouter = router({
           }
         }
 
-        // 4. Recalcular totais deterministicamente
+        // 4. Recalcular totais via fórmula NBR 12721 com tributos por
+        // dentro. Após remover items, soma o que sobrou em budget_items e
+        // logistics_costs e passa pra computeComercial.
         const remainingBudget = await db.getBudgetItemsByProjectId(
           input.projectId
         );
@@ -1454,12 +1511,45 @@ export const appRouter = router({
           0
         );
 
-        const bdiPercent = project.bdiPercentual
-          ? parseFloat(project.bdiPercentual as string)
-          : 25;
-        const baseCost = correctedDirectCost + correctedLogisticsCost;
+        // Reconstruir contexto e recalcular Comercial.
+        const userSettings = await db.getCompanySettingsByUserId(ctx.user.id);
+        const taxSettingsForCorrection = buildCompanyTaxSettings(userSettings);
+        const bdiSettingsForCorrection = buildCompanyBdiSettings(userSettings);
+        const taxOverrideForCorrection =
+          userSettings?.aliquotaTributosOverride != null
+            ? parseFloat(userSettings.aliquotaTributosOverride as string)
+            : null;
+
+        // Tributos: somar taxAmount dos itens remanescentes.
+        const correctedTotalTaxes = remainingBudget.reduce(
+          (sum: number, item: any) => sum + Number(item.taxAmount || 0),
+          0
+        );
+
+        const recomputed = computeComercial(
+          {
+            budgetItems: remainingBudget as any,
+            totalDirectCost: correctedDirectCost,
+            totalIndirectCost: correctedLogisticsCost,
+            totalTaxes: correctedTotalTaxes,
+            contractType: project.contractType,
+            logisticsComplexity:
+              correctedLogisticsCost > 50000
+                ? "high"
+                : correctedLogisticsCost > 20000
+                  ? "medium"
+                  : "low",
+            fiscalRisk: "low",
+          },
+          {
+            companyBdiSettings: bdiSettingsForCorrection,
+            taxSettings: taxSettingsForCorrection,
+            taxRateOverridePercentual: taxOverrideForCorrection,
+          }
+        );
+
         const correctedFinalPrice =
-          Math.round(baseCost * (1 + bdiPercent / 100) * 100) / 100;
+          Math.round(recomputed.finalPrice * 100) / 100;
 
         // 5. Atualizar projects table com totais corrigidos
         await db.updateProject(input.projectId, {
@@ -1467,6 +1557,8 @@ export const appRouter = router({
           totalCostIndirect: String(
             Math.round(correctedLogisticsCost * 100) / 100
           ),
+          totalBdi: String(Math.round(recomputed.totalBdiAmount * 100) / 100),
+          totalTaxes: String(Math.round(correctedTotalTaxes * 100) / 100),
           totalPrice: String(correctedFinalPrice),
         });
 
@@ -2295,6 +2387,13 @@ export const appRouter = router({
           adminCentralPercentual: z.string().optional(),
           despesasFinanceirasPercentual: z.string().optional(),
           riscosPercentual: z.string().optional(),
+          // P0 BDI NBR 12721 — componentes Seguros (S) e Garantias (G)
+          // adicionados pra completar a fórmula da norma.
+          seguroPercentual: z.string().optional(),
+          garantiaPercentual: z.string().optional(),
+          // Override manual da alíquota I (tributos sobre faturamento, %).
+          // Quando NULL, sistema resolve I por regime/faixa.
+          aliquotaTributosOverride: z.string().nullable().optional(),
           regimeTributario: z
             .enum(["simples_nacional", "lucro_presumido", "lucro_real"])
             .optional(),
@@ -2590,12 +2689,43 @@ export const appRouter = router({
 
         const gestaoOutput = gestaoExec.output as any;
 
+        // P0 cronograma fix — quando o LLM esquece de popular scheduleItems
+        // (lista de fases agregadas), derivamos da dailySchedule agrupando
+        // por phase. Evita PDF saindo com "0 etapas" e Gantt vazio.
+        const dailySchedule = gestaoOutput.dailySchedule || [];
+        let scheduleItems = gestaoOutput.scheduleItems || [];
+        if (
+          (!Array.isArray(scheduleItems) || scheduleItems.length === 0) &&
+          Array.isArray(dailySchedule) &&
+          dailySchedule.length > 0
+        ) {
+          const { deriveScheduleFromDaily } = await import(
+            "./services/agentPersistence"
+          );
+          scheduleItems = deriveScheduleFromDaily(dailySchedule);
+          console.log(
+            `[generateSchedulePDF] scheduleItems vazio — derivadas ${scheduleItems.length} fases a partir de dailySchedule (${dailySchedule.length} dias).`
+          );
+        }
+
+        // Calcula totalDays a partir do dailySchedule quando o LLM
+        // esquece de informar — fallback antigo de 30 dias era enganoso.
+        const totalDays =
+          gestaoOutput.totalDays ||
+          (Array.isArray(dailySchedule) && dailySchedule.length > 0
+            ? Math.max(
+                ...dailySchedule.map((d: any) => Number(d.day) || 0)
+              ) || dailySchedule.length
+            : null) ||
+          gestaoOutput.totalDuration * 5 ||
+          30;
+
         const result = await generateSchedulePDF(
           project,
-          gestaoOutput.dailySchedule || [],
-          gestaoOutput.scheduleItems || [],
+          dailySchedule,
+          scheduleItems,
           gestaoOutput.milestones || [],
-          gestaoOutput.totalDays || gestaoOutput.totalDuration * 5 || 30,
+          totalDays,
           gestaoOutput.teamSummary ||
             "Equipe a ser definida conforme cronograma",
           gestaoOutput.materialsSummary ||
@@ -2945,13 +3075,18 @@ async function buildAgentInput(
         `[Comercial] Impostos: R$ ${tribOutput.totalTaxes.toFixed(2)}`
       );
 
-      // BDI: Prioridade é o BDI do projeto, depois o da empresa
-      const projectBdi = project.bdiPercentual
-        ? parseFloat(project.bdiPercentual as string)
-        : null;
-      const companyBdi =
-        parseFloat(companySettings.bdiPercentual as string) || 25.0;
-      const effectiveBdi = projectBdi ?? companyBdi;
+      // BDI calculado pela fórmula NBR 12721 a partir dos componentes
+      // editados em company_settings (Lucro, Admin, DF, Riscos, Seguros,
+      // Garantias) e da alíquota I resolvida pelo regime fiscal. Não há
+      // mais "BDI total" editável manualmente — vira derivado.
+      const taxSettingsForComercial = buildCompanyTaxSettings(companySettings);
+      const bdiSettingsForComercial = buildCompanyBdiSettings(companySettings);
+      const taxOverrideForComercial =
+        companySettings.aliquotaTributosOverride != null
+          ? parseFloat(
+              companySettings.aliquotaTributosOverride as string
+            )
+          : null;
 
       return {
         budgetItems: orcOutput.budgetItems || [],
@@ -2971,23 +3106,12 @@ async function buildAgentInput(
             : tribOutput.alerts?.length > 0
               ? "medium"
               : "low",
-        // BDI efetivo do projeto (prioridade: projeto > empresa)
-        projectBdi: effectiveBdi,
-        bdiPreset: project.bdiPreset || "padrao",
-        // Configurações de BDI e lucro da empresa (para referência)
-        companyBdiSettings: {
-          bdiPercentual: companyBdi,
-          lucroPercentual:
-            parseFloat(companySettings.lucroPercentual as string) || 8.0,
-          adminCentralPercentual:
-            parseFloat(companySettings.adminCentralPercentual as string) || 4.0,
-          despesasFinanceirasPercentual:
-            parseFloat(
-              companySettings.despesasFinanceirasPercentual as string
-            ) || 1.0,
-          riscosPercentual:
-            parseFloat(companySettings.riscosPercentual as string) || 1.0,
-        },
+        // Componentes do BDI (NBR 12721) — Lucro, AC, DF, R, S, G.
+        companyBdiSettings: bdiSettingsForComercial,
+        // Configuração tributária canônica — usada para resolver I.
+        taxSettings: taxSettingsForComercial,
+        // Override manual da alíquota I (em pp), opcional.
+        taxRateOverridePercentual: taxOverrideForComercial,
       };
 
     case "gestao_projetos":

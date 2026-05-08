@@ -192,6 +192,66 @@ export async function persistLogisticsCosts(
 
 // ==================== SCHEDULE ITEMS ====================
 
+/**
+ * P0 cronograma fix — quando o LLM popula `dailySchedule` (dia a dia) mas
+ * esquece de preencher `scheduleItems` (fases agregadas), derivamos as
+ * fases agrupando os dias por `phase`. Sem isso, o gerador de PDF saía
+ * com "0 etapas" e Gantt vazio mesmo com cronograma diário completo.
+ */
+export function deriveScheduleFromDaily(
+  dailySchedule: any[] | undefined
+): Array<{
+  phase: string;
+  description: string;
+  startDay: number;
+  endDay: number;
+  duration: number;
+}> {
+  if (!Array.isArray(dailySchedule) || dailySchedule.length === 0) return [];
+  const byPhase = new Map<
+    string,
+    { phase: string; days: number[]; descriptions: string[] }
+  >();
+  for (const day of dailySchedule) {
+    const phase = String(day.phase || "Execução").trim() || "Execução";
+    const dayNum = Number(day.day);
+    if (!Number.isFinite(dayNum)) continue;
+    if (!byPhase.has(phase)) {
+      byPhase.set(phase, { phase, days: [], descriptions: [] });
+    }
+    const entry = byPhase.get(phase)!;
+    entry.days.push(dayNum);
+    if (Array.isArray(day.activities)) {
+      for (const act of day.activities) {
+        if (act?.description) entry.descriptions.push(String(act.description));
+      }
+    }
+  }
+  // Mantém a ordem em que cada fase apareceu pela primeira vez.
+  const out: Array<{
+    phase: string;
+    description: string;
+    startDay: number;
+    endDay: number;
+    duration: number;
+  }> = [];
+  for (const { phase, days, descriptions } of Array.from(byPhase.values())) {
+    if (days.length === 0) continue;
+    const startDay = Math.min(...days);
+    const endDay = Math.max(...days);
+    out.push({
+      phase,
+      description: descriptions.slice(0, 3).join("; ") || phase,
+      startDay,
+      endDay,
+      duration: endDay - startDay + 1,
+    });
+  }
+  // Ordena por dia inicial.
+  out.sort((a, b) => a.startDay - b.startDay);
+  return out;
+}
+
 export async function persistScheduleItems(
   projectId: number,
   rawSchedule: any[]
@@ -617,8 +677,18 @@ export async function persistAgentOutput(
     }
   }
 
-  if (agentType === "gestao_projetos" && output?.schedule) {
-    await persistScheduleItems(projectId, output.schedule);
+  // P0 cronograma fix — o agente retorna `scheduleItems` (não `schedule`).
+  // Bug anterior: leitura do campo errado fazia a tabela schedule_items
+  // ficar vazia mesmo com o output preenchido. Caímos pra dailySchedule
+  // como fallback quando o LLM esquece de preencher scheduleItems.
+  if (agentType === "gestao_projetos") {
+    const scheduleSource =
+      (output as any)?.scheduleItems ||
+      (output as any)?.schedule ||
+      deriveScheduleFromDaily((output as any)?.dailySchedule);
+    if (Array.isArray(scheduleSource) && scheduleSource.length > 0) {
+      await persistScheduleItems(projectId, scheduleSource);
+    }
   }
 
   if (agentType === "financeiro") {
