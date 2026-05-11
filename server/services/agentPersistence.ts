@@ -372,20 +372,26 @@ export async function persistAgentOutput(
     // versão do prompt: `costs` (formato antigo) ou `items` (atual). Em
     // ambos os casos garantimos que `totalLogisticsCost` esteja no nível
     // top — isso é exigido pela validação no buildAgentInput do Comercial.
-    const itemsList = output?.items || output?.costs || [];
+    const itemsList: any[] = output?.items || output?.costs || [];
 
-    if (output?.costs) {
-      // Caminho legado: cross-check vs orçamento.
+    // P0 (11/05/2026) — bug confirmado no projeto 18: o formato atual do
+    // agente retorna `items` mas não `costs`. Sem essa correção, o caminho
+    // de persistência só rodava em formato legado e a tabela logistics_costs
+    // ficava vazia. Cascateava em:
+    //  - extractFinalTotalsFromExecutions (totalCostIndirect = 0)
+    //  - applyAuditCorrections (correctedLogisticsCost = 0 → BDI errado)
+    //  - gerador XLSX (consolidatedLogistics dependia de split, não de DB)
+    if (Array.isArray(itemsList) && itemsList.length > 0) {
       try {
         const budgetItems = await db.getBudgetItemsByProjectId(projectId);
         const filteredCosts = crossCheckLogisticsVsBudget(
-          output.costs,
+          itemsList,
           budgetItems
         );
         await persistLogisticsCosts(projectId, filteredCosts);
 
-        if (filteredCosts.length < output.costs.length) {
-          const removedCount = output.costs.length - filteredCosts.length;
+        if (filteredCosts.length < itemsList.length) {
+          const removedCount = itemsList.length - filteredCosts.length;
           const newTotal = filteredCosts.reduce(
             (sum: number, c: any) => sum + Number(c.totalCost || 0),
             0
@@ -398,8 +404,16 @@ export async function persistAgentOutput(
             _logisticsItemsRemoved: removedCount,
           };
           console.log(
-            `[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${output.totalLogisticsCost?.toFixed(2)} → R$${newTotal.toFixed(2)}`
+            `[Logistica] Cross-check: ${removedCount} items removed (overlap with budget). Cost: R$${(output.totalLogisticsCost ?? 0).toFixed(2)} → R$${newTotal.toFixed(2)}`
           );
+        } else {
+          // Mesmo sem cross-check removendo nada, normaliza `costs` no
+          // output canônico pra leitura por extractFinalTotalsFromExecutions
+          // e applyAuditCorrections (que lêem .costs).
+          finalOutput = {
+            ...output,
+            costs: filteredCosts,
+          };
         }
       } catch (err) {
         console.error("[Logistica] Error saving costs:", err);

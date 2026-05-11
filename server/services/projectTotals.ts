@@ -73,12 +73,19 @@ export function extractFinalTotalsFromExecutions(
   const budgetItems = Array.isArray(orcOutput.budgetItems)
     ? orcOutput.budgetItems
     : [];
+  // P0 (11/05/2026) — agente Logística pode retornar items em qualquer um
+  // de 3 campos dependendo do prompt: `costs` (legado), `logisticsCosts`
+  // (versão intermediária) ou `items` (atual). Sem cobrir os 3, split fica
+  // sem fonte primária e todo logistic é classificado via keyword no
+  // budget_items.
   const logisticsList =
     logOutput && Array.isArray(logOutput.costs)
       ? logOutput.costs
       : logOutput && Array.isArray(logOutput.logisticsCosts)
         ? logOutput.logisticsCosts
-        : [];
+        : logOutput && Array.isArray(logOutput.items)
+          ? logOutput.items
+          : [];
 
   const split = splitBudgetAndLogistics(budgetItems as any, logisticsList);
 

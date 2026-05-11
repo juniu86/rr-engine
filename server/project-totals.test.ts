@@ -115,6 +115,43 @@ describe("extractFinalTotalsFromExecutions", () => {
     // output do agente Logística.
     expect(totals!.totalCostIndirect).toBeCloseTo(25000, 0);
   });
+
+  it("aceita logOutput.items (formato novo) além de .costs / .logisticsCosts", () => {
+    const outs = [
+      mkExec("orcamentista", {
+        budgetItems: [
+          {
+            description: "Concreto fck 25",
+            unit: "m³",
+            quantity: 10,
+            totalCost: 4500,
+          },
+        ],
+        totalDirectCost: 4500,
+      }),
+      // formato NOVO: usa `items` em vez de `costs`
+      mkExec("logistica", {
+        items: [
+          {
+            category: "Geral",
+            description: "Container vestiário NR-18",
+            quantity: 8,
+            unit: "mês",
+            unitCost: 1850,
+            totalCost: 14800,
+          },
+        ],
+        totalLogisticsCost: 14800,
+      }),
+      mkExec("comercial", {
+        finalPrice: 19300,
+        totalBdiAmount: 0,
+      }),
+    ];
+    const totals = extractFinalTotalsFromExecutions(outs);
+    expect(totals).not.toBeNull();
+    expect(totals!.totalCostIndirect).toBe(14800);
+  });
 });
 
 describe("persistFinalTotals", () => {

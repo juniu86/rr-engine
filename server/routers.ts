@@ -1564,9 +1564,17 @@ export const appRouter = router({
           }
         }
 
-        // 4. Recalcular totais via fórmula NBR 12721 com tributos por
-        // dentro. Após remover items, soma o que sobrou em budget_items e
-        // logistics_costs e passa pra computeComercial.
+        // 4. Recalcular totais PRESERVANDO os parâmetros do Comercial
+        // original. Bug anterior (descoberto no projeto 18, 11/05/2026):
+        // chamar computeComercial com fiscalRisk:'low' hardcoded e
+        // logisticsComplexity recalculada a partir de logistics_costs vazia
+        // produzia BDI 48,94% (sem ajustes), sobrescrevendo o BDI 55,90%
+        // do Comercial original (que tinha ajuste +5pp por risco fiscal alto).
+        // Também totalTaxes virava 0 (somando taxAmount por item que é zero).
+        //
+        // Política agora: applyAuditCorrections SÓ ajusta as bases (custo
+        // direto e logística) e o preço final proporcionalmente. Mantém
+        // o BDI ajustado do Comercial e os tributos do Tributário.
         const remainingBudget = await db.getBudgetItemsByProjectId(
           input.projectId
         );
@@ -1582,45 +1590,63 @@ export const appRouter = router({
           0
         );
 
-        // Reconstruir contexto e recalcular Comercial.
-        const userSettings = await db.getCompanySettingsByUserId(ctx.user.id);
-        const taxSettingsForCorrection = buildCompanyTaxSettings(userSettings);
-        const bdiSettingsForCorrection = buildCompanyBdiSettings(userSettings);
-        const taxOverrideForCorrection =
-          userSettings?.aliquotaTributosOverride != null
-            ? parseFloat(userSettings.aliquotaTributosOverride as string)
-            : null;
-
-        // Tributos: somar taxAmount dos itens remanescentes.
-        const correctedTotalTaxes = remainingBudget.reduce(
-          (sum: number, item: any) => sum + Number(item.taxAmount || 0),
-          0
+        // Recuperar BDI e tributos originais dos outputs dos agentes.
+        const execsForRecompute = await db.getAgentExecutionsByProjectId(
+          input.projectId
+        );
+        const comercialExecRec = execsForRecompute.find(
+          (e: any) => e.agentType === "comercial"
+        );
+        const tributarioExecRec = execsForRecompute.find(
+          (e: any) => e.agentType === "tributario"
+        );
+        const orcExecRec = execsForRecompute.find(
+          (e: any) => e.agentType === "orcamentista"
+        );
+        const logExecRec = execsForRecompute.find(
+          (e: any) => e.agentType === "logistica"
         );
 
-        const recomputed = computeComercial(
-          {
-            budgetItems: remainingBudget as any,
-            totalDirectCost: correctedDirectCost,
-            totalIndirectCost: correctedLogisticsCost,
-            totalTaxes: correctedTotalTaxes,
-            contractType: project.contractType,
-            logisticsComplexity:
-              correctedLogisticsCost > 50000
-                ? "high"
-                : correctedLogisticsCost > 20000
-                  ? "medium"
-                  : "low",
-            fiscalRisk: "low",
-          },
-          {
-            companyBdiSettings: bdiSettingsForCorrection,
-            taxSettings: taxSettingsForCorrection,
-            taxRateOverridePercentual: taxOverrideForCorrection,
-          }
+        const originalBdiRate = Number(
+          (comercialExecRec?.output as any)?.adjustedBdi ?? 0
         );
+        const originalFinalPrice = Number(
+          (comercialExecRec?.output as any)?.finalPrice ?? 0
+        );
+        const originalTaxes = Number(
+          (tributarioExecRec?.output as any)?.totalTaxes ?? 0
+        );
+        const originalDirect = Number(
+          (orcExecRec?.output as any)?.totalDirectCost ?? 0
+        );
+        const originalLogistics = Number(
+          (logExecRec?.output as any)?.totalLogisticsCost ?? 0
+        );
+        const originalBase = originalDirect + originalLogistics;
 
+        // Novo custo base após remoções.
+        const newBase = correctedDirectCost + correctedLogisticsCost;
+        // Mantém BDI ajustado original — fórmula NBR já incluiu ajustes
+        // (fiscalRisk, logisticsComplexity) que dependem do estado original
+        // do projeto, não devem mudar por remoção de items duplicados.
         const correctedFinalPrice =
-          Math.round(recomputed.finalPrice * 100) / 100;
+          Math.round(newBase * (1 + originalBdiRate) * 100) / 100;
+        const correctedBdiAmount =
+          Math.round(newBase * originalBdiRate * 100) / 100;
+        // Tributos: ajusta proporcionalmente ao preço final. Tributos por
+        // dentro são alíquota × preço; se preço baixou X%, tributos baixam X%.
+        const taxScale =
+          originalFinalPrice > 0 ? correctedFinalPrice / originalFinalPrice : 0;
+        const correctedTotalTaxes =
+          Math.round(originalTaxes * taxScale * 100) / 100;
+
+        console.log(
+          `[AuditCorrections] Recalculado: ` +
+            `base ${originalBase.toFixed(2)} → ${newBase.toFixed(2)}, ` +
+            `BDI rate mantido ${(originalBdiRate * 100).toFixed(2)}%, ` +
+            `preço ${originalFinalPrice.toFixed(2)} → ${correctedFinalPrice.toFixed(2)}, ` +
+            `tributos ${originalTaxes.toFixed(2)} → ${correctedTotalTaxes.toFixed(2)} (escala ${(taxScale * 100).toFixed(2)}%)`
+        );
 
         // 5. Atualizar projects table com totais corrigidos
         await db.updateProject(input.projectId, {
@@ -1628,8 +1654,8 @@ export const appRouter = router({
           totalCostIndirect: String(
             Math.round(correctedLogisticsCost * 100) / 100
           ),
-          totalBdi: String(Math.round(recomputed.totalBdiAmount * 100) / 100),
-          totalTaxes: String(Math.round(correctedTotalTaxes * 100) / 100),
+          totalBdi: String(correctedBdiAmount),
+          totalTaxes: String(correctedTotalTaxes),
           totalPrice: String(correctedFinalPrice),
         });
 
