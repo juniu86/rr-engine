@@ -71,9 +71,20 @@ function numbersClose(a: number | undefined, b: number | undefined): boolean {
 }
 
 /**
- * Match numérico forte: mesma unit + mesma quantity + mesmo unitCostTotal.
- * Quando bate, é praticamente certeza de duplicação — pega casos de
- * chunking que regerou o item com texto diferente.
+ * Threshold mínimo de similaridade textual pra o numericFingerprintsMatch
+ * disparar. Protege contra falso positivo onde 2 itens têm coincidentemente
+ * mesma unit + qty + unitCost mas são produtos completamente diferentes
+ * (ex.: "Cimento CP-II saco 50kg" e "Areia média ensacada", ambos qty=10
+ * saco R$35 — descrições com Jaccard 0, não devem virar duplicata).
+ */
+const NUMERIC_MATCH_MIN_TEXT_SIMILARITY = 0.3;
+
+/**
+ * Match numérico forte: mesma unit + mesma quantity + mesmo unitCostTotal +
+ * similaridade textual mínima. Quando bate, é praticamente certeza de
+ * duplicação — pega casos de chunking que regerou o item com texto
+ * parafraseado (Jaccard baixo demais pro strictThreshold mas com alguma
+ * sobreposição lexical).
  */
 function numericFingerprintsMatch(
   a: DedupableItem,
@@ -92,6 +103,10 @@ function numericFingerprintsMatch(
   const cB = Number(b.unitCostTotal ?? 0);
   if (cA <= 0 || cB <= 0) return false;
   if (!numbersClose(cA, cB)) return false;
+  // Pré-filtro textual: descartar pares completamente sem overlap lexical.
+  // Tomada × Pintura com mesmos números coincidentes — não dispara.
+  const sim = tokenSimilarity(a.description ?? "", b.description ?? "");
+  if (sim < NUMERIC_MATCH_MIN_TEXT_SIMILARITY) return false;
   return true;
 }
 
@@ -229,24 +244,6 @@ export function dedupItems<T extends DedupableItem>(
         continue;
       }
 
-      // Match numérico forte: unit + quantity + unitCostTotal idênticos
-      // (com tolerância 1%). Pega casos de chunking que regerou o item
-      // com descrição parafraseada (ex.: "Aço CA-50 cortado/dobrado" vs
-      // "Aço CA-50 corte e dobra" — Jaccard ~0.4, abaixo do strict).
-      if (numericFingerprintsMatch(keeper.item, candidate.item)) {
-        consumed.add(candidate.originalIndex);
-        decided.add(candidate.originalIndex);
-        removed.push({
-          keeperIndex: keeper.originalIndex,
-          removedIndex: candidate.originalIndex,
-          reason: "numeric_match",
-          similarity: 1,
-          keeperDescription: keeper.item.description,
-          removedDescription: candidate.item.description,
-        });
-        continue;
-      }
-
       // Match exato — manter o de maior quantity
       if (keeper.normalized === candidate.normalized) {
         const keepQty = keeper.item.quantity ?? 0;
@@ -275,6 +272,25 @@ export function dedupItems<T extends DedupableItem>(
             removedDescription: candidate.item.description,
           });
         }
+        continue;
+      }
+
+      // PR5a: match numérico forte — unit + quantity + unitCostTotal
+      // idênticos (tolerância 1%). Pega casos de chunking que regerou
+      // o item com descrição parafraseada (ex.: "Aço CA-50 cortado/dobrado"
+      // vs "Aço CA-50 corte e dobra", Jaccard ~0.4, abaixo do strict).
+      // Roda DEPOIS do match exato pra preservar a semântica do reason.
+      if (numericFingerprintsMatch(keeper.item, candidate.item)) {
+        consumed.add(candidate.originalIndex);
+        decided.add(candidate.originalIndex);
+        removed.push({
+          keeperIndex: keeper.originalIndex,
+          removedIndex: candidate.originalIndex,
+          reason: "numeric_match",
+          similarity: 1,
+          keeperDescription: keeper.item.description,
+          removedDescription: candidate.item.description,
+        });
         continue;
       }
 
