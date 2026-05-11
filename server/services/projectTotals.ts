@@ -107,3 +107,68 @@ export function extractFinalTotalsFromExecutions(
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/**
+ * Wrapper único de gravação de totais. Carrega execuções do banco,
+ * extrai totais, grava em `projects.totalCostDirect/Indirect/BDI/Taxes/Price`.
+ *
+ * Política: grava se o Orçamentista e o Comercial concluíram, **independente
+ * do status final do projeto** (blocked, review, pending_confirmation,
+ * approved). Cliente em qualquer estado precisa ver os números pra decidir
+ * próximo passo. Tributário e Logística são opcionais — se vazios, vai 0.
+ *
+ * Idempotente: chamar várias vezes é seguro. Falha silenciosa quando
+ * outputs incompletos (loga warning, não joga erro pra não derrubar o
+ * caller). Caller decide se quer continuar com totais null ou não.
+ *
+ * Aceita executions opcionalmente pra evitar nova query do banco quando
+ * o caller já tem a lista carregada.
+ */
+export async function persistFinalTotals(
+  projectId: number,
+  db: {
+    getAgentExecutionsByProjectId: (id: number) => Promise<any[]>;
+    updateProject: (id: number, patch: any) => Promise<any>;
+  },
+  executions?: AgentExecutionRecord[],
+  contextLabel?: string
+): Promise<ProjectFinalTotals | null> {
+  try {
+    const execs =
+      executions ??
+      ((await db.getAgentExecutionsByProjectId(projectId)) as AgentExecutionRecord[]);
+    const totals = extractFinalTotalsFromExecutions(execs);
+    if (!totals) {
+      console.warn(
+        `[persistFinalTotals${contextLabel ? `:${contextLabel}` : ""}] ` +
+          `Projeto ${projectId} — Orçamentista ou Comercial ainda não completaram. ` +
+          `Totais NÃO gravados.`
+      );
+      return null;
+    }
+    await db.updateProject(projectId, {
+      totalCostDirect: String(totals.totalCostDirect),
+      totalCostIndirect: String(totals.totalCostIndirect),
+      totalBdi: String(totals.totalBdi),
+      totalTaxes: String(totals.totalTaxes),
+      totalPrice: String(totals.totalPrice),
+    });
+    console.log(
+      `[persistFinalTotals${contextLabel ? `:${contextLabel}` : ""}] ` +
+        `Projeto ${projectId} (NBR 12721): ` +
+        `Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
+        `Logística R$${totals.totalCostIndirect.toFixed(2)}, ` +
+        `BDI R$${totals.totalBdi.toFixed(2)}, ` +
+        `Tributos R$${totals.totalTaxes.toFixed(2)}, ` +
+        `Preço R$${totals.totalPrice.toFixed(2)}`
+    );
+    return totals;
+  } catch (err) {
+    console.error(
+      `[persistFinalTotals${contextLabel ? `:${contextLabel}` : ""}] ` +
+        `Projeto ${projectId} — falha ao gravar totais:`,
+      err
+    );
+    return null;
+  }
+}

@@ -898,36 +898,55 @@ function generateMemoriaXLSX(
   XLSX.utils.book_append_sheet(wb, wsFluxo, "Fluxo de Caixa");
 
   // === Planilha 4: Resumo ===
+  // PR6 (11/05/2026): mostra AMBAS as representações — sem BDI (base) e
+  // com BDI diluído. Antes só mostrava "com BDI", e o usuário confundia
+  // com o número que o Auditor descreve em texto ("orçamento com X itens,
+  // soma R$ Y") que é o total base sem BDI. Agora a planilha bate
+  // visualmente com o texto do Auditor e com o card do dashboard.
+  const bdiAmount = totalFinal - totalDirect - totalLogistics;
   const resumoData = [
     ["RESUMO DO ORÇAMENTO"],
     [`Projeto: ${project.name}`],
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [],
     ["Descrição", "Valor"],
-    // P2 XLSX refactor (P1.3) — BDI diluído nos preços unitários do
-    // Orçamento Detalhado. Resumo só mostra os 3 totais: Custo Direto
-    // (com BDI), Custos Logísticos (com BDI), Preço Final. Sem linha
-    // "BDI" agregada (operador rejeita explicitamente).
+    // Bloco 1: Composição base (sem BDI) — espelha o card do dashboard
+    // e o texto do Auditor ("soma de itens = R$ X").
+    ["Custo Direto (Materiais + M.O., sem BDI)", totalDirect],
+    ["Custos Logísticos (sem BDI)", totalLogistics],
+    ["SUBTOTAL CUSTO BASE", totalDirect + totalLogistics],
+    [],
+    // Bloco 2: Markup aplicado (BDI NBR 12721 com tributos por dentro).
+    [
+      `BDI ${((markupFactor - 1) * 100).toFixed(2)}% sobre custo base`,
+      bdiAmount,
+    ],
+    // P0 (07/05/2026, Bug 1) — Tributário é fonte de verdade.
+    // Em NBR 12721 com tributos por dentro, o valor abaixo é informativo:
+    // já está embutido no BDI via denominador (1 - I). Não somar de novo.
+    [
+      "Tributos (calculados pelo agente Tributário, embutidos no BDI)",
+      totalTax,
+    ],
+    [],
+    ["PREÇO FINAL DE VENDA", totalFinal],
+    [],
+    // Bloco 3: Representação alternativa pra quem prefere ver com BDI
+    // diluído por item (compatível com layout antigo).
+    ["Composição com BDI diluído (representação alternativa):", ""],
     [
       "Custo Direto (Materiais + M.O., com BDI diluído)",
       totalDirect * markupFactor,
     ],
     ["Custos Logísticos (com BDI diluído)", totalLogistics * markupFactor],
     [],
-    // P0 (07/05/2026, Bug 1) — antes essa linha vinha sempre R$ 0,00
-    // porque XLSX somava `budget_items.taxAmount` (sempre 0). Agora usa
-    // `tributarioOutput.totalTaxes` direto, fonte de verdade.
-    ["Tributos (calculados pelo agente Tributário)", totalTax],
-    [],
-    ["PREÇO FINAL DE VENDA", totalFinal],
-    [],
     ["Premissas:", ""],
     [
-      `BDI ${((markupFactor - 1) * 100).toFixed(2)}% aplicado proporcionalmente nos preços unitários`,
+      `BDI ${((markupFactor - 1) * 100).toFixed(2)}% aplicado pela fórmula NBR 12721 com tributos por dentro`,
       "",
     ],
     [
-      `Tributos calculados separadamente pelo regime fiscal da empresa (não inclusos no BDI acima)`,
+      `Cliente paga o Preço Final cheio — empresa recolhe os tributos sobre esse valor.`,
       "",
     ],
   ];
