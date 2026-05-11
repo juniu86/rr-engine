@@ -1923,6 +1923,20 @@ export const appRouter = router({
         if (project.userId !== ctx.user.id)
           throw new TRPCError({ code: "FORBIDDEN" });
 
+        // P1.5 gate — defesa em profundidade. continueAgent dispara o
+        // pipeline em background (executeRemainingAgents), que vai chegar
+        // no Tributário. Sem este gate, o erro só apareceria 2-3 min
+        // depois quando o agente Tributário rejeitar o input.
+        const taxSettings = await db.getCompanyTaxSettings(ctx.user.id);
+        if (!isCompleteTaxSettings(taxSettings)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Configuração tributária da empresa não está completa. " +
+              "Acesse Configurações → Empresa antes de continuar o pipeline.",
+          });
+        }
+
         // Buscar execução do agente
         const executions = await db.getAgentExecutionsByProjectId(
           input.projectId
@@ -3086,7 +3100,11 @@ async function buildAgentInput(
       return {
         budgetItems: getOutput("orcamentista").budgetItems || [],
         contractType: project.contractType,
-        // Configurações de impostos da empresa
+        // Configurações de impostos da empresa.
+        // P1.5.1 fix (11/05/2026) — faixaSimples agora é propagada. Sem
+        // isso, regime "simples_nacional" reprovava em isCompleteTaxSettings
+        // dentro do TributarioAgent.getUserPrompt, mesmo com gate passando
+        // no entry point (executeAll).
         companyTaxSettings: {
           regimeTributario: companySettings.regimeTributario,
           issPercentual:
@@ -3101,6 +3119,10 @@ async function buildAgentInput(
             parseFloat(companySettings.csllPercentual as string) || 1.08,
           taxaLeisSociais:
             parseFloat(companySettings.taxaLeisSociais as string) || 128.23,
+          faixaSimples:
+            companySettings.faixaSimples == null
+              ? undefined
+              : (companySettings.faixaSimples as 1 | 2 | 3 | 4 | 5 | 6),
         },
       };
 
