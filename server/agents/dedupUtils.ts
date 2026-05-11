@@ -15,6 +15,13 @@ export interface DedupableItem {
   unit?: string;
   category?: string;
   quantity?: number;
+  /**
+   * Custo unitário (R$ / unit). Usado pelo match numérico junto com
+   * `unit` e `quantity` — quando bate, é duplicata mesmo se a descrição
+   * variar muito. Pega o caso "Aço CA-50 cortado/dobrado" vs "Aço CA-50
+   * corte e dobra" (Jaccard ~0.4, abaixo do strictThreshold).
+   */
+  unitCostTotal?: number;
   itemNumber?: string;
   /** Itens "pai" hierárquicos (totalCost = soma dos filhos). Não devem
    *  ser misturados com filhos pelo similaridade. */
@@ -24,11 +31,83 @@ export interface DedupableItem {
 export interface DuplicateRecord {
   keeperIndex: number;
   removedIndex: number;
-  /** 'exact_match' | 'high_similarity' | 'suspect_only_logged' */
-  reason: "exact_match" | "high_similarity" | "suspect_only_logged";
+  /**
+   * Como a duplicata foi detectada:
+   * - exact_match: descrição normalizada idêntica
+   * - high_similarity: Jaccard ≥ strictThreshold
+   * - numeric_match: unit + quantity + unitCost iguais (descrição pode
+   *   variar bastante — pega split de chunking que reescreveu o texto)
+   * - suspect_only_logged: Jaccard entre suspect e strict, não removido
+   */
+  reason:
+    | "exact_match"
+    | "high_similarity"
+    | "numeric_match"
+    | "suspect_only_logged";
   similarity: number;
   keeperDescription: string;
   removedDescription: string;
+}
+
+/**
+ * Tolerância relativa pra comparar quantidades e custos unitários.
+ * 1% absorve arredondamento entre chunks (LLM pode arredondar diferente)
+ * sem perder precisão pra preço de obra civil.
+ */
+const NUMERIC_MATCH_TOLERANCE = 0.01;
+
+/**
+ * Verifica se dois números são iguais dentro da tolerância relativa.
+ * Considera zero como caso especial — só "iguais" se ambos zero.
+ */
+function numbersClose(a: number | undefined, b: number | undefined): boolean {
+  const na = Number(a ?? 0);
+  const nb = Number(b ?? 0);
+  if (na === 0 && nb === 0) return true;
+  if (na === 0 || nb === 0) return false;
+  const diff = Math.abs(na - nb);
+  const max = Math.max(Math.abs(na), Math.abs(nb));
+  return diff / max <= NUMERIC_MATCH_TOLERANCE;
+}
+
+/**
+ * Threshold mínimo de similaridade textual pra o numericFingerprintsMatch
+ * disparar. Protege contra falso positivo onde 2 itens têm coincidentemente
+ * mesma unit + qty + unitCost mas são produtos completamente diferentes
+ * (ex.: "Cimento CP-II saco 50kg" e "Areia média ensacada", ambos qty=10
+ * saco R$35 — descrições com Jaccard 0, não devem virar duplicata).
+ */
+const NUMERIC_MATCH_MIN_TEXT_SIMILARITY = 0.3;
+
+/**
+ * Match numérico forte: mesma unit + mesma quantity + mesmo unitCostTotal +
+ * similaridade textual mínima. Quando bate, é praticamente certeza de
+ * duplicação — pega casos de chunking que regerou o item com texto
+ * parafraseado (Jaccard baixo demais pro strictThreshold mas com alguma
+ * sobreposição lexical).
+ */
+function numericFingerprintsMatch(
+  a: DedupableItem,
+  b: DedupableItem
+): boolean {
+  // Unit precisa estar definida em ambos pra fazer sentido
+  if (!a.unit || !b.unit) return false;
+  if (a.unit !== b.unit) return false;
+  // Quantity > 0 obrigatório — itens com qty 0 são suspeitos de pai/header
+  const qA = Number(a.quantity ?? 0);
+  const qB = Number(b.quantity ?? 0);
+  if (qA <= 0 || qB <= 0) return false;
+  if (!numbersClose(qA, qB)) return false;
+  // unitCostTotal > 0 obrigatório — sem custo unitário não dá pra ter certeza
+  const cA = Number(a.unitCostTotal ?? 0);
+  const cB = Number(b.unitCostTotal ?? 0);
+  if (cA <= 0 || cB <= 0) return false;
+  if (!numbersClose(cA, cB)) return false;
+  // Pré-filtro textual: descartar pares completamente sem overlap lexical.
+  // Tomada × Pintura com mesmos números coincidentes — não dispara.
+  const sim = tokenSimilarity(a.description ?? "", b.description ?? "");
+  if (sim < NUMERIC_MATCH_MIN_TEXT_SIMILARITY) return false;
+  return true;
 }
 
 export interface DedupResult<T> {
@@ -196,6 +275,25 @@ export function dedupItems<T extends DedupableItem>(
         continue;
       }
 
+      // PR5a: match numérico forte — unit + quantity + unitCostTotal
+      // idênticos (tolerância 1%). Pega casos de chunking que regerou
+      // o item com descrição parafraseada (ex.: "Aço CA-50 cortado/dobrado"
+      // vs "Aço CA-50 corte e dobra", Jaccard ~0.4, abaixo do strict).
+      // Roda DEPOIS do match exato pra preservar a semântica do reason.
+      if (numericFingerprintsMatch(keeper.item, candidate.item)) {
+        consumed.add(candidate.originalIndex);
+        decided.add(candidate.originalIndex);
+        removed.push({
+          keeperIndex: keeper.originalIndex,
+          removedIndex: candidate.originalIndex,
+          reason: "numeric_match",
+          similarity: 1,
+          keeperDescription: keeper.item.description,
+          removedDescription: candidate.item.description,
+        });
+        continue;
+      }
+
       const sim = tokenSimilarity(keeper.normalized, candidate.normalized);
 
       if (sim >= strictThreshold) {
@@ -298,12 +396,23 @@ export function findBudgetDuplicates(
     const estimatedImpact =
       qty > 0 && unitCost > 0 ? qty * unitCost : Number(removed.totalCost ?? 0);
 
+    let reasonText: string;
+    switch (removal.reason) {
+      case "exact_match":
+        reasonText = `Duplicata exata de "${keeper.description}"`;
+        break;
+      case "numeric_match":
+        reasonText =
+          `Mesma unidade, quantidade e custo unitário de "${keeper.description}" — ` +
+          `provável duplicação gerada em chunks diferentes`;
+        break;
+      default:
+        reasonText = `Alta similaridade (${(removal.similarity * 100).toFixed(0)}%) com "${keeper.description}"`;
+    }
+
     findings.push({
       description: removed.description,
-      reason:
-        removal.reason === "exact_match"
-          ? `Duplicata exata de "${keeper.description}"`
-          : `Alta similaridade (${(removal.similarity * 100).toFixed(0)}%) com "${keeper.description}"`,
+      reason: reasonText,
       estimatedImpact,
       similarItem: {
         description: keeper.description,

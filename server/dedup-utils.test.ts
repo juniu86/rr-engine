@@ -160,6 +160,78 @@ describe("dedupItems (P1.3)", () => {
     expect(r.items.find(i => i.isSummaryItem)).toBeDefined();
   });
 
+  it("PR5a: detecta numeric_match — mesma unit + qty + unitCost com texto parafraseado", () => {
+    // Caso real do Maricá REV_03: Aço CA-50 gerado em 2 chunks com texto
+    // levemente diferente. Jaccard fica baixo (~0.4) mas dados numéricos
+    // são idênticos.
+    const items = [
+      {
+        description: "Aço CA-50 cortado e dobrado para estrutura de concreto armado",
+        unit: "kg",
+        quantity: 11500,
+        unitCostTotal: 15.3,
+        totalCost: 175950,
+      },
+      {
+        description: "Aço CA-50 corte e dobra para estrutura",
+        unit: "kg",
+        quantity: 11500,
+        unitCostTotal: 15.3,
+        totalCost: 175950,
+      },
+    ];
+    const r = dedupItems(items);
+    expect(r.items).toHaveLength(1);
+    expect(r.duplicatesRemoved[0].reason).toBe("numeric_match");
+  });
+
+  it("PR5a: numeric_match NÃO dispara quando texto é totalmente diferente", () => {
+    // Falso positivo a evitar: cimento e areia, ambos qty=10 saco R$35.
+    // Sem overlap lexical (Jaccard 0), o numericFingerprintsMatch deve
+    // descartar a duplicação.
+    const items = [
+      {
+        description: "Cimento Portland CP-II saco 50kg",
+        unit: "saco",
+        quantity: 10,
+        unitCostTotal: 35,
+        totalCost: 350,
+      },
+      {
+        description: "Areia média ensacada lavada",
+        unit: "saco",
+        quantity: 10,
+        unitCostTotal: 35,
+        totalCost: 350,
+      },
+    ];
+    const r = dedupItems(items);
+    expect(r.items).toHaveLength(2);
+  });
+
+  it("PR5a: numeric_match exige tolerância 1% na quantity e unitCost", () => {
+    // Mesma unit, qty bem diferente (>1% de delta) — não dispara
+    const items = [
+      {
+        description: "Concreto fck 25 lançado em fundação",
+        unit: "m³",
+        quantity: 38,
+        unitCostTotal: 450,
+      },
+      {
+        description: "Concreto fck 25 lançado em fundação",
+        unit: "m³",
+        quantity: 50,
+        unitCostTotal: 450,
+      },
+    ];
+    const r = dedupItems(items);
+    // Mesmo texto exato — vai pegar como exact_match, mantém o de maior qty
+    expect(r.items).toHaveLength(1);
+    expect(r.duplicatesRemoved[0].reason).toBe("exact_match");
+    expect(r.items[0].quantity).toBe(50);
+  });
+
   it("aplica strictThreshold customizado", () => {
     // Threshold mais baixo (0.5) faz mais coisas baterem como duplicata
     const items = [
