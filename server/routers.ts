@@ -45,7 +45,10 @@ import type { CompanyTaxSettings } from "../shared/types";
 import { getLangfuse } from "./services/tracing";
 import { computeComercial } from "./services/comercialCalculator";
 import type { CompanyBdiSettings } from "./services/comercialCalculator";
-import { extractFinalTotalsFromExecutions } from "./services/projectTotals";
+import {
+  extractFinalTotalsFromExecutions,
+  persistFinalTotals,
+} from "./services/projectTotals";
 
 /**
  * Constrói um CompanyTaxSettings a partir do row de company_settings.
@@ -840,6 +843,15 @@ export const appRouter = router({
               } as any,
             });
             await db.updateProject(input.projectId, { status: "review" });
+            // Mesmo com falha de agente individual, grava o que tem pra
+            // não deixar card vazio. Helper retorna null se Orçamentista
+            // ou Comercial ainda não rodaram — sem gravar nada nesse caso.
+            await persistFinalTotals(
+              input.projectId,
+              db,
+              undefined,
+              "single-execute-failed"
+            );
             // P2.2: garante flush antes de propagar o erro para fora da procedure.
             try {
               await langfuse?.flushAsync();
@@ -1199,6 +1211,9 @@ export const appRouter = router({
             blockReason:
               boardResult.blockReason || "Proposta bloqueada pelo Board",
           });
+          // Grava totais mesmo em blocked — usuário precisa ver os números
+          // pra entender o que o Board barrou.
+          await persistFinalTotals(input.projectId, db, undefined, "blocked");
           return {
             success: false,
             blocked: true,
@@ -1211,6 +1226,14 @@ export const appRouter = router({
             status: "pending_confirmation",
             warningMessages: JSON.stringify(boardResult.warningMessages || []),
           });
+          // Grava totais antes de mostrar warnings — card precisa estar
+          // populado pra usuário decidir se confirma.
+          await persistFinalTotals(
+            input.projectId,
+            db,
+            undefined,
+            "pending_confirmation"
+          );
           return {
             success: true,
             requiresConfirmation: true,
@@ -1222,6 +1245,12 @@ export const appRouter = router({
           const auditorResult = results.auditor as any;
           if (auditorResult?.auditSeal === "rejected") {
             await db.updateProject(input.projectId, { status: "review" });
+            await persistFinalTotals(
+              input.projectId,
+              db,
+              undefined,
+              "auditor-rejected"
+            );
             console.log(
               "[Pipeline] Board aprovou mas Auditor rejeitou — status = review"
             );
@@ -1269,10 +1298,52 @@ export const appRouter = router({
 
           return { success: true, results };
         } else {
-          // Proposta em REVISÃO
+          // Proposta em REVISÃO (Board nem aprovou nem bloqueou)
           await db.updateProject(input.projectId, { status: "review" });
+          // Mesmo em revisão, totais são úteis pra usuário entender o que
+          // o pipeline produziu antes de decidir refazer ou aprovar manual.
+          await persistFinalTotals(
+            input.projectId,
+            db,
+            undefined,
+            "review-no-board-decision"
+          );
           return { success: true, results };
         }
+      }),
+
+    /**
+     * Recalcula e regrava os totais (`totalCostDirect`, `totalCostIndirect`,
+     * `totalBdi`, `totalTaxes`, `totalPrice`) usando os outputs dos agentes
+     * já executados. Útil pra projetos antigos que rodaram antes do fix de
+     * gravação universal, ou pra forçar atualização após mudança no split
+     * determinístico.
+     *
+     * Não dispara LLM — custo zero. Só lê DB e grava.
+     */
+    recomputeTotals: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+        if (project.userId !== ctx.user.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+
+        const totals = await persistFinalTotals(
+          input.projectId,
+          db,
+          undefined,
+          "recomputeTotals-manual"
+        );
+        if (!totals) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Agentes essenciais (Orçamentista e Comercial) ainda não " +
+              "completaram. Aguarde o pipeline terminar antes de recalcular.",
+          });
+        }
+        return { success: true, totals };
       }),
 
     /**
@@ -2921,6 +2992,9 @@ async function executeRemainingAgents(
         } as any,
       });
       await db.updateProject(projectId, { status: "review" });
+      // Grava totais mesmo com agente falhado — Orçamentista/Comercial
+      // podem ter rodado e usuário precisa ver o que existe pra decidir.
+      await persistFinalTotals(projectId, db, undefined, "remaining-failure");
       return {
         status: "error",
         completedAgents,
@@ -2939,6 +3013,16 @@ async function executeRemainingAgents(
   } else {
     await db.updateProject(projectId, { status: "approved" });
   }
+
+  // Grava totais com split em qualquer caminho terminal — bug grave anterior:
+  // o background pipeline marcava `approved` sem nunca chamar o helper de
+  // totais, deixando `projects.totalPrice/totalCostDirect/...` null.
+  await persistFinalTotals(
+    projectId,
+    db,
+    finalExecutions as Array<{ agentType: string; status: string; output: any }>,
+    boardOutput?.blockProposal ? "remaining-blocked" : "remaining-approved"
+  );
 
   console.log(
     `[Pipeline] Pipeline completo. ${completedAgents.length} agentes executados.`
