@@ -26,6 +26,95 @@ function normalizeForFindingDedup(s: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/**
+ * PR5b: extrai items pra remoção a partir de validations falhadas.
+ *
+ * Caso de uso: LLM identificou sobreposição em `validations[]` com
+ * `passed: false` mas esqueceu de popular `corrections.budgetItemsToRemove`.
+ * Sem o array preenchido, o AuditCorrectionsModal não dispara no frontend.
+ *
+ * Estratégia: parser pega refs do tipo "Item N" / "Itens N e M" / "Itens
+ * N, M e P" no texto da validation (campo `actual` e `description`) e
+ * mapeia pros items reais via índice (linha 1 = item 1, linha 2 = item 2).
+ * Mantém o primeiro de cada grupo, marca os outros como pra remoção.
+ *
+ * Limitação: confia que o LLM cita por número de Item. Casos onde só
+ * descreve por texto livre não são captados — mas pelo menos loga.
+ */
+function inferRemovalsFromValidations(
+  validations: Array<{
+    rule?: string;
+    description?: string;
+    actual?: string;
+    expected?: string;
+  }>,
+  allItems: Array<{
+    description: string;
+    quantity?: number;
+    unit?: string;
+    unitCostTotal?: number;
+    totalCost?: number;
+  }>
+): Array<{ description: string; reason: string; estimatedImpact: number }> {
+  const out: Array<{
+    description: string;
+    reason: string;
+    estimatedImpact: number;
+  }> = [];
+  const seen = new Set<number>();
+
+  // Regex casa "Item 27", "Itens 27 e 29", "Itens 27, 29, 30", "itens 27+29".
+  // Captura todos os números mencionados na string.
+  const itemRefRegex = /\bitens?\s+([\d,\s+e&]+)/gi;
+
+  for (const v of validations) {
+    const haystack = `${v.description ?? ""} ${v.actual ?? ""}`;
+    const numbers: number[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = itemRefRegex.exec(haystack)) !== null) {
+      const captured = match[1];
+      const ids = captured
+        .split(/[,\s+e&]+/)
+        .map(s => parseInt(s.trim(), 10))
+        .filter(n => Number.isFinite(n) && n > 0);
+      numbers.push(...ids);
+    }
+    if (numbers.length < 2) continue; // precisa de ≥ 2 pra ser sobreposição
+
+    // Mantém o primeiro (menor número = item declarado primeiro), remove
+    // os outros. Critério simples e previsível.
+    const sorted = Array.from(new Set(numbers)).sort((a, b) => a - b);
+    const keeperIdx = sorted[0] - 1; // 1-based → 0-based
+    const keeper = allItems[keeperIdx];
+    if (!keeper) continue;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const removeIdx = sorted[i] - 1;
+      const removeItem = allItems[removeIdx];
+      if (!removeItem) continue;
+      if (seen.has(removeIdx)) continue;
+      seen.add(removeIdx);
+
+      const qty = Number(removeItem.quantity ?? 0);
+      const unitCost = Number(removeItem.unitCostTotal ?? 0);
+      const impact =
+        qty > 0 && unitCost > 0
+          ? qty * unitCost
+          : Number(removeItem.totalCost ?? 0);
+
+      out.push({
+        description: removeItem.description,
+        reason:
+          `Sobreposição com "${keeper.description}" identificada pelo Auditor ` +
+          `(${v.rule ?? "scope_overlap"})`,
+        estimatedImpact: impact,
+      });
+    }
+  }
+
+  return out;
+}
 import type {
   AgentType,
   EngenheiroTecnicoInput,
@@ -3254,13 +3343,59 @@ export class AuditorAgent extends BaseAgent<AuditorInput, AuditorOutput> {
     const logisticsCost =
       input.allAgentOutputs.logistica?.totalLogisticsCost ?? 0;
 
+    // PR5b: pós-validação — se há validação `passed=false` apontando
+    // overlap mas `mergedFindings` está vazio, é sinal de que o LLM
+    // descreveu o problema em texto mas não populou o array de remoção.
+    // Tentamos extrair refs (Item N, "descrição entre aspas") do `actual`
+    // e promover automaticamente. Sem isso, o AuditCorrectionsModal não
+    // dispara e o usuário só vê texto técnico no card.
+    if (mergedFindings.length === 0) {
+      const failedOverlaps = (llmOutput.validations ?? []).filter(
+        (v: any) =>
+          v &&
+          v.passed === false &&
+          typeof v.rule === "string" &&
+          /overlap|sobrepo|duplic/i.test(`${v.rule} ${v.description ?? ""}`)
+      );
+      if (failedOverlaps.length > 0) {
+        const inferred = inferRemovalsFromValidations(
+          failedOverlaps,
+          allItems
+        );
+        if (inferred.length > 0) {
+          console.warn(
+            `[Auditor] LLM marcou ${failedOverlaps.length} sobreposição(ões) ` +
+              `via validations mas deixou corrections vazio. Inferindo ${inferred.length} item(ns) ` +
+              `pra remoção a partir do texto da validation.`
+          );
+          for (const f of inferred) {
+            const key = normalizeForFindingDedup(f.description);
+            if (seenDescriptions.has(key)) continue;
+            seenDescriptions.add(key);
+            mergedFindings.push(f);
+          }
+        } else {
+          console.warn(
+            `[Auditor] LLM marcou ${failedOverlaps.length} sobreposição(ões) ` +
+              `mas não foi possível inferir items pra remoção. AuditCorrectionsModal não vai disparar — ` +
+              `usuário vai ver só texto técnico.`
+          );
+        }
+      }
+    }
+
+    const finalTotalImpact = mergedFindings.reduce(
+      (s, f) => s + f.estimatedImpact,
+      0
+    );
+
     return {
       ...llmOutput,
       corrections: {
         budgetItemsToRemove: mergedFindings,
         logisticsToRemove,
-        totalImpact: totalImpact + logisticsImpact,
-        correctedDirectCost: directCost - totalImpact,
+        totalImpact: finalTotalImpact + logisticsImpact,
+        correctedDirectCost: directCost - finalTotalImpact,
         correctedLogisticsCost: logisticsCost - logisticsImpact,
       },
     };
