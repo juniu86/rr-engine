@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "build": "rm -rf dist && vite build && esbuild server/_core/index.ts server/instrument.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && cp -r server/templates dist/templates",
-    "build:server": "rm -rf dist && esbuild server/_core/index.ts server/instrument.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && cp -r server/templates dist/templates",
+    "build": "rm -rf dist && vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js && esbuild server/instrument.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/instrument.js && cp -r server/templates dist/templates",
+    "build:server": "rm -rf dist && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js && esbuild server/instrument.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/instrument.js && cp -r server/templates dist/templates",
     "start": "NODE_ENV=production node --import ./dist/instrument.js dist/index.js",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
