@@ -242,9 +242,72 @@ Detalhes do tracing (incluindo o que aparece no dashboard) em `docs/observabilit
 
 > **P0 (07/05/2026) — Cap de quota mensal:** Starter=2, Pro=7, Business=20 orçamentos/mês (era 5/20/ilimitado). Cobre custo real R$ 70/orçamento. Ajustar caps em `server/stripe/products.ts:TIERS.<tier>.quota`. Tests asserting quotas em `server/stripe/sprint5.test.ts`. Spec em `implementacao/P0_QUOTA_CAP_POR_PLANO.md`.
 
+> **P0 (08/05/2026) — BDI NBR 12721 + cronograma + cancel:** três PRs mergeados no mesmo dia.
+>
+> 1. **`feat/cancel-execution`**: mutation `agent.cancelExecution` + guard no loop `executeRemainingAgents` + status `cancelled` em `projects` e `agent_executions` (migration `0022`). Frontend ganha botão "Interromper" no `AgentPipelineLive`. Quota mensal NÃO é devolvida (anti-abuso).
+>
+> 2. **`feat/p0-bdi-cronograma`**: substitui `× 1,25` flat pela fórmula NBR 12721 em `server/services/comercialCalculator.ts`:
+>
+>     ```
+>     BDI = ((1 + AC + S + R + G) × (1 + DF) × (1 + L)) / (1 − I) − 1
+>     ```
+>
+>     Tributos por dentro via denominador `(1 − I)`. Resolução de I: `server/services/taxRateResolver.ts`. Ordem: `aliquotaTributosOverride` (manual) > `SIMPLES_ANEXO_IV[faixa]` > `iss + pis + cofins + irpj + csll` (Lucro Presumido/Real) > 8% fallback. Migration `0023` adiciona `seguroPercentual`, `garantiaPercentual`, `aliquotaTributosOverride` em `company_settings`.
+>
+>     `confirmProposal` (e gêmeos no pipeline auto-approve e applyAuditCorrections) lê totais de `extractFinalTotalsFromExecutions` (em `server/services/projectTotals.ts`) — não soma `budget_items` direto da DB (mistura logística que o LLM enfia em `budget_items`). Grava `totalBdi`, `totalTaxes`, `totalCostDirect` e `totalCostIndirect` corretos.
+>
+>     Cronograma: `agentPersistence.ts` lia `output.schedule` (campo errado) — agora lê `output.scheduleItems` com fallback pra helper `deriveScheduleFromDaily(dailySchedule)` que agrupa fases. Gerador de PDF (`generateSchedulePDF` no `routers.ts`) também tem o mesmo fallback. Prompt do agente Gestão (`agents/index.ts`) reforçado com lista explícita de campos obrigatórios.
+>
+> 3. **`feat/p0-settings-bdi-readonly`** (frontend `rr-engine-app`): BDI total na UI vira **readonly**, calculado em tempo real via `components/BdiSettingsForm.tsx`. Campos novos editáveis: Seguros (S), Garantias (G), override de I. Tabela do Simples Nacional Anexo IV pré-preenche I por faixa. Comitado junto: cancelExecution no `lib/api.ts` e `AgentPipelineLive.tsx`.
+
+> **P0 (12/05/2026) — BDI "tudo por dentro" (substitui NBR 12721 cascata):** após decomposição P&L do contrato no board da RR Engenharia, a fórmula NBR não fechava: aplicar AC/S/R/G como % do custo gera markup menor do que a soma dos mesmos percentuais sobre o preço de venda. Diferença observada no caso Maricá: −R$ 353,7k (−13% sobre o markup).
+>
+> Nova fórmula em `server/services/comercialCalculator.ts`:
+>
+>     ```
+>     PV = Custo / (1 − L − AC − DF − R − S − G − I)
+>     BDI = totalRate / (1 − totalRate),  totalRate = L+AC+DF+R+S+G+I
+>     ```
+>
+> Cada componente é % do **preço de venda** (não do custo). Caso Maricá com componentes 25/4/1/5/2/0/15% → totalRate 52%, BDI 108,33%, PV R$ 3.531.655,44. Soma das linhas decompostas sobre o PV bate exato com o markup.
+>
+> Gate: soma ≥ 95% lança erro (acima disso BDI explode). Ajustes condicionais (+5pp em R por fiscalRisk=high, +5pp em DF por logística=high) permanecem.
+>
+> Reflete em três lugares: aba "BDI e Markup" do XLSX (`documents.ts` com fórmula `=(C5+C6+C7+C8+C9+C10+C12)/100/(1-(...)/100)` em C14), `BdiSettingsForm.tsx` no rr-engine-app (cálculo readonly em tempo real), Resumo Executivo da XLSX. `applyAuditCorrections` continua preservando o BDI rate do Comercial original — não precisa mudança. Testes em `server/comercial-calculator.test.ts` cobrem caso Maricá numericamente.
+
 ## Como pedir contexto adicional
 
 Se precisar de informação fora do escopo de um ticket (decisão de produto, justificativa de negócio, dados que não estão no repo), pause o ticket e abra issue ou pergunte ao founder Reginaldo. Não inventar requisitos.
+
+## REGRA DE VALIDAÇÃO ANTES DE TESTE PAGO (11/05/2026)
+
+Cada execução de pipeline custa dinheiro real (Anthropic API por chamada
+de agente, 10 chamadas por orçamento). Após ciclo de 5 PRs + 5 revisões
+pagas no projeto Maricá sem fechar o gap, foi decidido:
+
+**Nenhum teste novo pode ser pedido antes de afirmar literalmente:**
+
+> "Todos os erros que você reportou foram corrigidos, todos os testes
+> necessários à validação desta informação foram feitos e agora você pode
+> ensaiar o modelo XPTY para me entregar o resultado e termos capacidade
+> de criticar possíveis novas melhorias."
+
+A frase só pode ser dita quando o trabalho cumpre:
+
+1. **Análise ampla de código** — todos os caminhos relacionados ao
+   problema, não só o óbvio. Ex.: pra bug de totais não gravados, varrer
+   `confirmProposal`, `executeRemainingAgents` (auto-approve),
+   `applyAuditCorrections`, **e** o caminho `status="review"` que
+   historicamente não grava totais.
+2. **Typecheck local passa** (`pnpm check` ou `tsc --noEmit`).
+3. **Testes unitários cobrem o cenário** (rodar `pnpm test` ou ler
+   manualmente os asserts pra confirmar).
+4. **Validação matemática** quando há número envolvido.
+5. **Hipótese clara do resultado esperado** antes do teste rodar.
+
+Sem isso fica suspenso qualquer "tenta agora". A regra está gravada em
+3 lugares: este CLAUDE.md, `rr-engine-app/HANDOFF.md`, e o
+`02 - MKT/Claude/03_CONFIGURACAO_CLAUDE/modo-de-trabalho.md`.
 
 ## Glossário
 

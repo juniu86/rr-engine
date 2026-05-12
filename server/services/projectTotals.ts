@@ -18,8 +18,9 @@
  * dashboard passa a refletir a mesma separação da planilha.
  *
  * Fonte do `totalPrice`: `comercialOutput.finalPrice` continua sendo a
- * fonte canônica (custo base × (1 + BDI NBR 12721) com tributos por
- * dentro). O split só corrige a apresentação dos subtotais.
+ * fonte canônica (custo base × (1 + BDI "tudo por dentro") — todos os
+ * componentes como % do preço de venda). O split só corrige a
+ * apresentação dos subtotais.
  */
 
 import { splitBudgetAndLogistics } from "./xlsx/budgetLogisticsSplit";
@@ -162,7 +163,7 @@ export async function persistFinalTotals(
     });
     console.log(
       `[persistFinalTotals${contextLabel ? `:${contextLabel}` : ""}] ` +
-        `Projeto ${projectId} (NBR 12721): ` +
+        `Projeto ${projectId} (BDI tudo por dentro): ` +
         `Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
         `Logística R$${totals.totalCostIndirect.toFixed(2)}, ` +
         `BDI R$${totals.totalBdi.toFixed(2)}, ` +

@@ -72,7 +72,7 @@ function buildCompanyTaxSettings(
 }
 
 /**
- * Constrói os componentes do BDI (NBR 12721) a partir do row de
+ * Constrói os componentes do BDI (tudo por dentro) a partir do row de
  * company_settings. Defaults aplicados em computeComercial quando ausente.
  */
 function buildCompanyBdiSettings(settings: any): CompanyBdiSettings {
@@ -1281,7 +1281,7 @@ export const appRouter = router({
                 totalPrice: String(totals.totalPrice),
               });
               console.log(
-                `[Pipeline] Totais finais gravados (NBR 12721): Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
+                `[Pipeline] Totais finais gravados (BDI tudo por dentro): Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
                   `Logística R$${totals.totalCostIndirect.toFixed(2)}, ` +
                   `BDI R$${totals.totalBdi.toFixed(2)}, ` +
                   `Tributos R$${totals.totalTaxes.toFixed(2)}, ` +
@@ -1469,7 +1469,7 @@ export const appRouter = router({
               totalPrice: String(totals.totalPrice),
             });
             console.log(
-              `[confirmProposal] Totais gravados (NBR 12721): Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
+              `[confirmProposal] Totais gravados (BDI tudo por dentro): Direto R$${totals.totalCostDirect.toFixed(2)}, ` +
                 `Logística R$${totals.totalCostIndirect.toFixed(2)}, ` +
                 `BDI R$${totals.totalBdi.toFixed(2)}, ` +
                 `Tributos R$${totals.totalTaxes.toFixed(2)}, ` +
@@ -1626,7 +1626,7 @@ export const appRouter = router({
 
         // Novo custo base após remoções.
         const newBase = correctedDirectCost + correctedLogisticsCost;
-        // Mantém BDI ajustado original — fórmula NBR já incluiu ajustes
+        // Mantém BDI ajustado original — a fórmula já incluiu ajustes
         // (fiscalRisk, logisticsComplexity) que dependem do estado original
         // do projeto, não devem mudar por remoção de items duplicados.
         const correctedFinalPrice =
@@ -2498,8 +2498,8 @@ export const appRouter = router({
           adminCentralPercentual: z.string().optional(),
           despesasFinanceirasPercentual: z.string().optional(),
           riscosPercentual: z.string().optional(),
-          // P0 BDI NBR 12721 — componentes Seguros (S) e Garantias (G)
-          // adicionados pra completar a fórmula da norma.
+          // BDI tudo por dentro — componentes Seguros (S) e Garantias (G)
+          // são % do preço de venda, igual aos outros.
           seguroPercentual: z.string().optional(),
           garantiaPercentual: z.string().optional(),
           // Override manual da alíquota I (tributos sobre faturamento, %).
@@ -3220,10 +3220,10 @@ async function buildAgentInput(
         `[Comercial] Impostos: R$ ${tribOutput.totalTaxes.toFixed(2)}`
       );
 
-      // BDI calculado pela fórmula NBR 12721 a partir dos componentes
-      // editados em company_settings (Lucro, Admin, DF, Riscos, Seguros,
-      // Garantias) e da alíquota I resolvida pelo regime fiscal. Não há
-      // mais "BDI total" editável manualmente — vira derivado.
+      // BDI calculado pela fórmula "tudo por dentro" a partir dos
+      // componentes editados em company_settings (Lucro, Admin, DF, Riscos,
+      // Seguros, Garantias) e da alíquota I resolvida pelo regime fiscal.
+      // Não há mais "BDI total" editável manualmente — vira derivado.
       const taxSettingsForComercial = buildCompanyTaxSettings(companySettings);
       const bdiSettingsForComercial = buildCompanyBdiSettings(companySettings);
       const taxOverrideForComercial =
@@ -3251,7 +3251,7 @@ async function buildAgentInput(
             : tribOutput.alerts?.length > 0
               ? "medium"
               : "low",
-        // Componentes do BDI (NBR 12721) — Lucro, AC, DF, R, S, G.
+        // Componentes do BDI (tudo por dentro) — Lucro, AC, DF, R, S, G.
         companyBdiSettings: bdiSettingsForComercial,
         // Configuração tributária canônica — usada para resolver I.
         taxSettings: taxSettingsForComercial,
