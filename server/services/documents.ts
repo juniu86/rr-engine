@@ -223,7 +223,9 @@ export async function generateMemoriaCalculo(
   logisticsCosts: any[],
   cashFlowItems: any[],
   comercialOutput?: any,
-  tributarioOutput?: any
+  tributarioOutput?: any,
+  companySettings?: any,
+  companyTaxSettings?: any
 ): Promise<{ url: string; fileKey: string }> {
   // Generate real XLSX using SheetJS library
   const xlsxBuffer = generateMemoriaXLSX(
@@ -232,7 +234,9 @@ export async function generateMemoriaCalculo(
     logisticsCosts,
     cashFlowItems,
     comercialOutput,
-    tributarioOutput
+    tributarioOutput,
+    companySettings,
+    companyTaxSettings
   );
 
   const timestamp = Date.now();
@@ -573,7 +577,9 @@ function generateMemoriaXLSX(
   logisticsCosts: any[],
   cashFlowItems: any[],
   comercialOutput?: any,
-  tributarioOutput?: any
+  tributarioOutput?: any,
+  companySettings?: any,
+  companyTaxSettings?: any
 ): Buffer {
   // P2 XLSX refactor (P0.2 + P1.2 + P2.4) — separa itens logísticos do
   // orçamento detalhado. Itens de budgetItems que sobrepõem com
@@ -701,19 +707,99 @@ function generateMemoriaXLSX(
   // Criar workbook usando SheetJS
   const wb = XLSX.utils.book_new();
 
-  // === Planilha 1: Orçamento Detalhado ===
-  // Layout (BDI diluído — sem coluna BDI/Preço Final separadas, P1.3.
-  // P0 07/05/2026, Bug 5: removida coluna "Custo Logística" — aparecia
-  // sempre 0 no orçamento detalhado porque logística é macro-rateada na
-  // aba "Custos Logísticos", não item-a-item. Confundia procurement.):
+  // === Resolver componentes do BDI (NBR 12721) ===
+  // Defaults se companySettings não vier. Quando vem, usa os valores
+  // configurados pelo usuário em Configurações → BDI.
+  const cs = companySettings || {};
+  const compL = parseFloat(cs.lucroPercentual ?? "8") || 8;
+  const compAC = parseFloat(cs.adminCentralPercentual ?? "4") || 4;
+  const compDF = parseFloat(cs.despesasFinanceirasPercentual ?? "1") || 1;
+  const compR = parseFloat(cs.riscosPercentual ?? "1") || 1;
+  const compS = parseFloat(cs.seguroPercentual ?? "0.80") || 0.8;
+  const compG = parseFloat(cs.garantiaPercentual ?? "0.40") || 0.4;
+
+  // Alíquota I — segue mesma ordem do taxRateResolver
+  let aliquotaI = 8; // fallback
+  let aliquotaSource = "fallback (8%)";
+  if (cs.aliquotaTributosOverride != null) {
+    aliquotaI = parseFloat(cs.aliquotaTributosOverride);
+    aliquotaSource = "override manual";
+  } else if (
+    companyTaxSettings?.regimeTributario === "simples_nacional" &&
+    companyTaxSettings?.faixaSimples
+  ) {
+    const SIMPLES_IV: Record<number, number> = {
+      1: 4.5, 2: 9.0, 3: 10.2, 4: 14.0, 5: 22.0, 6: 33.0,
+    };
+    aliquotaI = SIMPLES_IV[companyTaxSettings.faixaSimples] ?? 8;
+    aliquotaSource = `Simples Nacional Anexo IV — Faixa ${companyTaxSettings.faixaSimples}`;
+  } else if (companyTaxSettings?.regimeTributario === "lucro_presumido") {
+    aliquotaI =
+      (companyTaxSettings.issPercentual ?? 0) +
+      (companyTaxSettings.pisPercentual ?? 0) +
+      (companyTaxSettings.cofinsPercentual ?? 0) +
+      (companyTaxSettings.irpjPercentual ?? 0) +
+      (companyTaxSettings.csllPercentual ?? 0);
+    aliquotaSource = "Lucro Presumido (ISS+PIS+COFINS+IRPJ+CSLL)";
+  } else if (companyTaxSettings?.regimeTributario === "lucro_real") {
+    aliquotaI =
+      (companyTaxSettings.issPercentual ?? 0) +
+      (companyTaxSettings.pisPercentual ?? 0) +
+      (companyTaxSettings.cofinsPercentual ?? 0) +
+      (companyTaxSettings.irpjPercentual ?? 0) +
+      (companyTaxSettings.csllPercentual ?? 0);
+    aliquotaSource = "Lucro Real (ISS+PIS+COFINS+IRPJ+CSLL)";
+  }
+
+  // === Estilos reusáveis (SheetJS cell.s) ===
+  const styleTitle = {
+    font: { name: "Arial", sz: 14, bold: true, color: { rgb: "FFFFFF" } },
+    fill: { fgColor: { rgb: "1F3A5F" }, patternType: "solid" },
+    alignment: { vertical: "center", horizontal: "left" },
+  };
+  const styleSubtitle = {
+    font: { name: "Arial", sz: 10, italic: true, color: { rgb: "4A5568" } },
+  };
+  const styleHeader = {
+    font: { name: "Arial", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+    fill: { fgColor: { rgb: "2C5282" }, patternType: "solid" },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  };
+  const styleInput = {
+    font: { name: "Arial", sz: 10, bold: true, color: { rgb: "0066CC" } },
+    alignment: { horizontal: "center" },
+  };
+  const styleFormula = {
+    font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+  };
+  const styleTotal = {
+    font: { name: "Arial", sz: 11, bold: true },
+    fill: { fgColor: { rgb: "E2E8F0" }, patternType: "solid" },
+  };
+  const styleTotalHighlight = {
+    font: { name: "Arial", sz: 12, bold: true, color: { rgb: "0066CC" } },
+    fill: { fgColor: { rgb: "BEE3F8" }, patternType: "solid" },
+  };
+  const styleFinalPrice = {
+    font: { name: "Arial", sz: 14, bold: true, color: { rgb: "0066CC" } },
+    fill: { fgColor: { rgb: "BEE3F8" }, patternType: "solid" },
+  };
+  const fmtMoney = '"R$ "#,##0.00';
+  const fmtPercent = "0.00%";
+
+  // ============================================================
+  // ABA 2 (criada primeiro, movida pro fim depois): Orçamento de Custo
+  // Layout SEM BDI nos preços unitários:
   //   A: Item | B: Código | C: Descrição | D: Unid. | E: Qtd. |
-  //   F: Custo Material (unit, com BDI) | G: Custo M.O. (unit, com BDI) |
-  //   H: Custo Total (=E*(F+G)) |
-  //   I: Impostos | J: Fonte | K: Cód. Fonte | L: Premissa
-  const HEADER_ROW_INDEX = 4; // 1-based (linha 4 = "Item, Código, ...")
-  const orcamentoData = [
-    [`MEMÓRIA DE CÁLCULO - ${project.name}`],
-    [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+  //   F: Custo Material (unit, sem BDI) | G: Custo M.O. (unit, sem BDI) |
+  //   H: Custo Unit. Total = F+G | I: Custo Total = E*H
+  // ============================================================
+  const HEADER_ROW_INDEX = 4; // 1-based
+  const orcamentoData: any[][] = [
+    [`ORÇAMENTO DE CUSTO — ${project.name}`],
+    [
+      `${new Date().toLocaleDateString("pt-BR")} | VALORES SEM BDI (custo de composição puro)`,
+    ],
     [],
     [
       "Item",
@@ -721,18 +807,13 @@ function generateMemoriaXLSX(
       "Descrição",
       "Unid.",
       "Qtd.",
-      "Custo Material",
-      "Custo M.O.",
-      "Custo Total",
-      "Impostos",
-      "Fonte",
-      "Cód. Fonte",
-      "Premissa",
+      "Custo Material (R$/un)",
+      "Custo M.O. (R$/un)",
+      "Custo Unit. (R$/un)",
+      "Custo Total (R$)",
     ],
     ...decomposed.map((d, index) => [
       index + 1,
-      // P2 XLSX refactor (P2.3) — popula Código com sourceCode quando
-      // a coluna principal vier vazia mas há código SINAPI/PINI puro.
       d.item.code ||
         (d.item.source &&
         ["sinapi", "pini", "tcpo"].includes(String(d.item.source).toLowerCase())
@@ -741,115 +822,236 @@ function generateMemoriaXLSX(
       d.item.description,
       d.item.unit || "",
       Number(d.item.quantity || 0),
-      // P0 Bug 5: matUnit + logUnit colapsado em material (logística é
-      // macro, não item-a-item). Mantém invariante qty × (mat + mo) = total.
-      d.matUnitWithBdi + d.logUnitWithBdi,
-      d.moUnitWithBdi,
-      // H: total da linha — vai virar fórmula Excel após aoa_to_sheet.
-      round2(Number(d.item.quantity || 0) * d.totalUnitWithBdi),
-      Number(d.item.taxAmount || 0),
-      d.item.source || "",
-      d.item.sourceCode || "",
-      decompositionPremise(d.decomp),
+      // Mat + Log SEM BDI (colapsado pra evitar zerar coluna logística por item)
+      round2(d.decomp.matUnit + d.decomp.logUnit),
+      // M.O. SEM BDI
+      round2(d.decomp.moUnit),
+      // Custo Unit Total = F + G (virará fórmula)
+      0,
+      // Custo Total = Qtd × Custo Unit (virará fórmula)
+      0,
     ]),
     [],
-    [
-      "TOTAL CUSTO DIRETO (com BDI diluído)",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      totalDirect * markupFactor,
-    ],
-    [
-      "TOTAL CUSTOS LOGÍSTICOS (com BDI diluído)",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      totalLogistics * markupFactor,
-    ],
-    ["PREÇO FINAL DE VENDA", "", "", "", "", "", "", totalFinal],
+    ["TOTAL CUSTO DIRETO", "", "", "", "", "", "", "", 0],
   ];
   const wsOrcamento = XLSX.utils.aoa_to_sheet(orcamentoData);
 
-  // P0 (Bug 5, 07/05/2026) — Custo Total agora coluna H (era I). Fórmula
-  // colapsa logística no material: `=E_n * (F_n + G_n)`. Logística
-  // segue sendo macro-rateada na aba "Custos Logísticos".
+  // Aplicar fórmulas em cada linha de item
   for (let i = 0; i < decomposed.length; i++) {
-    const rowNum = HEADER_ROW_INDEX + 1 + i; // 1-based, primeira linha de item
-    const totalCellAddr = XLSX.utils.encode_cell({ c: 7, r: rowNum - 1 }); // H
-    const totalCell = wsOrcamento[totalCellAddr];
-    if (totalCell) {
-      totalCell.f = `E${rowNum}*(F${rowNum}+G${rowNum})`;
-      totalCell.t = "n";
+    const rowNum = HEADER_ROW_INDEX + 1 + i;
+    // H = F + G (custo unitário total)
+    const unitCellAddr = XLSX.utils.encode_cell({ c: 7, r: rowNum - 1 });
+    wsOrcamento[unitCellAddr] = {
+      t: "n",
+      f: `F${rowNum}+G${rowNum}`,
+      z: fmtMoney,
+      s: styleFormula,
+    };
+    // I = E × H (custo total da linha)
+    const totalCellAddr = XLSX.utils.encode_cell({ c: 8, r: rowNum - 1 });
+    wsOrcamento[totalCellAddr] = {
+      t: "n",
+      f: `E${rowNum}*H${rowNum}`,
+      z: fmtMoney,
+      s: styleFormula,
+    };
+    // Estilo dos inputs Mat (F) e MO (G) — azul (editável)
+    for (const col of [5, 6]) {
+      const addr = XLSX.utils.encode_cell({ c: col, r: rowNum - 1 });
+      if (wsOrcamento[addr]) {
+        wsOrcamento[addr].s = styleInput;
+        wsOrcamento[addr].z = fmtMoney;
+      }
     }
   }
 
-  wsOrcamento["!cols"] = [
-    { wch: 6 }, // A: Item
-    { wch: 14 }, // B: Código
-    { wch: 70 }, // C: Descrição (P2.1 — antes 216,8 pt; agora ~70 chars)
-    { wch: 8 }, // D: Unid.
-    { wch: 8 }, // E: Qtd.
-    { wch: 14 }, // F: Custo Material (inclui logística diluída — Bug 5)
-    { wch: 14 }, // G: Custo M.O.
-    { wch: 14 }, // H: Custo Total
-    { wch: 12 }, // I: Impostos
-    { wch: 12 }, // J: Fonte
-    { wch: 14 }, // K: Cód. Fonte
-    { wch: 30 }, // L: Premissa
-  ];
-  XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento Detalhado");
+  // Total: I = SUM(I5:I_last)
+  const orcTotalRow = HEADER_ROW_INDEX + 1 + decomposed.length + 1; // 1-based
+  const orcLastItemRow = HEADER_ROW_INDEX + decomposed.length;
+  const orcTotalAddr = XLSX.utils.encode_cell({ c: 8, r: orcTotalRow - 1 });
+  wsOrcamento[orcTotalAddr] = {
+    t: "n",
+    f: `SUM(I${HEADER_ROW_INDEX + 1}:I${orcLastItemRow})`,
+    z: fmtMoney,
+    s: styleTotalHighlight,
+  };
 
-  // === Planilha 2: Custos Logísticos ===
-  // P2 XLSX refactor (P0.2 + P2.4) — consolidated inclui itens
-  // originalmente em logisticsCosts MAIS itens promovidos do orçamento
-  // detalhado (frete, container, taxa horário aeroportuário etc).
-  // Categoria padronizada via mapLogisticsCategory ou "outros".
-  const LOG_HEADER_ROW_INDEX = 3; // 1-based — linha 3 = "Categoria, Descrição, ..."
+  // Estilos: título, subtítulo, headers, totais
+  wsOrcamento["A1"] = { ...(wsOrcamento["A1"] || {}), s: styleTitle };
+  wsOrcamento["A2"] = { ...(wsOrcamento["A2"] || {}), s: styleSubtitle };
+  wsOrcamento["!merges"] = wsOrcamento["!merges"] || [];
+  wsOrcamento["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } });
+  wsOrcamento["!merges"].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 8 } });
+  wsOrcamento["!rows"] = wsOrcamento["!rows"] || [];
+  wsOrcamento["!rows"][0] = { hpt: 28 };
+
+  wsOrcamento["!cols"] = [
+    { wch: 6 },
+    { wch: 22 },
+    { wch: 60 },
+    { wch: 8 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsOrcamento, "Orçamento de Custo");
+
+  // ============================================================
+  // ABA 3: Custos Logísticos — sem BDI no Custo Unit.
+  // ============================================================
+  const LOG_HEADER_ROW_INDEX = 4;
   const logisticaData: any[][] = [
-    ["CUSTOS LOGÍSTICOS"],
+    [`CUSTOS LOGÍSTICOS — ${project.name}`],
+    [
+      "Mobilização, transportes, equipamentos pesados, containers (valores sem BDI)",
+    ],
     [],
-    ["Categoria", "Descrição", "Qtd.", "Unid.", "Custo Unit.", "Custo Total"],
+    [
+      "Categoria",
+      "Descrição",
+      "Qtd.",
+      "Unid.",
+      "Custo Unit. (R$)",
+      "Custo Total (R$)",
+    ],
     ...consolidatedLogistics.map(cost => [
       cost.category || "outros",
       cost.description || "",
       Number(cost.quantity || 0),
       cost.unit || "un",
       Number(cost.unitCost || 0),
-      // Vai virar fórmula =Cn*En na pós-processamento abaixo.
-      Number(cost.totalCost || 0),
+      0, // será fórmula
     ]),
     [],
-    ["TOTAL LOGÍSTICA", "", "", "", "", totalLogistics],
+    ["TOTAL LOGÍSTICA", "", "", "", "", 0],
   ];
   const wsLogistica = XLSX.utils.aoa_to_sheet(logisticaData);
 
-  // P2 XLSX refactor (P1.4) — Custo Total (col F) por linha = qty × unitCost.
+  // Fórmulas linha a linha: F = C × E
   for (let i = 0; i < consolidatedLogistics.length; i++) {
     const rowNum = LOG_HEADER_ROW_INDEX + 1 + i;
     const totalAddr = XLSX.utils.encode_cell({ c: 5, r: rowNum - 1 });
-    const cell = wsLogistica[totalAddr];
-    if (cell) {
-      cell.f = `C${rowNum}*E${rowNum}`;
-      cell.t = "n";
+    wsLogistica[totalAddr] = {
+      t: "n",
+      f: `C${rowNum}*E${rowNum}`,
+      z: fmtMoney,
+      s: styleFormula,
+    };
+    // E (Custo Unit) — input azul
+    const unitAddr = XLSX.utils.encode_cell({ c: 4, r: rowNum - 1 });
+    if (wsLogistica[unitAddr]) {
+      wsLogistica[unitAddr].s = styleInput;
+      wsLogistica[unitAddr].z = fmtMoney;
     }
   }
 
+  // Total: F = SUM
+  const logTotalRow = LOG_HEADER_ROW_INDEX + 1 + consolidatedLogistics.length + 1;
+  const logLastRow = LOG_HEADER_ROW_INDEX + consolidatedLogistics.length;
+  const logTotalAddr = XLSX.utils.encode_cell({ c: 5, r: logTotalRow - 1 });
+  wsLogistica[logTotalAddr] = {
+    t: "n",
+    f: `SUM(F${LOG_HEADER_ROW_INDEX + 1}:F${logLastRow})`,
+    z: fmtMoney,
+    s: styleTotalHighlight,
+  };
+
+  wsLogistica["A1"] = { ...(wsLogistica["A1"] || {}), s: styleTitle };
+  wsLogistica["A2"] = { ...(wsLogistica["A2"] || {}), s: styleSubtitle };
+  wsLogistica["!merges"] = wsLogistica["!merges"] || [];
+  wsLogistica["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+  wsLogistica["!merges"].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } });
   wsLogistica["!cols"] = [
-    { wch: 18 },
+    { wch: 22 },
     { wch: 60 },
+    { wch: 10 },
     { wch: 8 },
-    { wch: 8 },
-    { wch: 14 },
-    { wch: 14 },
+    { wch: 16 },
+    { wch: 18 },
   ];
   XLSX.utils.book_append_sheet(wb, wsLogistica, "Custos Logísticos");
+
+  // ============================================================
+  // ABA 4: BDI e Markup — componentes editáveis + fórmula NBR 12721
+  // ============================================================
+  // Row 1: título, Row 2: subtítulo, Row 3: vazio, Row 4: headers, Rows 5-10: componentes
+  // Row 11: vazio, Row 12: Tributos (I), Row 14: BDI total (fórmula)
+  const bdiData: any[][] = [
+    ["BDI E MARKUP — Fórmula NBR 12721 com tributos por dentro"],
+    [
+      "Edite os percentuais nas células azuis. BDI total recalcula automaticamente.",
+    ],
+    [],
+    ["Componente", "Sigla", "%", "Descrição"],
+    [
+      "Lucro",
+      "L",
+      compL,
+      "Margem de lucro líquido sobre o preço de venda",
+    ],
+    [
+      "Administração Central",
+      "AC",
+      compAC,
+      "Custos administrativos fixos da empresa (rateio)",
+    ],
+    [
+      "Despesas Financeiras",
+      "DF",
+      compDF,
+      "Custo do capital de giro durante a obra",
+    ],
+    [
+      "Riscos e Imprevistos",
+      "R",
+      compR,
+      "Reserva para riscos não previstos",
+    ],
+    ["Seguros", "S", compS, "Seguro de obras (RCG, riscos de engenharia)"],
+    [
+      "Garantias",
+      "G",
+      compG,
+      "Garantia contratual — ajustar conforme exigência do cliente",
+    ],
+    [],
+    ["Tributos (I)", "I", aliquotaI, aliquotaSource],
+    [],
+    ["BDI TOTAL (calculado)", "", 0, "Fórmula: ((1+AC+S+R+G)×(1+DF)×(1+L))/(1−I)−1"],
+  ];
+  const wsBdi = XLSX.utils.aoa_to_sheet(bdiData);
+
+  // Fórmula do BDI Total — referencia células C5 (L), C6 (AC), C7 (DF),
+  // C8 (R), C9 (S), C10 (G), C12 (I). Cuidado: SheetJS gravou linhas
+  // 1-based, então L está em C5, AC em C6, etc.
+  const bdiFormula =
+    "((1+C6/100+C9/100+C8/100+C10/100)*(1+C7/100)*(1+C5/100))/(1-C12/100)-1";
+  const bdiTotalAddr = XLSX.utils.encode_cell({ c: 2, r: 13 }); // C14
+  wsBdi[bdiTotalAddr] = {
+    t: "n",
+    f: bdiFormula,
+    z: fmtPercent,
+    s: styleTotalHighlight,
+  };
+
+  // Estilos: componentes editáveis (C5–C10, C12) azuis com formato %
+  for (const r of [4, 5, 6, 7, 8, 9, 11]) {
+    const addr = XLSX.utils.encode_cell({ c: 2, r });
+    if (wsBdi[addr]) {
+      wsBdi[addr].s = styleInput;
+      wsBdi[addr].z = '0.00"%"';
+    }
+  }
+
+  wsBdi["A1"] = { ...(wsBdi["A1"] || {}), s: styleTitle };
+  wsBdi["A2"] = { ...(wsBdi["A2"] || {}), s: styleSubtitle };
+  wsBdi["!merges"] = wsBdi["!merges"] || [];
+  wsBdi["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } });
+  wsBdi["!merges"].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } });
+  wsBdi["!cols"] = [{ wch: 26 }, { wch: 8 }, { wch: 14 }, { wch: 55 }];
+  XLSX.utils.book_append_sheet(wb, wsBdi, "BDI e Markup");
 
   // === Planilha 3: Fluxo de Caixa ===
   // P2 XLSX refactor (P0.3 + P3.1) — N linhas (1 por semana) baseado em
@@ -897,70 +1099,123 @@ function generateMemoriaXLSX(
   ];
   XLSX.utils.book_append_sheet(wb, wsFluxo, "Fluxo de Caixa");
 
-  // === Planilha 4: Resumo ===
-  // PR6 (11/05/2026): mostra AMBAS as representações — sem BDI (base) e
-  // com BDI diluído. Antes só mostrava "com BDI", e o usuário confundia
-  // com o número que o Auditor descreve em texto ("orçamento com X itens,
-  // soma R$ Y") que é o total base sem BDI. Agora a planilha bate
-  // visualmente com o texto do Auditor e com o card do dashboard.
-  const bdiAmount = totalFinal - totalDirect - totalLogistics;
-  const resumoData = [
-    ["RESUMO DO ORÇAMENTO"],
-    [`Projeto: ${project.name}`],
-    [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
-    [],
-    ["Descrição", "Valor"],
-    // Bloco 1: Composição base (sem BDI) — espelha o card do dashboard
-    // e o texto do Auditor ("soma de itens = R$ X").
-    ["Custo Direto (Materiais + M.O., sem BDI)", totalDirect],
-    ["Custos Logísticos (sem BDI)", totalLogistics],
-    ["SUBTOTAL CUSTO BASE", totalDirect + totalLogistics],
-    [],
-    // Bloco 2: Markup aplicado (BDI NBR 12721 com tributos por dentro).
+  // ============================================================
+  // ABA 1: Resumo Executivo — totais consolidados com fórmulas que
+  // referenciam as outras abas. Editar componentes em "BDI e Markup"
+  // propaga automaticamente até o preço final.
+  // ============================================================
+  // Referencias:
+  // - 'Orçamento de Custo'!I_orcTotalRow → custo direto total
+  // - 'Custos Logísticos'!F_logTotalRow → logística total
+  // - 'BDI e Markup'!C14 → BDI total (fração)
+  // - 'BDI e Markup'!C12 → alíquota I (%)
+  const refDireto = `'Orçamento de Custo'!I${orcTotalRow}`;
+  const refLogistica = `'Custos Logísticos'!F${logTotalRow}`;
+  const refBdi = `'BDI e Markup'!C14`;
+  const refTributos = `'BDI e Markup'!C12`;
+
+  const resumoData: any[][] = [
+    [`RESUMO EXECUTIVO — ${project.name}`],
     [
-      `BDI ${((markupFactor - 1) * 100).toFixed(2)}% sobre custo base`,
-      bdiAmount,
-    ],
-    // P0 (07/05/2026, Bug 1) — Tributário é fonte de verdade.
-    // Em NBR 12721 com tributos por dentro, o valor abaixo é informativo:
-    // já está embutido no BDI via denominador (1 - I). Não somar de novo.
-    [
-      "Tributos (calculados pelo agente Tributário, embutidos no BDI)",
-      totalTax,
+      `${project.contractType === "obra" ? "Obra completa" : "Manutenção"} | ${project.location || ""}`,
     ],
     [],
-    ["PREÇO FINAL DE VENDA", totalFinal],
+    // Row 4–6: Custos (sem BDI)
+    ["CUSTO DIRETO (sem BDI)", 0, "Soma da aba 'Orçamento de Custo'"],
+    ["LOGÍSTICA (sem BDI)", 0, "Soma da aba 'Custos Logísticos'"],
+    ["SUBTOTAL CUSTO BASE", 0, "Custo Direto + Logística"],
     [],
-    // Bloco 3: Representação alternativa pra quem prefere ver com BDI
-    // diluído por item (compatível com layout antigo).
-    ["Composição com BDI diluído (representação alternativa):", ""],
+    // Row 8–10: Markup
+    ["BDI (NBR 12721)", 0, "Conforme aba 'BDI e Markup'"],
+    ["Markup em R$ (BDI × Custo Base)", 0, "Valor monetário do markup"],
     [
-      "Custo Direto (Materiais + M.O., com BDI diluído)",
-      totalDirect * markupFactor,
+      "Tributos (I sobre preço final)",
+      0,
+      "Embutidos no BDI (informativo)",
     ],
-    ["Custos Logísticos (com BDI diluído)", totalLogistics * markupFactor],
     [],
-    ["Premissas:", ""],
+    // Row 12: Preço Final
+    ["PREÇO FINAL DE VENDA", 0, "Cliente paga este valor"],
+    [],
+    ["PREMISSAS"],
+    ["• BDI calculado pela fórmula NBR 12721 (tributos por dentro)"],
     [
-      `BDI ${((markupFactor - 1) * 100).toFixed(2)}% aplicado pela fórmula NBR 12721 com tributos por dentro`,
-      "",
+      `• Regime tributário: ${aliquotaSource} (alíquota ${aliquotaI.toFixed(2)}%)`,
     ],
     [
-      `Cliente paga o Preço Final cheio — empresa recolhe os tributos sobre esse valor.`,
-      "",
+      "• Cliente paga o Preço Final cheio. Empresa recolhe os tributos sobre esse preço.",
+    ],
+    [
+      "• Mat e MO sem BDI nos itens — edite valores azuis para ajustar cotações; totais recalculam automaticamente.",
     ],
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
-  wsResumo["!cols"] = [{ wch: 50 }, { wch: 18 }];
-  XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
 
-  // P2 XLSX refactor (P2.2) — formata cabeçalhos das 4 abas: bold +
-  // fundo cinza claro (PatternFill). Aplicado depois que todas as abas
-  // foram criadas.
-  applyHeaderStyle(wsOrcamento, HEADER_ROW_INDEX, 12); // 12 colunas (Bug 5: removida Custo Logística)
+  // Fórmulas:
+  wsResumo["B4"] = { t: "n", f: refDireto, z: fmtMoney, s: styleFormula };
+  wsResumo["B5"] = { t: "n", f: refLogistica, z: fmtMoney, s: styleFormula };
+  wsResumo["B6"] = {
+    t: "n",
+    f: "B4+B5",
+    z: fmtMoney,
+    s: styleTotal,
+  };
+  wsResumo["B8"] = {
+    t: "n",
+    f: refBdi,
+    z: fmtPercent,
+    s: { ...styleTotalHighlight, alignment: { horizontal: "center" } },
+  };
+  wsResumo["B9"] = { t: "n", f: "B6*B8", z: fmtMoney, s: styleFormula };
+  wsResumo["B10"] = {
+    t: "n",
+    f: `B12*(${refTributos}/100)`,
+    z: fmtMoney,
+    s: styleFormula,
+  };
+  wsResumo["B12"] = {
+    t: "n",
+    f: "B6+B9",
+    z: fmtMoney,
+    s: styleFinalPrice,
+  };
+
+  // Estilos de título/subtítulo/cabeçalhos
+  wsResumo["A1"] = { ...(wsResumo["A1"] || {}), s: styleTitle };
+  wsResumo["A2"] = { ...(wsResumo["A2"] || {}), s: styleSubtitle };
+  wsResumo["!merges"] = wsResumo["!merges"] || [];
+  wsResumo["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } });
+  wsResumo["!merges"].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 2 } });
+
+  // Subtotal e Preço Final: fundo destacado também na coluna A
+  wsResumo["A6"] = { ...(wsResumo["A6"] || { v: "SUBTOTAL CUSTO BASE", t: "s" }), s: styleTotal };
+  wsResumo["A12"] = {
+    ...(wsResumo["A12"] || { v: "PREÇO FINAL DE VENDA", t: "s" }),
+    s: styleFinalPrice,
+  };
+
+  wsResumo["!cols"] = [{ wch: 42 }, { wch: 22 }, { wch: 50 }];
+  wsResumo["!rows"] = [];
+  wsResumo["!rows"][0] = { hpt: 28 };
+  wsResumo["!rows"][11] = { hpt: 26 };
+
+  // Mover Resumo Executivo pra primeira posição
+  XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo Executivo");
+  // Reordenar: Resumo Executivo deve ficar primeiro
+  const sheetOrder = wb.SheetNames;
+  const resumoIdx = sheetOrder.indexOf("Resumo Executivo");
+  if (resumoIdx > 0) {
+    sheetOrder.splice(resumoIdx, 1);
+    sheetOrder.unshift("Resumo Executivo");
+    wb.SheetNames = sheetOrder;
+  }
+
+  // Headers das abas (cinza+bold via applyHeaderStyle — fallback caso
+  // estilos custom não tenham sido aplicados em alguma linha)
+  applyHeaderStyle(wsOrcamento, HEADER_ROW_INDEX, 9);
   applyHeaderStyle(wsLogistica, LOG_HEADER_ROW_INDEX, 6);
   applyHeaderStyle(wsFluxo, FLUXO_HEADER_ROW_INDEX, 5);
-  applyHeaderStyle(wsResumo, 5, 2); // linha 5 = "Descrição, Valor"
+  applyHeaderStyle(wsBdi, 4, 4);
 
   // Gerar buffer XLSX real (cellStyles habilita preservação de cell.s)
   const xlsxBuffer = XLSX.write(wb, {

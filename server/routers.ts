@@ -2765,13 +2765,26 @@ export const appRouter = router({
         );
         const tributarioOutput = tributarioExec?.output;
 
+        // PR (11/05/2026) — Memória de cálculo agora mostra valores SEM BDI
+        // e a aba "BDI e Markup" usa os componentes configurados pelo
+        // usuário em Configurações → BDI. Sem essas settings, defaults
+        // são aplicados (8/4/1/1/0.8/0.4).
+        const companySettings = await db.getCompanySettingsOrDefault(
+          ctx.user.id
+        );
+        const companyTaxSettings = await db.getCompanyTaxSettings(
+          ctx.user.id
+        );
+
         const result = await generateMemoriaCalculo(
           project,
           budgetItems,
           logisticsCosts,
           cashFlowItems,
           comercialOutput,
-          tributarioOutput
+          tributarioOutput,
+          companySettings,
+          companyTaxSettings
         );
         return result;
       }),
