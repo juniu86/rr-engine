@@ -218,6 +218,40 @@ describe("computeComercial — fórmula NBR 12721", () => {
     ).not.toThrow();
   });
 
+  it("preenche componentsApplied com valores em pontos percentuais (pp)", () => {
+    const out = computeComercial(baseInput({ fiscalRisk: "high" }), {
+      companyBdiSettings: componentes,
+      taxSettings: lucroPresumido,
+    });
+    expect(out.componentsApplied).toBeDefined();
+    const c = out.componentsApplied!;
+    // Lucro vem como pp (8 = 8%), não fração (0.08)
+    expect(c.lucroPercentual).toBeCloseTo(8, 2);
+    expect(c.adminCentralPercentual).toBeCloseTo(4, 2);
+    expect(c.seguroPercentual).toBeCloseTo(0.8, 2);
+    expect(c.garantiaPercentual).toBeCloseTo(0.4, 2);
+    // Riscos com ajuste: 1 + 5 = 6 (fiscalRisk=high)
+    expect(c.riscosPercentual).toBeCloseTo(6, 2);
+    // DF sem ajuste (logisticsComplexity = low)
+    expect(c.despesasFinanceirasPercentual).toBeCloseTo(1, 2);
+    // Alíquota I do Lucro Presumido: ISS+PIS+COFINS+IRPJ+CSLL ≈ 10.93%
+    expect(c.aliquotaTributos).toBeCloseTo(10.93, 1);
+    expect(c.aliquotaTributosSource).toContain("Lucro Presumido");
+    expect(c.ajustesAplicados).toContain("+5pp em Riscos por risco fiscal alto");
+  });
+
+  it("componentsApplied reflete ajuste de logística alta em DF", () => {
+    const out = computeComercial(
+      baseInput({ logisticsComplexity: "high" }),
+      { companyBdiSettings: componentes, taxSettings: lucroPresumido }
+    );
+    // DF original 1pp + 5pp = 6pp
+    expect(out.componentsApplied!.despesasFinanceirasPercentual).toBeCloseTo(6, 2);
+    expect(out.componentsApplied!.ajustesAplicados).toContain(
+      "+5pp em DF por complexidade logística alta"
+    );
+  });
+
   it("preço final cobre os tributos (custoBase + BDI ≥ tributos por dentro)", () => {
     const custoBase = 100_000;
     const out = computeComercial(

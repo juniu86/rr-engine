@@ -708,47 +708,79 @@ function generateMemoriaXLSX(
   const wb = XLSX.utils.book_new();
 
   // === Resolver componentes do BDI (NBR 12721) ===
-  // Defaults se companySettings não vier. Quando vem, usa os valores
-  // configurados pelo usuário em Configurações → BDI.
-  const cs = companySettings || {};
-  const compL = parseFloat(cs.lucroPercentual ?? "8") || 8;
-  const compAC = parseFloat(cs.adminCentralPercentual ?? "4") || 4;
-  const compDF = parseFloat(cs.despesasFinanceirasPercentual ?? "1") || 1;
-  const compR = parseFloat(cs.riscosPercentual ?? "1") || 1;
-  const compS = parseFloat(cs.seguroPercentual ?? "0.80") || 0.8;
-  const compG = parseFloat(cs.garantiaPercentual ?? "0.40") || 0.4;
+  // Ordem de prioridade:
+  //   1. comercialOutput.componentsApplied — valores REAIS aplicados pelo
+  //      Comercial neste projeto (incluindo ajustes condicionais como
+  //      +5pp em Riscos por fiscalRisk=high). Fonte canônica.
+  //   2. companySettings + companyTaxSettings — fallback baseado nas
+  //      configurações da empresa (sem ajustes do projeto).
+  //   3. Defaults hardcoded — fallback final.
+  let compL: number;
+  let compAC: number;
+  let compDF: number;
+  let compR: number;
+  let compS: number;
+  let compG: number;
+  let aliquotaI: number;
+  let aliquotaSource: string;
+  let bdiAjustes: string[] = [];
 
-  // Alíquota I — segue mesma ordem do taxRateResolver
-  let aliquotaI = 8; // fallback
-  let aliquotaSource = "fallback (8%)";
-  if (cs.aliquotaTributosOverride != null) {
-    aliquotaI = parseFloat(cs.aliquotaTributosOverride);
-    aliquotaSource = "override manual";
-  } else if (
-    companyTaxSettings?.regimeTributario === "simples_nacional" &&
-    companyTaxSettings?.faixaSimples
-  ) {
-    const SIMPLES_IV: Record<number, number> = {
-      1: 4.5, 2: 9.0, 3: 10.2, 4: 14.0, 5: 22.0, 6: 33.0,
-    };
-    aliquotaI = SIMPLES_IV[companyTaxSettings.faixaSimples] ?? 8;
-    aliquotaSource = `Simples Nacional Anexo IV — Faixa ${companyTaxSettings.faixaSimples}`;
-  } else if (companyTaxSettings?.regimeTributario === "lucro_presumido") {
-    aliquotaI =
-      (companyTaxSettings.issPercentual ?? 0) +
-      (companyTaxSettings.pisPercentual ?? 0) +
-      (companyTaxSettings.cofinsPercentual ?? 0) +
-      (companyTaxSettings.irpjPercentual ?? 0) +
-      (companyTaxSettings.csllPercentual ?? 0);
-    aliquotaSource = "Lucro Presumido (ISS+PIS+COFINS+IRPJ+CSLL)";
-  } else if (companyTaxSettings?.regimeTributario === "lucro_real") {
-    aliquotaI =
-      (companyTaxSettings.issPercentual ?? 0) +
-      (companyTaxSettings.pisPercentual ?? 0) +
-      (companyTaxSettings.cofinsPercentual ?? 0) +
-      (companyTaxSettings.irpjPercentual ?? 0) +
-      (companyTaxSettings.csllPercentual ?? 0);
-    aliquotaSource = "Lucro Real (ISS+PIS+COFINS+IRPJ+CSLL)";
+  const compsApplied = (comercialOutput as any)?.componentsApplied;
+  if (compsApplied && typeof compsApplied.lucroPercentual === "number") {
+    // Fonte canônica — bate exato com BDI gravado em projects.totalBdi.
+    compL = compsApplied.lucroPercentual;
+    compAC = compsApplied.adminCentralPercentual;
+    compDF = compsApplied.despesasFinanceirasPercentual;
+    compR = compsApplied.riscosPercentual;
+    compS = compsApplied.seguroPercentual;
+    compG = compsApplied.garantiaPercentual;
+    aliquotaI = compsApplied.aliquotaTributos;
+    aliquotaSource = compsApplied.aliquotaTributosSource;
+    bdiAjustes = Array.isArray(compsApplied.ajustesAplicados)
+      ? compsApplied.ajustesAplicados
+      : [];
+  } else {
+    // Fallback: settings da empresa. BDI calculado na planilha pode
+    // diferir do gravado em projects.totalBdi se houver ajustes do projeto.
+    const cs = companySettings || {};
+    compL = parseFloat(cs.lucroPercentual ?? "8") || 8;
+    compAC = parseFloat(cs.adminCentralPercentual ?? "4") || 4;
+    compDF = parseFloat(cs.despesasFinanceirasPercentual ?? "1") || 1;
+    compR = parseFloat(cs.riscosPercentual ?? "1") || 1;
+    compS = parseFloat(cs.seguroPercentual ?? "0.80") || 0.8;
+    compG = parseFloat(cs.garantiaPercentual ?? "0.40") || 0.4;
+
+    aliquotaI = 8;
+    aliquotaSource = "fallback (8%)";
+    if (cs.aliquotaTributosOverride != null) {
+      aliquotaI = parseFloat(cs.aliquotaTributosOverride);
+      aliquotaSource = "override manual";
+    } else if (
+      companyTaxSettings?.regimeTributario === "simples_nacional" &&
+      companyTaxSettings?.faixaSimples
+    ) {
+      const SIMPLES_IV: Record<number, number> = {
+        1: 4.5, 2: 9.0, 3: 10.2, 4: 14.0, 5: 22.0, 6: 33.0,
+      };
+      aliquotaI = SIMPLES_IV[companyTaxSettings.faixaSimples] ?? 8;
+      aliquotaSource = `Simples Nacional Anexo IV — Faixa ${companyTaxSettings.faixaSimples}`;
+    } else if (companyTaxSettings?.regimeTributario === "lucro_presumido") {
+      aliquotaI =
+        (companyTaxSettings.issPercentual ?? 0) +
+        (companyTaxSettings.pisPercentual ?? 0) +
+        (companyTaxSettings.cofinsPercentual ?? 0) +
+        (companyTaxSettings.irpjPercentual ?? 0) +
+        (companyTaxSettings.csllPercentual ?? 0);
+      aliquotaSource = "Lucro Presumido (ISS+PIS+COFINS+IRPJ+CSLL)";
+    } else if (companyTaxSettings?.regimeTributario === "lucro_real") {
+      aliquotaI =
+        (companyTaxSettings.issPercentual ?? 0) +
+        (companyTaxSettings.pisPercentual ?? 0) +
+        (companyTaxSettings.cofinsPercentual ?? 0) +
+        (companyTaxSettings.irpjPercentual ?? 0) +
+        (companyTaxSettings.csllPercentual ?? 0);
+      aliquotaSource = "Lucro Real (ISS+PIS+COFINS+IRPJ+CSLL)";
+    }
   }
 
   // === Estilos reusáveis (SheetJS cell.s) ===
@@ -1020,6 +1052,15 @@ function generateMemoriaXLSX(
     ["Tributos (I)", "I", aliquotaI, aliquotaSource],
     [],
     ["BDI TOTAL (calculado)", "", 0, "Fórmula: ((1+AC+S+R+G)×(1+DF)×(1+L))/(1−I)−1"],
+    [],
+    [
+      "Ajustes aplicados pelo Comercial:",
+      "",
+      "",
+      bdiAjustes.length > 0
+        ? bdiAjustes.join("; ")
+        : "Nenhum ajuste condicional (fiscalRisk e logisticsComplexity = low/medium)",
+    ],
   ];
   const wsBdi = XLSX.utils.aoa_to_sheet(bdiData);
 
