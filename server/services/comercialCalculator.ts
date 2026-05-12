@@ -185,5 +185,18 @@ export function computeComercial(
     totalBdiAmount,
     finalPrice,
     pricePerUnit,
+    // PR (11/05/2026) — componentes em pontos percentuais (não fração)
+    // pra a aba "BDI e Markup" do XLSX refletir os valores ajustados.
+    componentsApplied: {
+      lucroPercentual: l * 100,
+      adminCentralPercentual: ac * 100,
+      despesasFinanceirasPercentual: dfAdjusted * 100,
+      riscosPercentual: rAdjusted * 100,
+      seguroPercentual: s * 100,
+      garantiaPercentual: g * 100,
+      aliquotaTributos: iRate * 100,
+      aliquotaTributosSource: iDescription,
+      ajustesAplicados: ajustes,
+    },
   };
 }

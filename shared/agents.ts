@@ -285,6 +285,31 @@ export interface ComercialInput {
   fiscalRisk: "low" | "medium" | "high";
 }
 
+/**
+ * Componentes do BDI aplicados (NBR 12721) com ajustes condicionais já
+ * incorporados. Usado pelo gerador de XLSX pra mostrar a aba "BDI e
+ * Markup" coerente com o que o Comercial calculou — incluindo +5pp em
+ * Riscos por fiscalRisk=high ou +5pp em DF por logística high.
+ *
+ * Todos os percentuais em pontos percentuais (ex.: 8 = 8%), não fração.
+ */
+export interface ComercialComponentsApplied {
+  lucroPercentual: number;
+  adminCentralPercentual: number;
+  /** DF com ajuste condicional aplicado (+5pp se logisticsComplexity=high). */
+  despesasFinanceirasPercentual: number;
+  /** R com ajuste condicional aplicado (+5pp se fiscalRisk=high). */
+  riscosPercentual: number;
+  seguroPercentual: number;
+  garantiaPercentual: number;
+  /** Alíquota I (tributos sobre faturamento) em pp. */
+  aliquotaTributos: number;
+  /** Origem da alíquota I — texto pra exibir como nota na planilha. */
+  aliquotaTributosSource: string;
+  /** Ajustes condicionais aplicados (lista de descrições). */
+  ajustesAplicados: string[];
+}
+
 export interface ComercialOutput {
   baseBdi: number;
   adjustedBdi: number;
@@ -292,6 +317,9 @@ export interface ComercialOutput {
   totalBdiAmount: number;
   finalPrice: number;
   pricePerUnit: Record<string, number>;
+  /** PR (11/05/2026) — componentes detalhados pra geração de XLSX e
+   * referência futura. Opcional pra compatibilidade com outputs antigos. */
+  componentsApplied?: ComercialComponentsApplied;
 }
 
 export interface GestaoProjInput {
