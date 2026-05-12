@@ -707,7 +707,7 @@ function generateMemoriaXLSX(
   // Criar workbook usando SheetJS
   const wb = XLSX.utils.book_new();
 
-  // === Resolver componentes do BDI (NBR 12721) ===
+  // === Resolver componentes do BDI (tudo por dentro) ===
   // Ordem de prioridade:
   //   1. comercialOutput.componentsApplied — valores REAIS aplicados pelo
   //      Comercial neste projeto (incluindo ajustes condicionais como
@@ -1006,12 +1006,15 @@ function generateMemoriaXLSX(
   XLSX.utils.book_append_sheet(wb, wsLogistica, "Custos Logísticos");
 
   // ============================================================
-  // ABA 4: BDI e Markup — componentes editáveis + fórmula NBR 12721
+  // ABA 4: BDI e Markup — fórmula "tudo por dentro"
+  // Todos os componentes (L, AC, DF, R, S, G, I) são % do preço de venda.
+  //   totalRate = (L + AC + DF + R + S + G + I) / 100
+  //   BDI = totalRate / (1 − totalRate)
   // ============================================================
   // Row 1: título, Row 2: subtítulo, Row 3: vazio, Row 4: headers, Rows 5-10: componentes
   // Row 11: vazio, Row 12: Tributos (I), Row 14: BDI total (fórmula)
   const bdiData: any[][] = [
-    ["BDI E MARKUP — Fórmula NBR 12721 com tributos por dentro"],
+    ["BDI E MARKUP — Componentes como % do preço de venda (tudo por dentro)"],
     [
       "Edite os percentuais nas células azuis. BDI total recalcula automaticamente.",
     ],
@@ -1021,37 +1024,47 @@ function generateMemoriaXLSX(
       "Lucro",
       "L",
       compL,
-      "Margem de lucro líquido sobre o preço de venda",
+      "Margem de lucro líquido — % do preço de venda",
     ],
     [
       "Administração Central",
       "AC",
       compAC,
-      "Custos administrativos fixos da empresa (rateio)",
+      "Rateio do overhead da empresa — % do preço de venda",
     ],
     [
       "Despesas Financeiras",
       "DF",
       compDF,
-      "Custo do capital de giro durante a obra",
+      "Custo do capital de giro — % do preço de venda",
     ],
     [
       "Riscos e Imprevistos",
       "R",
       compR,
-      "Reserva para riscos não previstos",
+      "Reserva para riscos não previstos — % do preço de venda",
     ],
-    ["Seguros", "S", compS, "Seguro de obras (RCG, riscos de engenharia)"],
+    [
+      "Seguros",
+      "S",
+      compS,
+      "Seguro de obras (RCG, riscos de engenharia) — % do preço de venda",
+    ],
     [
       "Garantias",
       "G",
       compG,
-      "Garantia contratual — ajustar conforme exigência do cliente",
+      "Garantia contratual — % do preço de venda",
     ],
     [],
     ["Tributos (I)", "I", aliquotaI, aliquotaSource],
     [],
-    ["BDI TOTAL (calculado)", "", 0, "Fórmula: ((1+AC+S+R+G)×(1+DF)×(1+L))/(1−I)−1"],
+    [
+      "BDI TOTAL (calculado)",
+      "",
+      0,
+      "Fórmula: totalRate ÷ (1 − totalRate), onde totalRate = soma dos componentes ÷ 100",
+    ],
     [],
     [
       "Ajustes aplicados pelo Comercial:",
@@ -1064,11 +1077,12 @@ function generateMemoriaXLSX(
   ];
   const wsBdi = XLSX.utils.aoa_to_sheet(bdiData);
 
-  // Fórmula do BDI Total — referencia células C5 (L), C6 (AC), C7 (DF),
-  // C8 (R), C9 (S), C10 (G), C12 (I). Cuidado: SheetJS gravou linhas
-  // 1-based, então L está em C5, AC em C6, etc.
-  const bdiFormula =
-    "((1+C6/100+C9/100+C8/100+C10/100)*(1+C7/100)*(1+C5/100))/(1-C12/100)-1";
+  // Fórmula do BDI Total — todos os componentes como fração do PV.
+  //   totalRate = (C5 + C6 + C7 + C8 + C9 + C10 + C12) / 100
+  //   BDI = totalRate / (1 − totalRate)
+  // SheetJS gravou linhas 1-based: L=C5, AC=C6, DF=C7, R=C8, S=C9, G=C10, I=C12.
+  const sumComponents = "(C5+C6+C7+C8+C9+C10+C12)/100";
+  const bdiFormula = `${sumComponents}/(1-${sumComponents})`;
   const bdiTotalAddr = XLSX.utils.encode_cell({ c: 2, r: 13 }); // C14
   wsBdi[bdiTotalAddr] = {
     t: "n",
@@ -1167,19 +1181,21 @@ function generateMemoriaXLSX(
     ["SUBTOTAL CUSTO BASE", 0, "Custo Direto + Logística"],
     [],
     // Row 8–10: Markup
-    ["BDI (NBR 12721)", 0, "Conforme aba 'BDI e Markup'"],
+    ["BDI (tudo por dentro)", 0, "Conforme aba 'BDI e Markup'"],
     ["Markup em R$ (BDI × Custo Base)", 0, "Valor monetário do markup"],
     [
       "Tributos (I sobre preço final)",
       0,
-      "Embutidos no BDI (informativo)",
+      "Componente do BDI — % do preço de venda",
     ],
     [],
     // Row 12: Preço Final
     ["PREÇO FINAL DE VENDA", 0, "Cliente paga este valor"],
     [],
     ["PREMISSAS"],
-    ["• BDI calculado pela fórmula NBR 12721 (tributos por dentro)"],
+    [
+      "• BDI calculado pela fórmula 'tudo por dentro': cada componente (L, AC, DF, R, S, G, I) é % do preço de venda.",
+    ],
     [
       `• Regime tributário: ${aliquotaSource} (alíquota ${aliquotaI.toFixed(2)}%)`,
     ],

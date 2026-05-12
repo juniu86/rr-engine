@@ -45,8 +45,9 @@ const componentes = {
   garantiaPercentual: 0.4,
 };
 
-/** Calcula BDI esperado pela fórmula NBR 12721 — referência para os testes. */
-function nbrBdi(
+/** BDI esperado pela fórmula "tudo por dentro" — referência dos testes.
+ *  Todos os parâmetros em fração (0.08 = 8%). */
+function bdiTudoPorDentro(
   ac: number,
   s: number,
   r: number,
@@ -55,10 +56,11 @@ function nbrBdi(
   l: number,
   i: number
 ): number {
-  return ((1 + ac + s + r + g) * (1 + df) * (1 + l)) / (1 - i) - 1;
+  const total = ac + s + r + g + df + l + i;
+  return total / (1 - total);
 }
 
-describe("computeComercial — fórmula NBR 12721", () => {
+describe("computeComercial — BDI tudo por dentro", () => {
   it("aplica BDI sem ajustes (low risk + low logistics) com Lucro Presumido", () => {
     // I = 5 + 0.65 + 3 + 1.2 + 1.08 = 10.93%
     const out = computeComercial(
@@ -66,7 +68,7 @@ describe("computeComercial — fórmula NBR 12721", () => {
       { companyBdiSettings: componentes, taxSettings: lucroPresumido }
     );
 
-    const expectedBdi = nbrBdi(
+    const expectedBdi = bdiTudoPorDentro(
       0.04,
       0.008,
       0.01,
@@ -79,7 +81,45 @@ describe("computeComercial — fórmula NBR 12721", () => {
     expect(out.adjustedBdi).toBeCloseTo(expectedBdi, 4);
     expect(out.finalPrice).toBeCloseTo(110_000 * (1 + expectedBdi), 2);
     expect(out.totalBdiAmount).toBeCloseTo(110_000 * expectedBdi, 2);
-    expect(out.bdiJustification).toContain("NBR 12721");
+    expect(out.bdiJustification).toContain("tudo por dentro");
+  });
+
+  it("caso Maricá: Custo 1.695.194,61 com L=25%, AC=4%, DF=1%, R=5%, S=2%, G=0%, I=15% → PV 3.531.655,44", () => {
+    const out = computeComercial(
+      baseInput({ totalDirectCost: 1_695_194.61, totalIndirectCost: 0 }),
+      {
+        companyBdiSettings: {
+          lucroPercentual: 25,
+          adminCentralPercentual: 4,
+          despesasFinanceirasPercentual: 1,
+          riscosPercentual: 5,
+          seguroPercentual: 2,
+          garantiaPercentual: 0,
+        },
+        taxRateOverridePercentual: 15,
+      }
+    );
+    // Soma componentes = 52%; denominador 48%; PV = Custo / 0.48
+    expect(out.adjustedBdi).toBeCloseTo(0.52 / 0.48, 4); // ≈ 108,33%
+    expect(out.finalPrice).toBeCloseTo(3_531_655.44, 1);
+    expect(out.totalBdiAmount).toBeCloseTo(1_836_460.83, 1);
+    // Decomposição linha a linha sobre o PV bate com a soma do markup.
+    const PV = out.finalPrice;
+    const linhas = {
+      lucro: PV * 0.25,
+      ac: PV * 0.04,
+      df: PV * 0.01,
+      r: PV * 0.05,
+      s: PV * 0.02,
+      g: PV * 0,
+      i: PV * 0.15,
+    };
+    const somaLinhas =
+      linhas.lucro + linhas.ac + linhas.df + linhas.r + linhas.s + linhas.g + linhas.i;
+    expect(somaLinhas).toBeCloseTo(out.totalBdiAmount, 1);
+    // Cada componente individual
+    expect(linhas.lucro).toBeCloseTo(882_913.86, 1);
+    expect(linhas.i).toBeCloseTo(529_748.32, 1);
   });
 
   it("Simples Nacional faixa 4 (14%) gera preço final maior que Lucro Presumido (10,93%)", () => {
@@ -117,7 +157,7 @@ describe("computeComercial — fórmula NBR 12721", () => {
     expect(com.bdiJustification).toContain("logística alta");
   });
 
-  it("aumentar Lucro 1pp aumenta BDI total em mais que 1pp (efeito do 1/(1-I))", () => {
+  it("aumentar Lucro 1pp aumenta BDI total em mais que 1pp (efeito do 1/(1−totalRate))", () => {
     const sem = computeComercial(baseInput(), {
       companyBdiSettings: { ...componentes, lucroPercentual: 8 },
       taxSettings: lucroPresumido,
@@ -136,17 +176,41 @@ describe("computeComercial — fórmula NBR 12721", () => {
       taxSettings: lucroPresumido, // I = 10.93%
       taxRateOverridePercentual: 5, // override = 5%
     });
-    const expected = nbrBdi(0.04, 0.008, 0.01, 0.004, 0.01, 0.08, 0.05);
+    const expected = bdiTudoPorDentro(
+      0.04,
+      0.008,
+      0.01,
+      0.004,
+      0.01,
+      0.08,
+      0.05
+    );
     expect(out.baseBdi).toBeCloseTo(expected, 4);
   });
 
-  it("alíquota I = 100% lança erro (1 - I ≤ 0)", () => {
+  it("soma dos componentes ≥ 95% lança erro", () => {
+    expect(() =>
+      computeComercial(baseInput(), {
+        companyBdiSettings: {
+          lucroPercentual: 50,
+          adminCentralPercentual: 10,
+          despesasFinanceirasPercentual: 5,
+          riscosPercentual: 5,
+          seguroPercentual: 0,
+          garantiaPercentual: 0,
+        },
+        taxRateOverridePercentual: 30, // soma = 100%
+      })
+    ).toThrow(/Soma dos componentes do BDI/);
+  });
+
+  it("alíquota I sozinha = 100% lança erro (passa do limite de 95%)", () => {
     expect(() =>
       computeComercial(baseInput(), {
         companyBdiSettings: componentes,
         taxRateOverridePercentual: 100,
       })
-    ).toThrow();
+    ).toThrow(/Soma dos componentes do BDI/);
   });
 
   it("é determinístico: mesmo input produz mesmo output", () => {
@@ -252,16 +316,25 @@ describe("computeComercial — fórmula NBR 12721", () => {
     );
   });
 
-  it("preço final cobre os tributos (custoBase + BDI ≥ tributos por dentro)", () => {
-    const custoBase = 100_000;
+  it("decomposição linha a linha do preço final bate com o markup", () => {
+    // Cada componente aplicado sobre o PV deve somar exatamente totalBdiAmount.
     const out = computeComercial(
-      baseInput({ totalDirectCost: custoBase, totalIndirectCost: 0 }),
-      { companyBdiSettings: componentes, taxSettings: lucroPresumido }
+      baseInput({ totalDirectCost: 200_000, totalIndirectCost: 0 }),
+      {
+        companyBdiSettings: componentes,
+        taxSettings: lucroPresumido,
+      }
     );
-    // Tributos no preço final = preço × I
-    const I = 0.1093;
-    const tributosNoPreco = out.finalPrice * I;
-    // O markup (totalBdiAmount) precisa cobrir os tributos + componentes
-    expect(out.totalBdiAmount).toBeGreaterThan(tributosNoPreco);
+    const PV = out.finalPrice;
+    const c = out.componentsApplied!;
+    const somaLinhas =
+      (PV * c.lucroPercentual) / 100 +
+      (PV * c.adminCentralPercentual) / 100 +
+      (PV * c.despesasFinanceirasPercentual) / 100 +
+      (PV * c.riscosPercentual) / 100 +
+      (PV * c.seguroPercentual) / 100 +
+      (PV * c.garantiaPercentual) / 100 +
+      (PV * c.aliquotaTributos) / 100;
+    expect(somaLinhas).toBeCloseTo(out.totalBdiAmount, 1);
   });
 });

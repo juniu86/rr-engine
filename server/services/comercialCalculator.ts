@@ -1,28 +1,38 @@
 /**
- * Comercial determinístico — fórmula NBR 12721 (P0 BDI fix).
+ * Comercial determinístico — BDI "tudo por dentro" (P0 12/05/2026).
  *
- * Substitui o agente LLM. O cálculo segue a norma brasileira de orçamentação
- * de obras civis (NBR 12721 / ABNT):
+ * Substituiu a fórmula NBR 12721 cascata por uma visão financeira:
+ * **todos** os componentes (Lucro, AC, DF, Riscos, Seguros, Garantias e
+ * Tributos) são percentuais do **preço de venda**, não do custo.
  *
- *   BDI = ((1 + AC + S + R + G) × (1 + DF) × (1 + L)) / (1 − I) − 1
+ *   PV = Custo / (1 − L − AC − DF − R − S − G − I)
+ *   BDI = PV / Custo − 1 = totalRate / (1 − totalRate)
  *
- *   AC = Administração Central (%)
- *   S  = Seguros (%)
- *   R  = Riscos e Imprevistos (%)
- *   G  = Garantias (%)
- *   DF = Despesas Financeiras (%)
  *   L  = Lucro (%)
- *   I  = Tributos sobre o faturamento (%) — entra no denominador porque
- *        os tributos são "por dentro" do preço de venda.
+ *   AC = Administração Central (%)
+ *   DF = Despesas Financeiras (%)
+ *   R  = Riscos e Imprevistos (%)
+ *   S  = Seguros (%)
+ *   G  = Garantias (%)
+ *   I  = Tributos sobre o faturamento (%)
  *
  *   finalPrice = custoBase × (1 + BDI)
  *
- * Tributos ficam **embutidos** no preço final automaticamente — o cliente
- * paga o preço cheio, a empresa recolhe o imposto sobre esse preço, e o
- * que sobra cobre custo + componentes + lucro. Não somar `totalTaxes` no
- * preço final depois — geraria duplo desconto.
+ * Justificativa: a reunião de board olha o P&L do contrato como
+ * % do faturamento — cada linha (lucro, tributos, etc.) sai como
+ * fatia do preço final, não múltiplo do custo. A fórmula NBR cascata
+ * aplica AC/S/R/G sobre o custo e L sobre o custo já carregado, o
+ * que não bate quando você decompõe o preço final linha a linha.
  *
- * Custo de tokens cai a zero (verificável em P0.3 / agent_llm_calls).
+ * Gate de viabilidade: a soma dos componentes precisa ficar < 95%.
+ * Acima disso o BDI passa de 1.900% e fica claramente quebrado —
+ * normalmente é erro de digitação ou regime fiscal mal configurado.
+ *
+ * Tributos continuam **embutidos** no preço final automaticamente —
+ * o cliente paga o preço cheio, a empresa recolhe I × PV. Não somar
+ * `totalTaxes` no preço final depois — geraria duplo desconto.
+ *
+ * Custo de tokens: zero (pure function, sem invokeLLM).
  */
 
 import type { ComercialInput, ComercialOutput } from "../../shared/agents";
@@ -30,17 +40,17 @@ import { resolveTaxRate } from "./taxRateResolver";
 import type { CompanyTaxSettings } from "../../shared/types";
 
 export interface CompanyBdiSettings {
-  /** Lucro (%) — L na fórmula NBR. */
+  /** Lucro (%) — L. */
   lucroPercentual?: number;
-  /** Administração Central (%) — AC na fórmula NBR. */
+  /** Administração Central (%) — AC. */
   adminCentralPercentual?: number;
-  /** Despesas Financeiras (%) — DF na fórmula NBR. */
+  /** Despesas Financeiras (%) — DF. */
   despesasFinanceirasPercentual?: number;
-  /** Riscos e Imprevistos (%) — R na fórmula NBR. */
+  /** Riscos e Imprevistos (%) — R. */
   riscosPercentual?: number;
-  /** Seguros (%) — S na fórmula NBR. */
+  /** Seguros (%) — S. */
   seguroPercentual?: number;
-  /** Garantias (%) — G na fórmula NBR. */
+  /** Garantias (%) — G. */
   garantiaPercentual?: number;
 }
 
@@ -66,12 +76,17 @@ const DEFAULTS = {
   taxRate: 0.08, // 8% — fallback quando não há taxSettings
 };
 
+/** Soma máxima de componentes permitida (em fração). Acima disso o BDI
+ *  explode e o cálculo perde sentido prático. */
+const MAX_TOTAL_RATE = 0.95;
+
 /**
- * Calcula a saída do Comercial pela fórmula NBR 12721.
+ * Calcula a saída do Comercial pela fórmula "tudo por dentro".
  *
- * Tributos ficam embutidos no preço final via denominador `1 − I`.
- * `totalBdiAmount = finalPrice − custoBase` representa todo o markup —
- * inclui componentes do BDI **e** tributos por dentro.
+ * Todos os componentes são percentuais do preço de venda. O markup
+ * (`totalBdiAmount = finalPrice − custoBase`) representa a soma de
+ * todos os componentes em R$, e bate exatamente quando o board
+ * decompõe o preço final aplicando os percentuais.
  */
 export function computeComercial(
   input: ComercialInput,
@@ -113,18 +128,7 @@ export function computeComercial(
     iDescription = `Alíquota I = ${context.taxRateOverridePercentual.toFixed(2)}% (override manual)`;
   }
 
-  // Denominador da fórmula NBR — `1 − I` precisa ser positivo.
-  const denominator = 1 - iRate;
-  if (denominator <= 0) {
-    throw new Error(
-      `Alíquota I = ${(iRate * 100).toFixed(2)}% inviabiliza o cálculo (1 − I ≤ 0). ` +
-        `Verifique a configuração tributária da empresa.`
-    );
-  }
-
   // Ajustes condicionais sobre componentes — refletem risco do projeto.
-  // Mantemos os incrementos aplicados sobre Riscos e DF respectivamente
-  // (em vez de sobre o BDI consolidado) pra preservar a estrutura NBR.
   let rAdjusted = r;
   let dfAdjusted = df;
   const ajustes: string[] = [];
@@ -138,27 +142,45 @@ export function computeComercial(
     ajustes.push("+5pp em DF por complexidade logística alta");
   }
 
-  // Fórmula NBR 12721.
-  const baseBdi =
-    ((1 + ac + s + r + g) * (1 + df) * (1 + l)) / denominator - 1;
-  const adjustedBdi =
-    ((1 + ac + s + rAdjusted + g) * (1 + dfAdjusted) * (1 + l)) / denominator -
-    1;
+  // Soma total dos componentes (em fração). Cada um é % do preço de venda.
+  const totalRateBase = l + ac + df + r + s + g + iRate;
+  const totalRateAdjusted = l + ac + dfAdjusted + rAdjusted + s + g + iRate;
+
+  // Gate de viabilidade: soma ≥ 95% inviabiliza o cálculo.
+  if (totalRateAdjusted >= MAX_TOTAL_RATE) {
+    const breakdown =
+      `L ${(l * 100).toFixed(2)}% + AC ${(ac * 100).toFixed(2)}% + ` +
+      `DF ${(dfAdjusted * 100).toFixed(2)}% + R ${(rAdjusted * 100).toFixed(2)}% + ` +
+      `S ${(s * 100).toFixed(2)}% + G ${(g * 100).toFixed(2)}% + ` +
+      `I ${(iRate * 100).toFixed(2)}% = ${(totalRateAdjusted * 100).toFixed(2)}%`;
+    throw new Error(
+      `Soma dos componentes do BDI atingiu ${(totalRateAdjusted * 100).toFixed(2)}%, ` +
+        `acima do limite de ${(MAX_TOTAL_RATE * 100).toFixed(0)}%. ` +
+        `Reveja as configurações de BDI e o regime tributário. Composição: ${breakdown}.`
+    );
+  }
+
+  // BDI = totalRate / (1 − totalRate). Equivalente a PV/Custo − 1.
+  const baseBdi = totalRateBase / (1 - totalRateBase);
+  const adjustedBdi = totalRateAdjusted / (1 - totalRateAdjusted);
 
   const totalBdiAmount = custoBase * adjustedBdi;
   const finalPrice = custoBase + totalBdiAmount;
 
   const componentLine =
-    `Componentes: AC ${(ac * 100).toFixed(2)}%, S ${(s * 100).toFixed(2)}%, ` +
-    `R ${(rAdjusted * 100).toFixed(2)}%, G ${(g * 100).toFixed(2)}%, ` +
-    `DF ${(dfAdjusted * 100).toFixed(2)}%, L ${(l * 100).toFixed(2)}%. ${iDescription}.`;
+    `Componentes (% do preço de venda): L ${(l * 100).toFixed(2)}%, ` +
+    `AC ${(ac * 100).toFixed(2)}%, DF ${(dfAdjusted * 100).toFixed(2)}%, ` +
+    `R ${(rAdjusted * 100).toFixed(2)}%, S ${(s * 100).toFixed(2)}%, ` +
+    `G ${(g * 100).toFixed(2)}%. ${iDescription}.`;
 
   const ajustesLine =
     ajustes.length > 0 ? ` Ajustes aplicados: ${ajustes.join("; ")}.` : "";
 
   const justification =
-    `BDI calculado pela fórmula NBR 12721 com tributos por dentro. ` +
+    `BDI calculado pela fórmula "tudo por dentro" — cada componente é ` +
+    `percentual do preço de venda. ` +
     `BDI base ${(baseBdi * 100).toFixed(2)}%, BDI ajustado ${(adjustedBdi * 100).toFixed(2)}%. ` +
+    `Soma dos componentes ${(totalRateAdjusted * 100).toFixed(2)}% do PV. ` +
     componentLine +
     ajustesLine;
 
@@ -185,8 +207,7 @@ export function computeComercial(
     totalBdiAmount,
     finalPrice,
     pricePerUnit,
-    // PR (11/05/2026) — componentes em pontos percentuais (não fração)
-    // pra a aba "BDI e Markup" do XLSX refletir os valores ajustados.
+    // Componentes em pontos percentuais (8 = 8%) — todos relativos ao PV.
     componentsApplied: {
       lucroPercentual: l * 100,
       adminCentralPercentual: ac * 100,
