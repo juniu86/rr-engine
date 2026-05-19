@@ -753,3 +753,53 @@ export const budgetCredits = mysqlTable(
 
 export type BudgetCredit = typeof budgetCredits.$inferSelect;
 export type InsertBudgetCredit = typeof budgetCredits.$inferInsert;
+
+// ==================== PROPOSALS (proposta.rres.com.br) ====================
+// Tabela para o app de propostas comerciais persistir registros gerados
+// pelo time interno da RR. Migration 0024 (13/05/2026).
+//
+// Decisão (founder, 12/05/2026):
+//   * Pool global — sem userId. Todo vendedor RR enxerga todas as propostas.
+//   * Seq inicial = 69 em seq_counters → próxima alocação retorna 70.
+//   * Formato exibido pelo frontend: RR-070/2026 (zero-pad 3 dígitos).
+//   * Auth via Clerk (mesmo do engine.rres.com.br).
+//
+// Datas (created_at / updated_at) são datetime sem auto-now: o cliente
+// (Vite SPA) gera os timestamps em ISO 8601 no upsert. Mantém o shape
+// alinhado com o app sem precisar de timezone juggling no servidor.
+export const proposals = mysqlTable(
+  "proposals",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    numero: varchar("numero", { length: 100 }).notNull(),
+    clienteNome: varchar("cliente_nome", { length: 255 }).notNull(),
+    total: decimal("total", { precision: 15, scale: 2 }).notNull().default("0"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    data: json("data").notNull(),
+    showLinePrices: boolean("show_line_prices").notNull().default(true),
+    status: varchar("status", { length: 30 }).notNull().default("rascunho"),
+    motivoPerda: text("motivo_perda"),
+    revisao: int("revisao"),
+    parentId: varchar("parent_id", { length: 36 }),
+  },
+  table => [
+    index("idx_proposals_status").on(table.status),
+    index("idx_proposals_created_at").on(table.createdAt),
+    index("idx_proposals_parent_id").on(table.parentId),
+  ]
+);
+
+export type Proposal = typeof proposals.$inferSelect;
+export type InsertProposal = typeof proposals.$inferInsert;
+
+// Contador sequencial de propostas por ano. /proposta/seq/:year/consume
+// incrementa atomicamente com SELECT ... FOR UPDATE dentro de transação,
+// então `value` guarda o ÚLTIMO consumido — não o próximo.
+export const seqCounters = mysqlTable("seq_counters", {
+  year: int("year").primaryKey(),
+  value: int("value").notNull(),
+});
+
+export type SeqCounter = typeof seqCounters.$inferSelect;
+export type InsertSeqCounter = typeof seqCounters.$inferInsert;

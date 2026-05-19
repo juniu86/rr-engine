@@ -260,6 +260,31 @@ Detalhes do tracing (incluindo o que aparece no dashboard) em `docs/observabilit
 >
 > 3. **`feat/p0-settings-bdi-readonly`** (frontend `rr-engine-app`): BDI total na UI vira **readonly**, calculado em tempo real via `components/BdiSettingsForm.tsx`. Campos novos editáveis: Seguros (S), Garantias (G), override de I. Tabela do Simples Nacional Anexo IV pré-preenche I por faixa. Comitado junto: cancelExecution no `lib/api.ts` e `AgentPipelineLive.tsx`.
 
+> **Endpoints /proposta (13/05/2026):** app separado `proposta.rres.com.br` (Vite SPA, repo distinto) ganhou persistência no mesmo MySQL Railway via REST simples — sem tRPC pra evitar dependência do pacote `@juniu86/rr-engine-api-types`.
+>
+> Migration `0024_proposals_seq.sql` cria duas tabelas:
+>
+> - `proposals` — registro principal (id UUID, numero, cliente_nome, total DECIMAL, data JSON, status, motivo_perda, revisao, parent_id). Sem `userId`: **pool global**, todo vendedor RR vê todas. Schema Drizzle em `drizzle/schema.ts:proposals`.
+> - `seq_counters` — contador anual de numeração. `value` guarda o **último** consumido; default 69 em 2026 → primeira alocação devolve 70. Frontend monta o formato `RR-070/2026` (zero-pad 3 dígitos).
+>
+> Router em `server/routers/proposta.ts`, mounted em `/proposta` no `_core/index.ts`. Cinco rotas:
+>
+> ```
+> GET    /proposta/proposals           lista todas
+> PUT    /proposta/proposals/:id       upsert (INSERT ... ON DUPLICATE KEY UPDATE)
+> DELETE /proposta/proposals/:id       remove
+> GET    /proposta/seq/:year/peek      próximo sem consumir
+> POST   /proposta/seq/:year/consume   aloca + incrementa (transação)
+> ```
+>
+> **Auth:** Clerk JWT no header `Authorization: Bearer <token>`, mesmo verificador (`authenticateRequestWithClerk`) do tRPC. Middleware no próprio router.
+>
+> **Race do /consume:** `db.transaction()` com `SELECT ... FOR UPDATE` na row do ano. Duas requests simultâneas viram fila — nunca emitem o mesmo número.
+>
+> **CORS:** `https://proposta.rres.com.br` adicionada aos `allowedOrigins`. Local dev cobre `5173`/`5174` do Vite.
+>
+> **Testes:** `server/proposta-router.test.ts` cobre `rowToApiShape` (conversões DECIMAL→number, TINYINT→boolean, DATETIME→ISO), `upsertSchema` Zod (formato, limites) e a regra de numeração `RR-XXX/YYYY`. Race de transação fica como teste de integração futuro (precisa DB real).
+
 > **P0 (12/05/2026) — BDI "tudo por dentro" (substitui NBR 12721 cascata):** após decomposição P&L do contrato no board da RR Engenharia, a fórmula NBR não fechava: aplicar AC/S/R/G como % do custo gera markup menor do que a soma dos mesmos percentuais sobre o preço de venda. Diferença observada no caso Maricá: −R$ 353,7k (−13% sobre o markup).
 >
 > Nova fórmula em `server/services/comercialCalculator.ts`:

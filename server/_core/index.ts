@@ -11,6 +11,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { stripeWebhookHandler } from "../stripe/webhook";
 import { shutdownTracing } from "../services/tracing";
+import { createPropostaRouter } from "../routers/proposta";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -47,8 +48,12 @@ function getAllowedOrigins(): string[] {
   return [
     "https://engine.rres.com.br",
     "https://www.engine.rres.com.br",
+    "https://proposta.rres.com.br",
+    "https://www.proposta.rres.com.br",
     "http://localhost:3000",
     "http://localhost:3001",
+    "http://localhost:5173",
+    "http://localhost:5174",
   ];
 }
 
@@ -103,6 +108,10 @@ async function startServer() {
       createContext,
     })
   );
+
+  // REST endpoints do app proposta.rres.com.br (Clerk auth + MySQL Railway).
+  // Migration 0024 cria as tabelas proposals + seq_counters.
+  app.use("/proposta", createPropostaRouter());
 
   // Modo de servir frontend:
   //  - development: Vite dev server (HMR) — quando rodando local sem Next.
