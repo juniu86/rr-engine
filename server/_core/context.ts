@@ -64,6 +64,15 @@ export async function createContext(
     // Auth opcional para public procedures. Se o token vier inválido em uma
     // protected procedure, o middleware do tRPC barra com FORBIDDEN.
     user = null;
+    // DEBUG TEMPORÁRIO (20/05/2026) — revelar por que o auth falha.
+    // Remover depois de diagnosticar o UNAUTHORIZED em produção.
+    const authHeader = opts.req.headers?.authorization;
+    const hasBearer =
+      typeof authHeader === "string" && /^Bearer\s+/i.test(authHeader);
+    console.error(
+      `[auth-debug] Falha no authenticate. hasAuthHeader=${!!authHeader} ` +
+        `hasBearer=${hasBearer} reason="${(error as Error)?.message ?? error}"`
+    );
   }
 
   return {
