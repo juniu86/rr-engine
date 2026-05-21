@@ -223,5 +223,8 @@ export function formatBRL(n: number): string {
 export function formatDate(d: string | Date): string {
   const date = typeof d === "string" ? new Date(d) : d;
   if (Number.isNaN(date.getTime())) return String(d);
-  return date.toLocaleDateString("pt-BR");
+  // Forca fuso UTC: datas "YYYY-MM-DD" sao lidas como meia-noite UTC e, num
+  // fuso atras do UTC (ex.: BRT), toLocaleDateString sem timeZone "volta um
+  // dia". Producao roda em UTC e acertava; localmente (Brasil) errava.
+  return date.toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
