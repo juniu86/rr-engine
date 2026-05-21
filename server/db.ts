@@ -266,11 +266,16 @@ export async function getAgentExecutionsByProjectId(projectId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
+  // Nao ordenar no SQL: ORDER BY agentOrder forca um filesort que carrega as
+  // linhas inteiras, e `output` pode ter centenas de KB -> MySQL estoura o
+  // sort_buffer e lanca ER_OUT_OF_SORTMEMORY, derrubando a leitura (a UI nao
+  // carrega os agentes e o popup de info some). Sao poucas linhas (1 por
+  // agente): ordena em memoria.
+  const rows = await db
     .select()
     .from(agentExecutions)
-    .where(eq(agentExecutions.projectId, projectId))
-    .orderBy(agentExecutions.agentOrder);
+    .where(eq(agentExecutions.projectId, projectId));
+  return rows.sort((a, b) => a.agentOrder - b.agentOrder);
 }
 
 export async function updateAgentExecution(
