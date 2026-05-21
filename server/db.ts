@@ -1,4 +1,5 @@
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TransactionClient = any;
@@ -31,12 +32,24 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: MySql2Database | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Pool em vez de conexao unica: o mysql2 substitui conexoes mortas e o
+      // keepAlive evita que o MySQL/Railway derrube a conexao por ociosidade.
+      // Antes: drizzle(string) abria UMA conexao, memoizada em _db; depois de
+      // horas ociosa (ex.: pipeline rodando de madrugada) ela morria e toda
+      // query virava "Failed query" sem nunca se recuperar (cache do _db).
+      const pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        waitForConnections: true,
+        connectionLimit: 10,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000,
+      });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
