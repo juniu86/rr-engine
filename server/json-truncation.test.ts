@@ -163,11 +163,23 @@ describe("JSON Truncation Prevention", () => {
       expect(result.nbrReferences).toHaveLength(3);
     });
 
-    it("deve retornar waiting_for_user_input se qualquer output estiver waiting", () => {
+    it("deve retornar waiting_for_user_input se um chunk waiting trouxer perguntas reais", () => {
       const o1 = makeOutput(["A"], "completed");
       const o2 = makeOutput(["B"], "waiting_for_user_input");
+      o2.missingInfoRequests = [
+        { fieldId: "area_sala", question: "Qual a area em m2?", type: "text" },
+      ];
       const result = mergeEngenheiroOutputs([o1, o2]);
       expect(result.analysisStatus).toBe("waiting_for_user_input");
+      expect(result.missingInfoRequests).toHaveLength(1);
+    });
+
+    it("deve seguir como completed se um chunk marcar waiting mas sem perguntas (anti-trava)", () => {
+      const o1 = makeOutput(["A"], "completed");
+      const o2 = makeOutput(["B"], "waiting_for_user_input"); // missingInfoRequests vazio
+      const result = mergeEngenheiroOutputs([o1, o2]);
+      expect(result.analysisStatus).toBe("completed");
+      expect(result.missingInfoRequests).toHaveLength(0);
     });
 
     it("deve retornar completed se todos os outputs estiverem completed", () => {

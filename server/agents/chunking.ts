@@ -252,13 +252,22 @@ export function mergeEngenheiroOutputs(
     );
   }
 
+  const mergedMissingInfo = deduplicateMissingInfo(
+    outputs.flatMap(o => o.missingInfoRequests ?? [])
+  );
+  // So pausa pra perguntar ao usuario se ha perguntas DE VERDADE. Um chunk pode
+  // marcar waiting_for_user_input sem popular missingInfoRequests (glitch do
+  // modelo / efeito do chunking), o que travaria o projeto em "aguardando
+  // dados" sem nada a exibir. Nesse caso seguimos como completed; lacunas reais
+  // ainda sao pegas pelo Auditor adiante.
+  const anyWaiting = outputs.some(o => o.analysisStatus !== "completed");
+
   return {
-    analysisStatus: outputs.every(o => o.analysisStatus === "completed")
-      ? "completed"
-      : "waiting_for_user_input",
-    missingInfoRequests: deduplicateMissingInfo(
-      outputs.flatMap(o => o.missingInfoRequests ?? [])
-    ),
+    analysisStatus:
+      anyWaiting && mergedMissingInfo.length > 0
+        ? "waiting_for_user_input"
+        : "completed",
+    missingInfoRequests: mergedMissingInfo,
     items: dedup.items,
     pendingItems: Array.from(
       new Set(outputs.flatMap(o => o.pendingItems ?? []))
