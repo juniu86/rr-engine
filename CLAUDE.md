@@ -188,6 +188,8 @@ Use `feat/` para débitos que adicionam funcionalidade, `fix/` para correção d
 - `docs/exemplos/proposta_exemplo.pdf` — exemplo de saída comercial atual
 - `docs/legacy/documento_tecnico_v1.md` — referência histórica (9 agentes, será reescrita em P2.1)
 - `docs/archive/` — análises, sincronizações e testes manuais antigos (histórico, não tocar)
+- `docs/INFRA.md` — runbook de infra (o que roda onde, env vars, Clerk, MySQL, log de incidentes). **Consultar antes de pedir info de infra ao founder.**
+- `scripts/healthcheck.mjs` — diagnóstico de produção (status das plataformas + saúde dos serviços). **Rodar primeiro quando algo cair.**
 
 ## Bases de preço — pontos de atenção
 
@@ -333,6 +335,72 @@ A frase só pode ser dita quando o trabalho cumpre:
 Sem isso fica suspenso qualquer "tenta agora". A regra está gravada em
 3 lugares: este CLAUDE.md, `rr-engine-app/HANDOFF.md`, e o
 `02 - MKT/Claude/03_CONFIGURACAO_CLAUDE/modo-de-trabalho.md`.
+
+## DEPLOY — onde e como (21/05/2026)
+
+Detalhes completos em `docs/INFRA.md` (seção Deploy). Resumo do que mais custou tempo:
+
+- **Railway deploya a branch `main` do `rr-engine`.** Auto-deploy ON, "Wait for CI" OFF.
+- **Deploy dispara no MERGE de PR na `main`.** Push direto numa branch que não é a
+  `main` (ex.: `debug/auth-log`) NÃO sobe nada. Fluxo: branch → PR pra `main` → merge
+  → Railway builda (~2-4 min) → novo `Starting Container`.
+- `debug/auth-log` é integração; só chega em produção mergeada na `main`.
+- Frontend (`rr-engine-app`) e proposta (`RR-Engenharia`) → Vercel, auto-deploy no push.
+- Antes de pedir info de deploy ao founder: conferir Railway → Settings → Source. Não
+  supor o gatilho.
+
+## PROTOCOLO DE INCIDENTE EM PRODUÇÃO (20/05/2026)
+
+Quando algo em produção quebra (página não carrega, 500, 401, erro estranho),
+seguir ESTA ordem de diagnóstico — barata→cara. Não pular pro código.
+
+**Atalho:** rodar `node scripts/healthcheck.mjs` primeiro. Ele cobre os
+passos 1-2 num comando (status das plataformas + saúde de cada serviço).
+
+1. **Status das plataformas.** Checar ANTES de qualquer hipótese de código:
+   - Railway: https://status.railway.com
+   - Vercel: https://www.vercel-status.com
+   - Clerk: https://status.clerk.com
+   Incident ativo = provável causa externa. NÃO mexer no código; aguardar.
+
+2. **Saúde dos serviços.**
+   - `api.rres.com.br/api/health` responde 200?
+   - MySQL aceita conexão? (Railway → MySQL → Database → Data: "Database
+     Connection" verde? Metrics: CPU/RAM > 0? RAM 0 = processo morto.)
+   - O erro de auth pode ser DB inacessível: `context.ts` engole o erro do
+     `getUserByOpenId` e devolve UNAUTHORIZED. Token válido + 401 = suspeitar
+     do banco, não do Clerk.
+
+3. **Config.** env vars presentes/corretas em cada lugar? billing ativo?
+   deploys liberados? (Para o MySQL travado, `Restart` não basta — Railway
+   exige `Redeploy` pra subir container novo.)
+
+4. **Código.** Só depois de 1-3 descartados. Ler o caminho inteiro antes de mudar.
+
+Erro que originou esta regra (incident 20/05): comecei pelo passo 4 (código,
+Clerk) e só cheguei nos passos 1-2 dezenas de prompts depois. A causa era o
+MySQL do Railway travado por pane da plataforma — visível no passo 1 desde o
+início. Custou horas e dezenas de tentativas que um healthcheck mataria em 30s.
+
+## REGRA DE AUTONOMIA (20/05/2026)
+
+Antes de pedir QUALQUER ação ao founder, esgotar o que dá pra fazer sozinho.
+
+**Uso primeiro (tenho e devo usar):** bash (testar endpoints, conectar em APIs,
+rodar scripts), web_fetch (status pages, docs, validar HTTP), leitura completa
+de código (Read/Grep/Glob), validação local (verifyToken contra JWKS, math,
+typecheck).
+
+**Só peço ao founder o que é comprovadamente fora do meu alcance:** painéis web
+(Railway, Vercel, Clerk, GitHub UI), credenciais / git push / secrets, billing,
+merge de PR, browser dele.
+
+Quando pedir, pedir SÓ o passo — sem narrar o raciocínio (ele não quer a aula).
+Um passo por vez apenas quando depende de ação manual dele.
+
+Erro que originou esta regra: pedi prints e ações — inclusive de coisas que eu
+mesmo configurei — antes de investigar com minhas ferramentas. Inverter sempre:
+investigar primeiro, pedir só o inevitável.
 
 ## Glossário
 

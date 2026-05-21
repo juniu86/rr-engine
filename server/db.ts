@@ -1,4 +1,5 @@
 import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
+import { sortByAgentOrder } from "./utils/sortAgentExecutions";
 import mysql from "mysql2/promise";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -275,7 +276,7 @@ export async function getAgentExecutionsByProjectId(projectId: number) {
     .select()
     .from(agentExecutions)
     .where(eq(agentExecutions.projectId, projectId));
-  return rows.sort((a, b) => a.agentOrder - b.agentOrder);
+  return sortByAgentOrder(rows);
 }
 
 export async function updateAgentExecution(

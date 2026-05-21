@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Guarda determinística antes do push: typecheck + testes.
+# É a "REGRA DE VALIDAÇÃO ANTES DE TESTE PAGO" virada em código — não depende
+# de ninguém (humano ou agente) lembrar de rodar.
+#
+# Ativar uma vez por clone:  git config core.hooksPath .githooks
+# Pular em emergência:        git push --no-verify
+set -e
+echo "[pre-push] pnpm check (typecheck)..."
+pnpm run check
+echo "[pre-push] pnpm test (vitest)..."
+pnpm test
+echo "[pre-push] OK — pode empurrar."
